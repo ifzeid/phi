@@ -47,6 +47,8 @@ struct ProcessStillView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .modifier(HiddenSystemChrome())
+        .statusBarHidden(true)
         .onAppear(perform: captureBaseline)
     }
 
@@ -68,22 +70,27 @@ struct ProcessStillView: View {
     }
 
     private var editorImage: some View {
-        ZStack {
-            CameraColor.background
-            if holdingOriginal {
-                Image(uiImage: UIImage(cgImage: session.base))
-                    .resizable()
-                    .scaledToFit()
-            } else if let preview = session.preview {
-                Image(uiImage: preview)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                ProgressView().tint(CameraColor.accent)
+        PhotoCanvas(widthOverHeight: session.framedAspect.widthOverHeight) {
+            ZStack {
+                CameraColor.background
+                if holdingOriginal {
+                    Image(uiImage: session.originalImage ?? UIImage(cgImage: session.base))
+                        .resizable()
+                        .scaledToFill()
+                } else if let preview = session.preview {
+                    Image(uiImage: preview)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    ProgressView().tint(CameraColor.accent)
+                }
             }
         }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(390.0 / 520.0, contentMode: .fit)
+        Text(session.developInfo)
+            .font(CameraFont.parameter(11))
+            .foregroundStyle(CameraColor.textSecondary)
+            .lineLimit(2)
+            .padding(.horizontal, 20)
     }
 
     private var tabBar: some View {

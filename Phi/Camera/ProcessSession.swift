@@ -15,6 +15,9 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// 1 is the full sensor. A crop stop such as 2× keeps the center of the full-frame DNG.
     let lensZoom: Double
     let captureLocation: CLLocation?
+    /// The file the user opened. Neutral edits show this, not a new render.
+    let originalImage: UIImage?
+    let originalData: Data?
     @Published var exposureEV: Double
     @Published var style: GrainStyle
     @Published var colorLook: ColorLook
@@ -41,7 +44,9 @@ final class ProcessSession: ObservableObject, Identifiable {
         lensZoom: Double = 1,
         captureLocation: CLLocation? = nil,
         colorLook: ColorLook = .none,
-        halo: Bool = false
+        halo: Bool = false,
+        originalImage: UIImage? = nil,
+        originalData: Data? = nil
     ) {
         self.base = base
         self.exposureEV = exposureEV
@@ -56,7 +61,16 @@ final class ProcessSession: ObservableObject, Identifiable {
         self.captureLocation = captureLocation
         self.colorLook = colorLook
         self.halo = halo
+        self.originalImage = originalImage
+        self.originalData = originalData
         self.developInfo = sourceDNG == nil ? "来源 系统成片" : "来源 DNG"
+        if let originalImage {
+            self.preview = originalImage
+        }
+    }
+
+    var isNeutral: Bool {
+        exposureEV == 0 && style == .off && colorLook == .none && halo == false
     }
 
     func setExposure(_ value: Double) {
@@ -83,9 +97,21 @@ final class ProcessSession: ObservableObject, Identifiable {
     }
 
     func schedule() {
+        if isNeutral {
+            token += 1
+            if let originalImage {
+                preview = originalImage
+                developInfo = "原片 · \(originalImage.size.width)x\(originalImage.size.height)"
+            } else {
+                preview = UIImage(cgImage: base)
+                developInfo = "原片 · \(base.width)×\(base.height)"
+            }
+            return
+        }
         token += 1
         let current = token
-        let base = base
+        let upright = originalImage.flatMap { StillPipeline.normalizedCGImage(from: $0) } ?? base
+        let base = upright
         let ev = exposureEV
         let style = style
         let dng = sourceDNG
@@ -106,7 +132,7 @@ final class ProcessSession: ObservableObject, Identifiable {
                         halo: haloOn,
                         aspect: aspect,
                         lensZoom: zoom,
-                        maxSide: 1600,
+                        maxSide: Self.previewSide,
                         draft: false
                     )
                 }
@@ -117,17 +143,27 @@ final class ProcessSession: ObservableObject, Identifiable {
                     look: look,
                     halo: haloOn,
                     lensZoom: zoom,
-                    maxSide: 1600
+                    maxSide: Self.previewSide
                 )
             }.value
             guard current == self.token, let rendered else { return }
             let image = UIImage(cgImage: rendered)
             let source = dng == nil ? "source HEIF" : "source DNG"
-            self.developInfo = "\(source) · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality)"
+            let report = RawDevelop.lastReport
+            self.developInfo = "\(source) · \(rendered.width)×\(rendered.height) · \(report)"
             Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
             self.preview = image
             self.onPreview?(image)
         }
+    }
+
+    /// Screen pixels, not the 1600px draft scale. Full export still uses scale 1.
+    static var previewSide: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let screen = scene?.screen
+        let bounds = screen?.bounds ?? CGRect(x: 0, y: 0, width: 402, height: 874)
+        let scale = screen?.scale ?? 3
+        return max(bounds.width, bounds.height) * max(scale, 1)
     }
 
     static func syntheticPreview() -> ProcessSession {

@@ -40,6 +40,7 @@ struct FinderSettingsSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
         .presentationBackground(CameraColor.background)
+        .modifier(HiddenSystemChrome())
     }
 
     private var header: some View {

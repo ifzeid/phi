@@ -110,41 +110,46 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? photoAspect
         let zoom = shot.lensZoom ?? 1
         Task {
-            if let stored = dngStored, let url = StillArchive.resolve(stored),
-               let dng = try? Data(contentsOf: url),
-               let preview = RawDevelop.image(
-                dng: dng,
-                exposureEV: 0,
-                style: .off,
-                look: .none,
-                halo: false,
-                aspect: aspect,
-                lensZoom: zoom,
-                maxSide: 1600,
-                draft: false
-               ) {
-                let metadata = PhotoMetadata.properties(of: dng)
+            let displayURL = displayStored.flatMap { StillArchive.resolve($0) }
+            let displayData = displayURL.flatMap { try? Data(contentsOf: $0) }
+            let displayImage = displayData.flatMap { UIImage(data: $0) }
+            let dngURL = dngStored.flatMap { StillArchive.resolve($0) }
+            let dng = dngURL.flatMap { try? Data(contentsOf: $0) }
+            if let displayImage, let pixels = displayImage.cgImage {
+                let metadata = dng.flatMap { PhotoMetadata.properties(of: $0) }
                 await MainActor.run {
                     self.present(
-                        base: preview,
-                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
+                        base: pixels,
+                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: dng != nil),
                         isSample: false,
-                        status: "从 App 内的 DNG 显影。",
+                        status: "原片。改一项之后才重新显影。",
                         sourceDNG: dng,
                         sourceMetadata: metadata,
                         aspect: aspect,
-                        lensZoom: zoom
+                        lensZoom: zoom,
+                        originalImage: displayImage,
+                        originalData: displayData
                     )
                 }
                 return
             }
-            if let stored = displayStored, let url = StillArchive.resolve(stored),
-               let image = AlbumImage.fileImage(url: url, maxSide: nil) {
+            if let dng, let url = dngURL, let image = AlbumImage.fileImage(url: url, maxSide: nil), let pixels = image.cgImage {
                 await MainActor.run {
-                    self.openDevelop(image: image, originalWasRaw: hasRaw, lensZoom: zoom)
+                    self.present(
+                        base: pixels,
+                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
+                        isSample: false,
+                        status: "原片。改一项之后才重新显影。",
+                        sourceDNG: dng,
+                        sourceMetadata: PhotoMetadata.properties(of: dng),
+                        aspect: aspect,
+                        lensZoom: zoom,
+                        originalImage: image
+                    )
                 }
                 return
             }
+            _ = hasRaw
             await MainActor.run {
                 self.camera.statusMessage = "文件丢失"
             }
@@ -174,36 +179,20 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let rawShot = PhiRawAsset.contains(asset)
         Task {
             let dng = await PhotoLibrary.loadAlternateData(for: asset)
-            if let dng, let preview = RawDevelop.image(
-                dng: dng,
-                exposureEV: 0,
-                style: .off,
-                look: .none,
-                halo: false,
-                aspect: aspect,
-                lensZoom: zoom,
-                maxSide: 1600,
-                draft: false
-            ) {
-                let metadata = PhotoMetadata.properties(of: dng)
+            if let image = await AlbumImage.loadOriginal(asset), let pixels = image.cgImage {
                 await MainActor.run {
                     self.present(
-                        base: preview,
-                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
+                        base: pixels,
+                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: dng != nil || rawShot),
                         isSample: false,
-                        status: "从相册里的 Bayer DNG 重新显影。",
+                        status: "原片。改一项之后才重新显影。",
                         sourceDNG: dng,
-                        sourceMetadata: metadata,
+                        sourceMetadata: dng.flatMap { PhotoMetadata.properties(of: $0) },
                         aspect: aspect,
                         lensZoom: zoom,
-                        location: asset.location
+                        location: asset.location,
+                        originalImage: image
                     )
-                }
-                return
-            }
-            if let image = await AlbumImage.loadOriginal(asset) {
-                await MainActor.run {
-                    self.openDevelop(image: image, originalWasRaw: rawShot, lensZoom: zoom)
                 }
                 return
             }
@@ -233,12 +222,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     /// Opens the last developed still, or the bundled sample when nothing has been captured.
     func openProcess() {
         if let base = StillArchive.loadBasePreview() {
-            let recipe = StillArchive.loadRecipe() ?? StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false)
             present(
                 base: base,
-                recipe: recipe,
+                recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false),
                 isSample: false,
-                status: lastSavedNote
+                status: lastSavedNote,
+                originalImage: UIImage(cgImage: base)
             )
             return
         }
@@ -284,7 +273,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let look = session.colorLook
         let halo = session.halo
         let zoom = session.lensZoom
+        let neutral = session.isNeutral
+        let originalPixels = session.originalImage?.cgImage
         let rendered = await Task.detached(priority: .userInitiated) {
+            if neutral {
+                return originalPixels ?? base
+            }
             if let dng {
                 return RawDevelop.image(
                     dng: dng,
@@ -766,12 +760,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         sourceMetadata: [String: Any]? = nil,
         aspect: PhotoAspect = .threeByFour,
         lensZoom: Double = 1,
-        location: CLLocation? = nil
+        location: CLLocation? = nil,
+        originalImage: UIImage? = nil,
+        originalData: Data? = nil
     ) {
         let session = ProcessSession(
             base: base,
-            exposureEV: recipe.exposureEV,
-            style: recipe.style,
+            exposureEV: 0,
+            style: .off,
             isSample: isSample,
             originalWasRaw: recipe.originalWasRaw,
             status: status,
@@ -780,8 +776,10 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             framedAspect: aspect,
             lensZoom: lensZoom,
             captureLocation: location,
-            colorLook: recipe.colorLook,
-            halo: recipe.halo
+            colorLook: .none,
+            halo: false,
+            originalImage: originalImage ?? UIImage(cgImage: base),
+            originalData: originalData
         )
         if isSample == false {
             session.onPreview = { [weak self] image in
@@ -794,7 +792,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     : "导出时另存处理图，不覆盖刚拍的原片。"
             }
         }
-        session.schedule()
+        session.preview = session.originalImage ?? UIImage(cgImage: base)
+        session.developInfo = "原片 · \(session.preview?.size.width ?? 0)x\(session.preview?.size.height ?? 0)"
         processSession = session
     }
 
