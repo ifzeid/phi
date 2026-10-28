@@ -11,6 +11,8 @@ struct FinderSettingsSheet: View {
     var shutter: Double
     var shutterChoices: [Double]
     var manualSupported: Bool
+    var manual: Bool
+    var onManual: (Bool) -> Void
     var onISO: (Float) -> Void
     var onShutter: (Double) -> Void
     var onClose: () -> Void
@@ -25,23 +27,39 @@ struct FinderSettingsSheet: View {
                 section("ASPECT", caption: "默认 3:4，即整幅传感器。其他画幅从中心裁切，取景和成片一致。这些画幅不写 RAW。") {
                     PhotoAspectPicker(selection: aspect, onSelect: onAspect)
                 }
-                section("ISO", caption: manualSupported ? "锁定这枚镜头的感光度" : "这枚镜头不能单独锁定 ISO 或快门。") {
+                section("ISO / SHUTTER", caption: exposureCaption) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("手动曝光")
+                                .font(CameraFont.interface(15, weight: .medium))
+                                .foregroundStyle(CameraColor.textPrimary)
+                            Text("Manual exposure")
+                                .font(CameraFont.interface(12))
+                                .foregroundStyle(CameraColor.textSecondary)
+                        }
+                        Spacer()
+                        Toggle("手动曝光", isOn: Binding(get: { manual }, set: onManual))
+                            .labelsHidden()
+                            .tint(CameraColor.accent)
+                            .disabled(manualSupported == false)
+                    }
+                    .frame(minHeight: 44)
                     StepValue(
                         text: isoText,
-                        canDecrease: isoIndex > 0,
-                        canIncrease: isoIndex < isoChoices.count - 1,
+                        canDecrease: manual && isoIndex > 0,
+                        canIncrease: manual && isoIndex < isoChoices.count - 1,
                         onDecrease: { stepISO(-1) },
                         onIncrease: { stepISO(1) }
                     )
-                }
-                section("SHUTTER", caption: "锁定快门时间") {
+                    .opacity(manual ? 1 : 0.4)
                     StepValue(
                         text: MeterFormat.shutter(seconds: shutter),
-                        canDecrease: shutterIndex > 0,
-                        canIncrease: shutterIndex < shutterChoices.count - 1,
+                        canDecrease: manual && shutterIndex > 0,
+                        canIncrease: manual && shutterIndex < shutterChoices.count - 1,
                         onDecrease: { stepShutter(-1) },
                         onIncrease: { stepShutter(1) }
                     )
+                    .opacity(manual ? 1 : 0.4)
                 }
             }
             .padding(.horizontal, 20)
@@ -85,6 +103,16 @@ struct FinderSettingsSheet: View {
                 .foregroundStyle(CameraColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var exposureCaption: String {
+        if manualSupported == false {
+            return "这枚镜头不能单独锁定 ISO 或快门。"
+        }
+        if manual {
+            return "打开后在取景框里拖动刻度。这里的加减和取景框是同一组数值。关掉回到自动曝光。"
+        }
+        return "默认关闭。取景框下方仍是自动曝光。打开后，快门和感光度出现在取景框里。"
     }
 
     private var formatCaption: String {

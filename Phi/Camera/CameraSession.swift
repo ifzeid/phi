@@ -47,6 +47,11 @@ final class CameraSession: ObservableObject {
     private var notificationTokens: [NSObjectProtocol] = []
     private var restartAttempts = 0
     private var currentInput: AVCaptureDeviceInput?
+    private var inputsByID: [String: AVCaptureDeviceInput] = [:]
+    /// Device whose active format was chosen so the HEIF and the DNG share one pixel size.
+    private var stillFormatDeviceID: String?
+    private var customExposureQueued = false
+    private var focusReturnObservation: NSKeyValueObservation?
     private var manualISO: Float?
     private var manualDuration: CMTime?
     private var supportedFlashModes: [AVCaptureDevice.FlashMode] = []
@@ -217,20 +222,20 @@ final class CameraSession: ObservableObject {
     func setManualISO(_ iso: Float) {
         manualISOValue = iso
         autoExposure = false
-        runOnSessionAfterSuspendingPreview {
+        sessionQueue.async {
             self.exposureIsAuto = false
             self.manualISO = iso
-            self.applyCustomOrExplain()
+            self.queueCustomExposure()
         }
     }
 
     func setManualShutter(_ seconds: Double) {
         manualShutterSeconds = seconds
         autoExposure = false
-        runOnSessionAfterSuspendingPreview {
+        sessionQueue.async {
             self.exposureIsAuto = false
             self.manualDuration = CMTime(seconds: seconds, preferredTimescale: 1_000_000_000)
-            self.applyCustomOrExplain()
+            self.queueCustomExposure()
         }
     }
 
@@ -256,28 +261,96 @@ final class CameraSession: ObservableObject {
     }
 
     func focus(at devicePoint: CGPoint) {
+        let point = CGPoint(
+            x: min(max(devicePoint.x, 0), 1),
+            y: min(max(devicePoint.y, 0), 1)
+        )
         sessionQueue.async {
-            try? self.lockDevice { device in
-                let point = CGPoint(x: min(max(devicePoint.x, 0), 1), y: min(max(devicePoint.y, 0), 1))
-                if device.isFocusPointOfInterestSupported {
-                    device.focusPointOfInterest = point
-                }
-                if device.isFocusModeSupported(.continuousAutoFocus) {
-                    device.focusMode = .continuousAutoFocus
-                } else if device.isFocusModeSupported(.autoFocus) {
-                    device.focusMode = .autoFocus
-                }
-                if self.exposureIsAuto {
-                    if device.isExposurePointOfInterestSupported {
-                        device.exposurePointOfInterest = point
-                    }
-                    if device.isExposureModeSupported(.continuousAutoExposure) {
-                        device.exposureMode = .continuousAutoExposure
-                    }
+            self.applyTapFocus(point)
+        }
+    }
+
+    /// One-shot autofocus at the tap, then back to continuous. Smooth autofocus stays off.
+    private func applyTapFocus(_ point: CGPoint) {
+        focusReturnObservation?.invalidate()
+        focusReturnObservation = nil
+        try? lockDevice { device in
+            Self.prepareFocusHardware(device)
+            if device.isFocusPointOfInterestSupported {
+                device.focusPointOfInterest = point
+            }
+            if device.isExposurePointOfInterestSupported {
+                device.exposurePointOfInterest = point
+            }
+            if device.isFocusModeSupported(.autoFocus) {
+                device.focusMode = .autoFocus
+            } else if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            }
+            if self.exposureIsAuto {
+                if device.isExposureModeSupported(.autoExpose) {
+                    device.exposureMode = .autoExpose
+                } else if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
                 }
             }
+        }
+        guard let device else { return }
+        focusReturnObservation = device.observe(\.isAdjustingFocus, options: [.new]) { [weak self] device, _ in
+            guard device.isAdjustingFocus == false else { return }
+            self?.sessionQueue.async {
+                self?.restoreContinuousFocus()
+            }
+        }
+        sessionQueue.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let device = self?.device, device.isAdjustingFocus == false else { return }
+            self?.restoreContinuousFocus()
+        }
+        DispatchQueue.main.async {
+            self.focusLocked = false
+        }
+    }
+
+    private func restoreContinuousFocus() {
+        focusReturnObservation?.invalidate()
+        focusReturnObservation = nil
+        try? lockDevice { device in
+            Self.prepareFocusHardware(device)
+            if device.isFocusModeSupported(.continuousAutoFocus), device.focusMode != .continuousAutoFocus {
+                device.focusMode = .continuousAutoFocus
+            }
+            if self.exposureIsAuto, device.isExposureModeSupported(.continuousAutoExposure), device.exposureMode != .continuousAutoExposure {
+                device.exposureMode = .continuousAutoExposure
+            }
+        }
+    }
+
+    private static func prepareFocusHardware(_ device: AVCaptureDevice) {
+        if device.isSmoothAutoFocusSupported {
+            device.isSmoothAutoFocusEnabled = false
+        }
+        if device.isAutoFocusRangeRestrictionSupported {
+            device.autoFocusRangeRestriction = .none
+        }
+    }
+
+    /// Applies the latest ISO and shutter. Skips the preview teardown once this camera already allows custom exposure.
+    private func queueCustomExposure() {
+        if customExposureQueued { return }
+        customExposureQueued = true
+        sessionQueue.async {
+            self.customExposureQueued = false
+            guard self.exposureIsAuto == false else { return }
+            if self.device?.isExposureModeSupported(.custom) == true {
+                try? self.lockCustomExposure()
+                return
+            }
             DispatchQueue.main.async {
-                self.focusLocked = false
+                self.previewAnchor.suspend()
+                self.sessionQueue.async {
+                    self.applyCustomOrExplain()
+                    self.previewAnchor.resume(device: self.device)
+                }
             }
         }
     }
@@ -412,7 +485,7 @@ final class CameraSession: ObservableObject {
                 }
                 return
             }
-            let switching = self.needsPhysicalRawSwitch()
+            let switching = self.needsPhysicalRawSwitch() || self.needsStillFormatWork()
             let shoot = {
                 self.settleRawCamera()
                 let prepared = self.makeSettings(flash: flash)
@@ -513,9 +586,9 @@ final class CameraSession: ObservableObject {
         }
         // Upgrade before the preview exists, so the later 108mm stop only ramps zoom.
         adoptVirtualCameraIfPossible()
+        prebuildInputs()
         let active = self.device ?? device
         try? prepare(active)
-        applyCaptureRotation()
         observeMeter(active)
         let discovery = discover(active)
         didConfigure = true
@@ -544,6 +617,7 @@ final class CameraSession: ObservableObject {
             if device.isLowLightBoostSupported {
                 device.automaticallyEnablesLowLightBoostWhenAvailable = false
             }
+            Self.prepareFocusHardware(device)
         }
     }
 
@@ -585,16 +659,6 @@ final class CameraSession: ObservableObject {
             if !discovery.flashModes.contains(self.flashMode) {
                 self.flashMode = .off
             }
-        }
-    }
-
-    /// Portrait, rear camera. The app is portrait-only, so the still connection does not need a coordinator.
-    /// `RotationCoordinator` created off the main thread while a preview is attached deadlocks the session.
-    private func applyCaptureRotation() {
-        guard let connection = photoOutput.connection(with: .video) else { return }
-        let portrait: CGFloat = 90
-        if connection.isVideoRotationAngleSupported(portrait) {
-            connection.videoRotationAngle = portrait
         }
     }
 
@@ -660,6 +724,10 @@ final class CameraSession: ObservableObject {
         } else {
             settings = AVCapturePhotoSettings(format: processed)
         }
+        let dimensions = photoOutput.maxPhotoDimensions
+        if dimensions.width > 0, dimensions.height > 0 {
+            settings.maxPhotoDimensions = dimensions
+        }
         settings.photoQualityPrioritization = .speed
         if photoOutput.supportedFlashModes.contains(flash) {
             settings.flashMode = flash
@@ -702,36 +770,78 @@ final class CameraSession: ObservableObject {
             guard zoom.isFinite else { return }
             if abs(device.videoZoomFactor - zoom) < 0.01 { return }
             if ramp, device.isRampingVideoZoom == false {
-                device.ramp(toVideoZoomFactor: zoom, withRate: 8)
+                device.ramp(toVideoZoomFactor: zoom, withRate: 24)
             } else {
                 device.videoZoomFactor = zoom
             }
         }
     }
 
-    private func switchInput(to newDevice: AVCaptureDevice) throws {
-        if device?.uniqueID == newDevice.uniqueID { return }
+    /// One configuration block. The photo output stays attached. Inputs are built once and reused.
+    private func switchInput(to newDevice: AVCaptureDevice, matchStillFormat: Bool = false) throws {
+        let sameDevice = device?.uniqueID == newDevice.uniqueID
+        if sameDevice, matchStillFormat == false { return }
+        if sameDevice, matchStillFormat, stillFormatDeviceID == newDevice.uniqueID { return }
+        let input = try cachedInput(for: newDevice)
         session.beginConfiguration()
-        if let currentInput {
-            session.removeInput(currentInput)
-        }
-        let input = try AVCaptureDeviceInput(device: newDevice)
-        guard session.canAddInput(input) else {
-            if let currentInput, session.canAddInput(currentInput) {
-                session.addInput(currentInput)
+        if sameDevice == false {
+            if let currentInput {
+                session.removeInput(currentInput)
             }
-            session.commitConfiguration()
-            throw SetupError.cannotAdd
+            guard session.canAddInput(input) else {
+                if let currentInput, session.canAddInput(currentInput) {
+                    session.addInput(currentInput)
+                }
+                session.commitConfiguration()
+                throw SetupError.cannotAdd
+            }
+            session.addInput(input)
+            currentInput = input
+            device = newDevice
         }
-        session.addInput(input)
-        currentInput = input
-        device = newDevice
+        if matchStillFormat, let active = device {
+            do {
+                try active.lockForConfiguration()
+            } catch {
+                session.commitConfiguration()
+                throw error
+            }
+            if let format = Self.matchedStillFormat(for: active), active.activeFormat != format {
+                active.activeFormat = format
+            }
+            active.unlockForConfiguration()
+            stillFormatDeviceID = active.uniqueID
+        }
         session.commitConfiguration()
-        applyCaptureRotation()
-        observeMeter(newDevice)
-        let deviceID = newDevice.uniqueID
-        DispatchQueue.main.async {
-            self.activeDeviceID = deviceID
+        if sameDevice == false {
+            observeMeter(newDevice)
+            let deviceID = newDevice.uniqueID
+            DispatchQueue.main.async {
+                self.activeDeviceID = deviceID
+            }
+        }
+    }
+
+    private func cachedInput(for device: AVCaptureDevice) throws -> AVCaptureDeviceInput {
+        if let existing = inputsByID[device.uniqueID] { return existing }
+        let input = try AVCaptureDeviceInput(device: device)
+        inputsByID[device.uniqueID] = input
+        return input
+    }
+
+    private func prebuildInputs() {
+        if let currentInput, let device, inputsByID[device.uniqueID] == nil {
+            inputsByID[device.uniqueID] = currentInput
+        }
+        var cameras = Self.backCameras()
+        if let virtual = Self.virtualBackCamera() {
+            cameras.append(virtual)
+        }
+        for camera in cameras {
+            if inputsByID[camera.uniqueID] != nil { continue }
+            if let input = try? AVCaptureDeviceInput(device: camera) {
+                inputsByID[camera.uniqueID] = input
+            }
         }
     }
 
@@ -927,8 +1037,18 @@ final class CameraSession: ObservableObject {
         activeStopOptical = true
         if needsPhysicalRawSwitch(), let physical = AVCaptureDevice(uniqueID: stop.deviceID) {
             do {
-                try switchInput(to: physical)
+                try switchInput(to: physical, matchStillFormat: true)
                 try applyZoom(1, ramp: false)
+            } catch {
+                rawSuppressed = true
+                return
+            }
+        } else if let device {
+            do {
+                try switchInput(to: device, matchStillFormat: true)
+                if abs(Double(device.videoZoomFactor) - 1) > 0.05 {
+                    try applyZoom(1, ramp: false)
+                }
             } catch {
                 rawSuppressed = true
                 return
@@ -970,23 +1090,42 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    /// Bayer on this phone is the binned 12MP frame. The processed companion uses that size, not 48MP.
+    /// The processed photo is scaled down to `maxPhotoDimensions`. The DNG stays at the format's full readout.
+    /// Those two sizes have to be the same or Photos returns invalidResource. Pick a ~12MP format, then use its largest size for both.
     private func alignPhotoDimensions() {
         guard let device else { return }
-        guard let match = Self.twelveMegapixelDimensions(device.activeFormat.supportedMaxPhotoDimensions) else { return }
+        guard let match = Self.largestPhotoDimensions(device.activeFormat) else { return }
         let current = photoOutput.maxPhotoDimensions
         if current.width != match.width || current.height != match.height {
             photoOutput.maxPhotoDimensions = match
         }
     }
 
-    private static func twelveMegapixelDimensions(_ choices: [CMVideoDimensions]) -> CMVideoDimensions? {
-        let targetArea = 12_000_000
-        return choices.min(by: { lhs, rhs in
-            let leftArea = Int(lhs.width) * Int(lhs.height)
-            let rightArea = Int(rhs.width) * Int(rhs.height)
-            return abs(leftArea - targetArea) < abs(rightArea - targetArea)
-        })
+    private func needsStillFormatWork() -> Bool {
+        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), stop.isOpticalStep else { return false }
+        guard let device else { return false }
+        return stillFormatDeviceID != device.uniqueID
+    }
+
+    /// Prefer the format whose full photo size is nearest 12MP, so Bayer and the HEIF are the same frame.
+    private static func matchedStillFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        let ranked: [(AVCaptureDevice.Format, Int)] = device.formats.compactMap { format in
+            guard let area = largestPhotoDimensions(format).map({ Int($0.width) * Int($0.height) }), area > 0 else {
+                return nil
+            }
+            return (format, area)
+        }
+        guard ranked.isEmpty == false else { return nil }
+        let nearTwelve = ranked.filter { abs($0.1 - 12_000_000) <= 4_000_000 }
+        let pool = nearTwelve.isEmpty ? ranked : nearTwelve
+        return pool.min(by: { abs($0.1 - 12_000_000) < abs($1.1 - 12_000_000) })?.0
+    }
+
+    private static func largestPhotoDimensions(_ format: AVCaptureDevice.Format) -> CMVideoDimensions? {
+        format.supportedMaxPhotoDimensions.max { lhs, rhs in
+            Int(lhs.width) * Int(lhs.height) < Int(rhs.width) * Int(rhs.height)
+        }
     }
 
     private func publishLensesAndManualSupport() {

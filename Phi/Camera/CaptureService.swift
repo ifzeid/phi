@@ -410,31 +410,39 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
 
         DispatchQueue.global(qos: .userInitiated).async {
             let spokenCodec = codec
-            let processedExt = codec == "HEIC" ? "heic" : "jpg"
-            let processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
-            // Keep Apple's HEIF/JPEG bytes. Develop runs later, from the stored DNG, when the user taps 编辑.
-            // Photos rejects a DNG that is the only resource, so RAW mode still pairs Apple's file as the primary.
+            // Keep Apple's original HEIF/JPEG bytes. Develop runs later, from the stored DNG, when the user taps 编辑.
             let stamp = StillArchive.stamp()
+            let processedBox = originalProcessed.map { CapturedContainer.inspect($0) }
+            let rawBox = rawData.map { CapturedContainer.inspect($0) }
+            let photosLog = Logger(subsystem: "com.zeid.phi", category: "photos")
+            if let processedBox {
+                photosLog.info("capture primary \(processedBox.logLine, privacy: .public) label \(spokenCodec, privacy: .public)")
+            } else {
+                photosLog.error("capture produced no processed HEIF/JPEG")
+            }
+            if let rawBox {
+                photosLog.info("capture raw \(rawBox.logLine, privacy: .public)")
+            }
             var files: [LibraryRecord.File] = []
             var payloads: [LibraryPayload] = []
-            if let originalProcessed,
-               let url = try? StillArchive.write(data: originalProcessed, stamp: stamp, ext: processedExt) {
+            if let processedBox, processedBox.isDecodableImage, processedBox.isRawContainer == false,
+               let url = try? StillArchive.write(data: processedBox.data, stamp: stamp, ext: processedBox.filenameExtension) {
                 let file = LibraryRecord.File(
                     path: url.path,
-                    typeIdentifier: processedUTI,
+                    typeIdentifier: processedBox.typeIdentifier,
                     filename: url.lastPathComponent,
                     alternate: false
                 )
                 files.append(file)
                 payloads.append(LibraryPayload(
-                    data: originalProcessed,
-                    typeIdentifier: processedUTI,
+                    data: processedBox.data,
+                    typeIdentifier: processedBox.typeIdentifier,
                     filename: file.filename,
                     alternate: false
                 ))
             }
-            if saveRaw, let rawData,
-               let url = try? StillArchive.write(data: rawData, stamp: stamp, ext: "dng") {
+            if saveRaw, let rawBox, rawBox.isRawContainer,
+               let url = try? StillArchive.write(data: rawBox.data, stamp: stamp, ext: "dng") {
                 let alternate = files.isEmpty == false
                 let file = LibraryRecord.File(
                     path: url.path,
@@ -444,8 +452,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 )
                 files.append(file)
                 payloads.append(LibraryPayload(
-                    data: rawData,
-                    typeIdentifier: rawUTI,
+                    data: rawBox.data,
+                    typeIdentifier: rawBox.typeIdentifier,
                     filename: file.filename,
                     alternate: alternate
                 ))

@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import ImageIO
+import os
 import Photos
 import UIKit
 import UniformTypeIdentifiers
@@ -210,14 +211,24 @@ enum PhotoLibrary {
             album = nil
         }
         let box = IdentifierBox()
-        let items = payloads
+        let items = normalizedForPhotos(payloads)
+        guard let primary = items.first(where: { $0.alternate == false }) else {
+            throw PhotoSaveError.failed(domain: "com.zeid.phi", code: 1, message: "没有可用的 HEIF/JPEG 主图")
+        }
         let shotLocation = location
+        let log = Logger(subsystem: "com.zeid.phi", category: "photos")
+        for item in items {
+            let container = CapturedContainer.inspect(item.data)
+            let kind = item.alternate ? "alternatePhoto" : "photo"
+            log.info("resource \(kind, privacy: .public) \(container.logLine, privacy: .public) file \(item.filename, privacy: .public)")
+        }
         do {
             try await PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetCreationRequest.forAsset()
                 request.location = shotLocation
                 for item in items {
                     let options = PHAssetResourceCreationOptions()
+                    options.shouldMoveFile = false
                     options.uniformTypeIdentifier = item.typeIdentifier
                     options.originalFilename = item.filename
                     let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
@@ -231,9 +242,44 @@ enum PhotoLibrary {
                 }
             }
         } catch let error as NSError {
+            let primaryLine = CapturedContainer.inspect(primary.data).logLine
+            log.error("Photos rejected \(primaryLine, privacy: .public) \(error.domain, privacy: .public) \(error.code)")
             throw PhotoSaveError.failed(domain: error.domain, code: error.code, message: error.localizedDescription)
         }
         return box.localIdentifier
+    }
+
+    /// Primary `.photo` is Apple's HEIF or JPEG. The DNG is `.alternatePhoto` only beside a real primary from the same capture.
+    /// A lone DNG, an empty file, or a HEIF whose pixels don't match the DNG is what Photos reports as invalidResource (3300).
+    private static func normalizedForPhotos(_ payloads: [LibraryPayload]) -> [LibraryPayload] {
+        let inspected = payloads.map { item in
+            (item, CapturedContainer.inspect(item.data))
+        }
+        let primary = inspected.first { $0.1.isRawContainer == false && $0.1.isDecodableImage && ($0.1.filenameExtension == "heic" || $0.1.filenameExtension == "jpg") }
+            ?? inspected.first { $0.1.isRawContainer == false && $0.1.isDecodableImage }
+        guard let primary else { return [] }
+        var results = [libraryPayload(primary.0, container: primary.1, alternate: false)]
+        if let raw = inspected.first(where: { $0.1.isRawContainer && $0.1.data.count > 64 }) {
+            if raw.1.matchesPixels(of: primary.1) == false, primary.1.pixelWidth > 0, raw.1.pixelWidth > 0 {
+                Logger(subsystem: "com.zeid.phi", category: "photos").error(
+                    "DNG \(raw.1.pixelWidth)x\(raw.1.pixelHeight) does not match primary \(primary.1.pixelWidth)x\(primary.1.pixelHeight)"
+                )
+            }
+            results.append(libraryPayload(raw.0, container: raw.1, alternate: true))
+        }
+        return results
+    }
+
+    private static func libraryPayload(_ item: LibraryPayload, container: CapturedContainer, alternate: Bool) -> LibraryPayload {
+        let ext = container.filenameExtension
+        let stem = (item.filename as NSString).deletingPathExtension
+        let filename = stem.isEmpty ? "PHI.\(ext)" : "\(stem).\(ext)"
+        return LibraryPayload(
+            data: item.data,
+            typeIdentifier: container.typeIdentifier,
+            filename: filename,
+            alternate: alternate
+        )
     }
 
     /// Creates the PHI album when missing. Requires read/write or limited access.

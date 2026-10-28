@@ -30,6 +30,15 @@ enum MeterFormat {
         let denominator = max(1, Int((1.0 / seconds).rounded()))
         return "1/\(denominator) S"
     }
+
+    /// Tick label without the unit suffix. `1/60`, or `0.4` for a long exposure.
+    static func shutterFraction(_ seconds: Double) -> String {
+        let labeled = shutter(seconds: seconds)
+        if labeled.hasSuffix(" S") {
+            return String(labeled.dropLast(2))
+        }
+        return labeled
+    }
 }
 
 enum ExposureStops {
