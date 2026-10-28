@@ -1,7 +1,7 @@
 import AVFoundation
 import CoreLocation
 import ImageIO
-import UIKit
+import UniformTypeIdentifiers
 
 enum PhiVersion {
     /// Shown in EXIF/TIFF Software. Uses the bundle short version, currently 0.1.0.
@@ -12,11 +12,14 @@ enum PhiVersion {
 }
 
 enum PhotoMetadata {
-    /// Apple's file bytes, with GPS and Software merged in. Pixel data is not re-encoded.
+    /// Apple's container bytes, with GPS and Software merged in.
+    /// Swift `fileDataRepresentation()` takes no metadata argument on this SDK. ImageIO copies the source and merges properties, which does not decode and recompress the image.
     static func fileData(from photo: AVCapturePhoto, location: CLLocation?) -> (data: Data?, metadata: [String: Any]) {
         let metadata = merged(photo.metadata, location: location)
-        let data = photo.fileDataRepresentation(withReplacementMetadata: metadata) ?? photo.fileDataRepresentation()
-        return (data, metadata)
+        guard let original = photo.fileDataRepresentation() else {
+            return (nil, metadata)
+        }
+        return (injecting(metadata, into: original) ?? original, metadata)
     }
 
     static func properties(of data: Data) -> [String: Any]? {
@@ -37,6 +40,25 @@ enum PhotoMetadata {
             bridged[key as CFString] = value
         }
         return bridged
+    }
+
+    /// Copies the image container and merges `metadata`. Returns nil when ImageIO cannot copy, so the caller keeps the original bytes.
+    private static func injecting(_ metadata: [String: Any], into original: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(original as CFData, nil) else { return nil }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return nil }
+        let type = CGImageSourceGetType(source) ?? UTType.heic.identifier as CFString
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, type, count, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageDestinationMetadata: metadata,
+            kCGImageDestinationMergeMetadata: true
+        ]
+        var copyError: Unmanaged<CFError>?
+        guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, &copyError) else {
+            return nil
+        }
+        return output as Data
     }
 
     private static func merged(_ metadata: [String: Any], location: CLLocation?) -> [String: Any] {

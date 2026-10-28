@@ -160,7 +160,7 @@ struct AlbumBrowser: View {
     }
 
     private func accessibilityName(_ asset: PHAsset, index: Int) -> String {
-        let raw = asset.mediaSubtypes.contains(.photoRAW) ? "，含 RAW" : ""
+        let raw = PhiRawAsset.contains(asset) ? "，含 RAW" : ""
         return "第 \(index + 1) 张\(raw)"
     }
 
@@ -192,7 +192,7 @@ private struct AlbumThumb: View {
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if asset.mediaSubtypes.contains(.photoRAW) {
+                if PhiRawAsset.contains(asset) {
                     Text("RAW")
                         .font(CameraFont.parameter(9, medium: true))
                         .foregroundStyle(CameraColor.accent)
@@ -292,7 +292,7 @@ private struct AlbumPage: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
-                if asset.mediaSubtypes.contains(.photoRAW) {
+                if PhiRawAsset.contains(asset) {
                     Text("RAW")
                         .font(CameraFont.parameter(12, medium: true))
                         .foregroundStyle(CameraColor.accent)

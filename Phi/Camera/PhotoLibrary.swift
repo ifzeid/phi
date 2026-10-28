@@ -187,7 +187,7 @@ enum PhotoLibrary {
 
     static func loadAlternateData(for asset: PHAsset) async -> Data? {
         let resources = PHAssetResource.assetResources(for: asset)
-        guard let resource = resources.first(where: { $0.type == .alternatePhoto }) else { return nil }
+        guard let resource = resources.first(where: PhiRawAsset.isRaw) else { return nil }
         return await loadResource(resource)
     }
 
@@ -239,6 +239,29 @@ enum PhotoLibrary {
             return granted == .authorized || granted == .limited
         }
         return false
+    }
+}
+
+enum PhiRawAsset {
+    /// This SDK has no `PHAssetMediaSubtype.photoRAW`. A still is RAW when a resource is DNG/RAW.
+    static func contains(_ asset: PHAsset) -> Bool {
+        PHAssetResource.assetResources(for: asset).contains(where: isRaw)
+    }
+
+    static func isRaw(_ resource: PHAssetResource) -> Bool {
+        if isRawIdentifier(resource.uniformTypeIdentifier) { return true }
+        let name = resource.originalFilename.lowercased()
+        if name.hasSuffix(".dng") || name.hasSuffix(".raw") { return true }
+        return false
+    }
+
+    private static func isRawIdentifier(_ identifier: String) -> Bool {
+        let lowered = identifier.lowercased()
+        if lowered == "com.adobe.raw-image" || lowered == "public.camera-raw-image" { return true }
+        if let type = UTType(identifier) {
+            if type.conforms(to: .rawImage) { return true }
+        }
+        return lowered.contains("raw-image") || lowered.contains("camera-raw")
     }
 }
 

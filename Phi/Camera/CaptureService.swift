@@ -70,7 +70,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
         let aspect = PhiShotIndex.aspect(for: localIdentifier) ?? photoAspect
-        let rawShot = asset.mediaSubtypes.contains(.photoRAW)
+        let rawShot = PhiRawAsset.contains(asset)
         Task {
             let dng = await PhotoLibrary.loadAlternateData(for: asset)
             if let dng, let preview = RawDevelop.image(dng: dng, exposureEV: 0, style: .off, aspect: aspect, maxSide: 1600, draft: false) {
