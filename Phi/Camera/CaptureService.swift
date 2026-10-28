@@ -27,9 +27,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         captureCount = UserDefaults.standard.integer(forKey: StillArchive.countKey)
         canRetryPhotoSave = UserDefaults.standard.string(forKey: StillArchive.lastPathKey) != nil
             && UserDefaults.standard.bool(forKey: StillArchive.lastSavedKey) == false
-        hasDevelopBase = StillArchive.loadBasePreview() != nil
-        if let data = try? Data(contentsOf: StillArchive.thumbnailURL), let image = UIImage(data: data) {
-            thumbnail = image
+        hasDevelopBase = FileManager.default.fileExists(atPath: StillArchive.basePreviewURL.path)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let data = try? Data(contentsOf: StillArchive.thumbnailURL),
+                  let image = UIImage(data: data) else { return }
+            DispatchQueue.main.async {
+                self?.thumbnail = image
+            }
         }
         camera.objectWillChange
             .receive(on: DispatchQueue.main)

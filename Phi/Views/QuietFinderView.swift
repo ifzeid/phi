@@ -5,6 +5,7 @@ struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
     @State private var showExposure = false
+    @State private var editingISO = true
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
     @State private var flashOpacity: Double = 0
@@ -73,17 +74,33 @@ struct QuietFinderView: View {
         .padding(.bottom, bottomPad)
         .overlay(alignment: .bottom) {
             if showExposure {
-                ExposureSheet(
-                    ev: camera.exposureEV,
-                    range: camera.exposureRange,
-                    autoExposure: camera.autoExposure,
-                    onEV: { camera.setExposureEV($0) },
-                    onCommit: { camera.commitExposureEV() },
-                        onAuto: { enabled in
-                            _ = camera.setAutoExposure(enabled)
-                        },
-                    onClose: { setExposure(false) }
-                )
+                Group {
+                    if camera.autoExposure {
+                        ExposureSheet(
+                            ev: camera.exposureEV,
+                            range: camera.exposureRange,
+                            autoExposure: camera.autoExposure,
+                            onEV: { camera.setExposureEV($0) },
+                            onCommit: { camera.commitExposureEV() },
+                            onAuto: { enabled in
+                                _ = camera.setAutoExposure(enabled)
+                            },
+                            onClose: { setExposure(false) }
+                        )
+                    } else {
+                        ManualExposureSheet(
+                            iso: camera.manualISOValue,
+                            shutterSeconds: camera.manualShutterSeconds,
+                            isoChoices: camera.isoChoices,
+                            shutterChoices: camera.shutterChoices,
+                            editingISO: editingISO,
+                            onEditingISO: { editingISO = $0 },
+                            onISO: { camera.setManualISO($0) },
+                            onShutter: { camera.setManualShutter($0) },
+                            onClose: { setExposure(false) }
+                        )
+                    }
+                }
                 .padding(.bottom, caption + controls + bottomPad + 8)
                 .transition(.opacity)
             }
@@ -133,12 +150,13 @@ struct QuietFinderView: View {
     private var stage: some View {
         ZStack {
             CameraColor.surface
-            if camera.isConfigured && camera.isRunning {
+            if camera.isConfigured {
                 CameraPreview(session: camera.session, device: camera.videoDevice) { viewPoint, devicePoint in
                     focusPoint = viewPoint
                     focusToken += 1
                     camera.focus(at: devicePoint)
                 }
+                .id(camera.activeDeviceID)
             } else {
                 VStack(spacing: 18) {
                     Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
@@ -156,7 +174,7 @@ struct QuietFinderView: View {
         }
         .clipped()
         .overlay {
-            if camera.isConfigured && camera.isRunning, let message = camera.statusMessage {
+            if camera.isConfigured, let message = camera.statusMessage ?? (camera.isRunning ? nil : "正在打开相机") {
                 Text(message)
                     .font(CameraFont.interface(13, weight: .medium))
                     .foregroundStyle(CameraColor.textPrimary)
@@ -222,10 +240,16 @@ struct QuietFinderView: View {
                 GrainStylePicker(selection: capture.grainStyle) { capture.setGrainStyle($0) }
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            Text("\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
+            Text(camera.autoExposure
+                 ? "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV"
+                 : "\(Int(camera.manualISOValue.rounded())) · \(MeterFormat.shutter(seconds: camera.manualShutterSeconds))")
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(CameraColor.accent)
-                .accessibilityLabel("相机曝光补偿 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .accessibilityLabel(camera.autoExposure
+                    ? "相机曝光补偿 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV"
+                    : "手动 ISO \(Int(camera.manualISOValue.rounded()))，快门 \(camera.shutterText)")
         }
     }
 

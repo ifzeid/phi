@@ -32,6 +32,51 @@ enum MeterFormat {
     }
 }
 
+enum ExposureStops {
+    /// Third-stop ISO values inside the device format range.
+    static func isos(min: Float, max: Float) -> [Float] {
+        guard max >= min, min > 0 else { return [] }
+        var values: [Float] = []
+        var iso = min
+        var steps = 0
+        while iso <= max * 1.01, steps < 90 {
+            let display: Float = iso >= 100 ? iso.rounded() : (iso * 10).rounded() / 10
+            let clamped = min(max, max(min, display))
+            if values.last.map({ abs($0 - clamped) > 0.4 }) ?? true {
+                values.append(clamped)
+            }
+            iso *= pow(2, 1.0 / 3.0)
+            steps += 1
+        }
+        if let last = values.last, last < max - 0.5 {
+            values.append(max)
+        }
+        return values
+    }
+
+    /// Standard shutter speeds that fall inside the device limits.
+    static func shutters(min secondsMin: Double, max secondsMax: Double) -> [Double] {
+        guard secondsMax >= secondsMin, secondsMin > 0 else { return [] }
+        let candidates = [
+            1.0 / 8000, 1.0 / 4000, 1.0 / 2000, 1.0 / 1000, 1.0 / 500, 1.0 / 250,
+            1.0 / 125, 1.0 / 60, 1.0 / 30, 1.0 / 15, 1.0 / 8, 1.0 / 4, 1.0 / 2,
+            1.0, 2.0, 4.0, 8.0
+        ]
+        let filtered = candidates.filter { $0 + 0.000_000_1 >= secondsMin && $0 <= secondsMax * 1.02 }
+        return filtered.isEmpty ? [secondsMin, secondsMax] : filtered
+    }
+
+    static func nearestIndex(to value: Float, in choices: [Float]) -> Int {
+        guard !choices.isEmpty else { return 0 }
+        return choices.enumerated().min { abs($0.element - value) < abs($1.element - value) }?.offset ?? 0
+    }
+
+    static func nearestIndex(to value: Double, in choices: [Double]) -> Int {
+        guard !choices.isEmpty else { return 0 }
+        return choices.enumerated().min { abs($0.element - value) < abs($1.element - value) }?.offset ?? 0
+    }
+}
+
 enum AspectLabel {
     /// Longer side first, so a portrait 3024×4032 frame still reads `4:3`.
     static func photo(width: Int, height: Int) -> String {
