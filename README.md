@@ -23,7 +23,7 @@ Requires a Mac with Xcode 16 or newer and the iOS 18 SDK. iPhone only. No storyb
 
 - `AVCaptureSession` 后置预览，`.photo` preset。
 - 拍照使用 `photoQualityPrioritization = .speed`（输出上的上限也是 `.speed`）。
-- 处理方式在设置里，取景顶栏用短标：**0**（Bayer RAW）、**Φ**（ProRAW）、**标准**（只存苹果的 HEIF/JPEG）。0 和 Φ 默认同时保存 HEIF：苹果的成片是主图，DNG 是副档。关掉时系统仍需要这张主图，否则会拒收单独的 DNG。旧的 JPEG+RAW 会迁成 0 且 HEIF 开，RAW 迁成 0 且 HEIF 关，JPEG 迁成标准。成片格式可选 HEIC 或 JPEG，默认 HEIC。质量优先级保持 `.speed`。有定位权限时写入 GPS。Software 为 `PHI` 加版本号。
+- 处理方式在设置里，取景顶栏用短标：**0**（Bayer RAW）、**Φ**（ProRAW）、**1**（只存苹果的 HEIF/JPEG）。0 和 Φ 默认同时保存 HEIF：苹果的成片是主图，DNG 是副档。关掉时系统仍需要这张主图，否则会拒收单独的 DNG。旧的 JPEG+RAW 会迁成 0 且 HEIF 开，RAW 迁成 0 且 HEIF 关，JPEG 迁成 1。成片格式可选 HEIC 或 JPEG，默认 HEIC。质量优先级保持 `.speed`。有定位权限时写入 GPS。Software 为 `PHI` 加版本号。
 - 拍完不打开编辑。缩略图更新，取景留着拍下一张。苹果的 HEIF/JPEG 原字节和 Bayer DNG 按格式同时写入 App 相册和系统相册。只存 DNG、没有主图时系统会拒收，所以 RAW 档也会配上苹果那张 HEIF/JPEG。编辑从相册里的「编辑」开始，有 DNG 就从 DNG 显影。默认色貌「无」先走一条固定的全局胶片曲线（0→0、0.16→0.09、0.42→0.40、0.70→0.74、1→0.97），饱和 1.12、对比 1.04，再加很轻的锐化（`CIRAWFilter` sharpness 0.3、detail 0.4，以及半径 0.6、强度 0.4 的 unsharp）。局部色调映射、降噪、boost、对比度旋钮保持 0。正片、负片、黑白、光晕叠在这条底上。导出是全尺寸、质量 0.98 的一次 HEIF，不写 10-bit depth 标记，并带上原来的 EXIF/GPS。裁切档没有 RAW 时，编辑退回那张存档图。
 - 画幅也在设置里。默认 **3:4**。另有 **1:1**、**2:3**、**9:16**：取景和 PHI 显影成片从中心裁切。系统存档的 HEIF 保持整幅原文件，不重编码。这三档不写 RAW。
 - 快门旁的缩略图打开 **PHI 相册**，不是编辑页。相册只列这台 App 写入的照片（相册名 `PHI`，本机记下的资源编号，以及还没写进系统相册的 App 内文件），不是整卷系统相册。拍摄保存仍先用「仅添加照片」。点进相册时才请求读取权限，系统允许的话可以只选中部分照片。全屏里点「编辑」才进入显影；也可以导出当前画面。系统相册写入失败时，提示里带 NSError 的 domain 和 code，照片留在 App 相册，可以重试。拍完相册会马上刷新。

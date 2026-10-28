@@ -789,7 +789,7 @@ final class CameraSession: ObservableObject {
         let processed: [String: Any] = [AVVideoCodecKey: chosenCodec.codec]
         let settings: AVCapturePhotoSettings
         // A RAW asset still needs Apple's processed file as `.photo`. Photos rejects a DNG with no primary.
-        // 标准 never requests RAW. ProRAW is already multi-frame, demosaiced, and denoised by Apple.
+        // Mode 1 never requests RAW. ProRAW is already multi-frame, demosaiced, and denoised by Apple.
         if let rawPixel {
             settings = AVCapturePhotoSettings(rawPixelFormatType: rawPixel, processedFormat: processed)
         } else {
