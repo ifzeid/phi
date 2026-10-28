@@ -22,6 +22,7 @@ struct AlbumBrowser: View {
     @State private var confirmDelete = false
     @State private var pendingDelete: [AlbumShot] = []
     @State private var deleteError: String?
+    @State private var shareURLs: [URL] = []
 
     private enum Phase {
         case checking
@@ -68,24 +69,7 @@ struct AlbumBrowser: View {
         }
         .task(id: revision) { await reload() }
         .safeAreaInset(edge: .bottom) {
-            if selecting, selected.isEmpty == false {
-                Button(action: requestDeleteSelected) {
-                    Text("删除")
-                        .font(CameraFont.interface(16, weight: .medium))
-                        .foregroundStyle(CameraColor.accent)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(CameraColor.border, lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
-                .accessibilityLabel("删除所选照片")
-            }
+            albumBar
         }
         .alert("删除这些照片？", isPresented: $confirmDelete) {
             Button("删除", role: .destructive) {
@@ -104,6 +88,9 @@ struct AlbumBrowser: View {
         } message: {
             Text(deleteError ?? "")
         }
+        .sheet(isPresented: Binding(get: { shareURLs.isEmpty == false }, set: { if $0 == false { shareURLs = [] } })) {
+            ActivityView(items: shareURLs.map { $0 as Any })
+        }
         .overlay {
             if let viewerIndex, shots.indices.contains(viewerIndex) {
                 AlbumPager(
@@ -120,70 +107,143 @@ struct AlbumBrowser: View {
     }
 
     private var header: some View {
-        ZStack {
-            VStack(spacing: 2) {
-                Text("PHI")
-                    .font(CameraFont.parameter(13, medium: true))
-                    .foregroundStyle(CameraColor.textPrimary)
-                if phase == .ready {
-                    Text("\(shots.count)")
-                        .font(CameraFont.parameter(11))
-                        .foregroundStyle(CameraColor.textSecondary)
+        HStack {
+            PhiGlyphButton(glyph: .close, label: "关闭相册", action: onClose)
+            Spacer()
+            Text(selecting ? "已选择 \(selected.count) 张" : "照片")
+                .font(CameraFont.interface(14, weight: .medium))
+                .foregroundStyle(CameraColor.textPrimary)
+            Spacer()
+            if phase == .ready, shots.isEmpty == false {
+                Button(selecting ? "取消" : "选择") {
+                    selecting.toggle()
+                    if selecting == false { selected = [] }
                 }
-            }
-            HStack {
-                Button(action: onClose) {
-                    PhiIcon(symbol: .close, color: CameraColor.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭相册")
-                Spacer()
-                if phase == .ready, shots.isEmpty == false {
-                    Button(selecting ? "取消" : "选择") {
-                        selecting.toggle()
-                        if selecting == false { selected = [] }
-                    }
-                    .font(CameraFont.interface(15, weight: .medium))
-                    .foregroundStyle(CameraColor.textPrimary)
-                    .padding(.trailing, limited && selecting == false ? 4 : 12)
-                    .accessibilityLabel(selecting ? "取消选择" : "选择照片")
-                }
-                if limited, selecting == false {
-                    Button("管理照片") { presentLimitedPicker() }
-                        .font(CameraFont.interface(13, weight: .medium))
-                        .foregroundStyle(CameraColor.textSecondary)
-                        .padding(.trailing, 8)
-                }
+                .font(CameraFont.interface(14, weight: .medium))
+                .foregroundStyle(CameraColor.textPrimary)
+                .frame(minWidth: 44, minHeight: 44)
+            } else {
+                Color.clear.frame(width: 44, height: 44)
             }
         }
         .padding(.horizontal, 8)
         .frame(height: 56)
     }
 
+    private var albumBar: some View {
+        HStack {
+            if selecting {
+                PhiGlyphButton(glyph: .trash, label: "删除所选照片", enabled: selected.isEmpty == false) {
+                    requestDeleteSelected()
+                }
+                Spacer()
+                Text("\(selected.count) 张照片")
+                    .font(CameraFont.interface(13))
+                    .foregroundStyle(CameraColor.textSecondary)
+                Spacer()
+                PhiGlyphButton(glyph: .share, label: "分享所选照片", enabled: selected.isEmpty == false) {
+                    shareSelected()
+                }
+            } else {
+                Text("\(shots.count) 张照片")
+                    .font(CameraFont.interface(13))
+                    .foregroundStyle(CameraColor.textSecondary)
+                Spacer()
+                Button("返回拍摄", action: onClose)
+                    .font(CameraFont.interface(14, weight: .medium))
+                    .foregroundStyle(CameraColor.textPrimary)
+                    .frame(minHeight: 44)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 56)
+        .background(CameraColor.background)
+    }
+
+    private var monthSections: [AlbumMonth] {
+        let calendar = Calendar(identifier: .gregorian)
+        var order: [String] = []
+        var buckets: [String: [AlbumItem]] = [:]
+        for (offset, shot) in shots.enumerated() {
+            let date = shot.date ?? Date()
+            let parts = calendar.dateComponents([.year, .month], from: date)
+            let key = "\(parts.year ?? 0)-\(parts.month ?? 0)"
+            if buckets[key] == nil {
+                order.append(key)
+                buckets[key] = []
+            }
+            buckets[key]?.append(AlbumItem(offset: offset, shot: shot))
+        }
+        return order.compactMap { key in
+            guard let items = buckets[key], let first = items.first else { return nil }
+            let date = first.shot.date ?? Date()
+            let title = Self.monthTitle(date)
+            let today = calendar.isDateInToday(date)
+            let subtitle = today ? "今天 · \(items.count) 张" : "\(items.count) 张"
+            return AlbumMonth(id: key, title: title, subtitle: subtitle, items: items)
+        }
+    }
+
+    private static func monthTitle(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月"
+        return formatter.string(from: date)
+    }
+
     private var grid: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(Array(shots.enumerated()), id: \.element.id) { offset, shot in
-                    Button {
-                        if selecting {
-                            if selected.contains(shot.id) {
-                                selected.remove(shot.id)
-                            } else {
-                                selected.insert(shot.id)
+            LazyVStack(alignment: .leading, spacing: 18) {
+                ForEach(monthSections) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(section.title)
+                            .font(CameraFont.interface(22, weight: .medium))
+                            .foregroundStyle(CameraColor.textPrimary)
+                        Text(section.subtitle)
+                            .font(CameraFont.interface(13))
+                            .foregroundStyle(CameraColor.textSecondary)
+                        LazyVGrid(columns: columns, spacing: 2) {
+                            ForEach(section.items) { item in
+                                Button {
+                                    toggle(item)
+                                } label: {
+                                    AlbumThumb(shot: item.shot, marked: selecting ? selected.contains(item.shot.id) : nil)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(accessibilityName(item.shot, index: item.offset))
                             }
-                        } else {
-                            viewerIndex = offset
                         }
-                    } label: {
-                        AlbumThumb(shot: shot, marked: selecting ? selected.contains(shot.id) : nil)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(accessibilityName(shot, index: offset))
+                }
+            }
+            .padding(.horizontal, 0)
+        }
+    }
+
+    private func toggle(_ item: AlbumItem) {
+        if selecting {
+            if selected.contains(item.shot.id) {
+                selected.remove(item.shot.id)
+            } else {
+                selected.insert(item.shot.id)
+            }
+        } else {
+            viewerIndex = item.offset
+        }
+    }
+
+    private func shareSelected() {
+        var urls: [URL] = []
+        for shot in shots where selected.contains(shot.id) {
+            if case .local(let local) = shot.source {
+                for file in local.files {
+                    if let url = StillArchive.resolve(file.path) {
+                        urls.append(url)
+                    }
                 }
             }
         }
+        shareURLs = urls
     }
 
     private var empty: some View {
@@ -315,6 +375,19 @@ struct AlbumBrowser: View {
     }
 }
 
+private struct AlbumItem: Identifiable {
+    var offset: Int
+    var shot: AlbumShot
+    var id: String { shot.id }
+}
+
+private struct AlbumMonth: Identifiable {
+    var id: String
+    var title: String
+    var subtitle: String
+    var items: [AlbumItem]
+}
+
 private struct AlbumShot: Identifiable {
     enum Source {
         case library(PHAsset)
@@ -374,16 +447,20 @@ private struct AlbumThumb: View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let image {
+                if shot.missing {
+                    VStack(spacing: 6) {
+                        PhiGlyphImage(glyph: .missing)
+                            .foregroundStyle(CameraColor.textSecondary)
+                        Text("文件不可用")
+                            .font(CameraFont.interface(11))
+                            .foregroundStyle(CameraColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(CameraColor.surface)
+                } else if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
-                } else if shot.missing {
-                    Text("文件丢失")
-                        .font(CameraFont.parameter(9, medium: true))
-                        .foregroundStyle(CameraColor.textSecondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(CameraColor.surface)
                 } else {
                     CameraColor.surface
                 }
@@ -398,11 +475,21 @@ private struct AlbumThumb: View {
             }
             .overlay(alignment: .topLeading) {
                 if let marked {
-                    Image(systemName: marked ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(marked ? CameraColor.accent : CameraColor.textPrimary)
-                        .padding(6)
-                        .accessibilityHidden(true)
+                    ZStack {
+                        Circle()
+                            .stroke(CameraColor.textPrimary, lineWidth: 1.5)
+                            .frame(width: 18, height: 18)
+                        if marked {
+                            Circle()
+                                .fill(CameraColor.accent)
+                                .frame(width: 18, height: 18)
+                            PhiGlyphImage(glyph: .check)
+                                .foregroundStyle(CameraColor.textPrimary)
+                                .scaleEffect(0.6)
+                        }
+                    }
+                    .padding(6)
+                    .accessibilityHidden(true)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -474,8 +561,8 @@ private struct AlbumPager: View {
         ZStack {
             if shots.indices.contains(index) {
                 Text(Self.stamp(shots[index].date))
-                    .font(CameraFont.parameter(12))
-                    .foregroundStyle(CameraColor.textSecondary)
+                    .font(CameraFont.interface(14, weight: .medium))
+                    .foregroundStyle(CameraColor.textPrimary)
             }
             HStack {
                 Button(action: onClose) {
@@ -514,60 +601,59 @@ private struct AlbumPage: View {
     @State private var image: UIImage?
     @State private var share = false
 
+    private var metaLine: String {
+        let kind = shot.hasRaw ? "RAW" : "HEIC"
+        return "\(kind) · \(shot.framed.title)"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 CameraColor.background
-                if let image {
+                if shot.missing {
+                    VStack(spacing: 8) {
+                        PhiGlyphImage(glyph: .missing)
+                            .foregroundStyle(CameraColor.textSecondary)
+                        Text("文件不可用")
+                            .font(CameraFont.interface(13))
+                            .foregroundStyle(CameraColor.textSecondary)
+                    }
+                } else if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
                 } else {
-                    Text(shot.missing ? "文件丢失" : (shot.hasRaw ? "RAW" : "正在打开"))
-                        .font(CameraFont.interface(13, weight: .medium))
-                        .foregroundStyle(CameraColor.textSecondary)
+                    ProgressView().tint(CameraColor.accent)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            HStack(spacing: 16) {
-                if shot.hasRaw {
-                    Text("RAW")
-                        .font(CameraFont.parameter(12, medium: true))
-                        .foregroundStyle(CameraColor.accent)
-                }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(390.0 / 520.0, contentMode: .fit)
+            Text(metaLine)
+                .font(CameraFont.parameter(11))
+                .foregroundStyle(CameraColor.textSecondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+            HStack(spacing: 8) {
+                PhiGlyphButton(glyph: .trash, label: "删除") { onDelete(shot) }
+                PhiGlyphButton(glyph: .share, label: "分享", enabled: image != nil) { share = true }
                 Spacer()
                 if shot.needsRetry, case .local(let local) = shot.source {
                     Button("重试") { onRetryLocal(local.id) }
-                        .font(CameraFont.interface(15, weight: .medium))
+                        .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
-                        .frame(minHeight: 44)
                 }
-                Button("删除") { onDelete(shot) }
-                    .font(CameraFont.interface(15, weight: .medium))
-                    .foregroundStyle(CameraColor.accent)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("删除")
-                Button("导出") { share = true }
-                    .font(CameraFont.interface(15, weight: .medium))
-                    .foregroundStyle(image == nil ? CameraColor.border : CameraColor.textSecondary)
-                    .disabled(image == nil)
-                    .frame(minHeight: 44)
                 Button(action: edit) {
                     Text("编辑")
-                        .font(CameraFont.interface(15, weight: .medium))
+                        .font(CameraFont.interface(14, weight: .medium))
                         .foregroundStyle(CameraColor.accent)
-                        .padding(.horizontal, 16)
-                        .frame(height: 36)
-                        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(CameraColor.border, lineWidth: 1)
-                        }
+                        .frame(width: 88, height: 44)
+                        .background(CameraColor.surface, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("编辑")
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 16)
             .frame(height: 64)
         }
         .task { await load() }

@@ -2,6 +2,13 @@ import SwiftUI
 
 /// Post-capture develop surface. Exposure here changes the rendered still, not the camera meter.
 /// Grain is a named look. The original RAW file is never rewritten.
+private enum EditorTab: String, CaseIterable, Identifiable {
+    case exposure = "曝光"
+    case style = "风格"
+    case effects = "效果"
+    var id: String { rawValue }
+}
+
 struct ProcessStillView: View {
     @ObservedObject var session: ProcessSession
     var canRetryOriginal: Bool
@@ -9,134 +16,288 @@ struct ProcessStillView: View {
     var onRetryOriginal: () -> Void
     var onClose: () -> Void
 
-    private let developRange: ClosedRange<Double> = -5...5
+    @State private var tab: EditorTab = .exposure
+    @State private var holdingOriginal = false
+    @State private var confirmDiscard = false
+    @State private var baseEV = 0.0
+    @State private var baseLook: ColorLook = .none
+    @State private var baseHalo = false
+    @State private var baseGrain: GrainStyle = .off
+    @State private var capturedBaseline = false
+
+    private let toolHeight: CGFloat = 168
 
     var body: some View {
         ZStack {
             CameraColor.background.ignoresSafeArea()
             VStack(spacing: 0) {
-                image
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                panel
+                titleBar
+                editorImage
+                tabBar
+                    .frame(height: 48)
+                tool
+                    .frame(height: toolHeight)
+                toast
+                    .frame(height: 44)
+                actions
+                    .frame(height: 56)
+            }
+            if confirmDiscard {
+                discardDialog
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear(perform: captureBaseline)
     }
 
-    private var image: some View {
+    private var titleBar: some View {
+        HStack {
+            Text(savedCopy ? "编辑后的照片" : "编辑照片")
+                .font(CameraFont.interface(14, weight: .medium))
+                .foregroundStyle(CameraColor.textPrimary)
+            Spacer()
+            PhiGlyphButton(glyph: .compare, label: "按住对比原片") {}
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in holdingOriginal = true }
+                        .onEnded { _ in holdingOriginal = false }
+                )
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 52)
+    }
+
+    private var editorImage: some View {
         ZStack {
             CameraColor.background
-            if let preview = session.preview {
+            if holdingOriginal {
+                Image(uiImage: UIImage(cgImage: session.base))
+                    .resizable()
+                    .scaledToFit()
+            } else if let preview = session.preview {
                 Image(uiImage: preview)
                     .resizable()
                     .scaledToFit()
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
             } else {
-                ProgressView()
-                    .tint(CameraColor.accent)
-                    .accessibilityLabel("正在生成预览")
+                ProgressView().tint(CameraColor.accent)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(390.0 / 520.0, contentMode: .fit)
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 8) {
+            ForEach(EditorTab.allCases) { item in
+                SelectPill(title: item.rawValue, selected: tab == item, height: 36) {
+                    tab = item
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    @ViewBuilder
+    private var tool: some View {
+        switch tab {
+        case .exposure:
+            exposureTool
+        case .style:
+            styleTool
+        case .effects:
+            effectsTool
+        }
+    }
+
+    private var exposureTool: some View {
+        VStack(spacing: 4) {
+            Text("\(ExposureFormat.signedDecimal(session.exposureEV)) EV")
+                .font(CameraFont.interface(12, weight: .medium))
+                .foregroundStyle(CameraColor.accent)
+            SharedRuler(
+                labels: developLabels,
+                index: developIndex,
+                onChange: { index in
+                    session.setExposure(-5 + Double(index) * 0.1)
+                },
+                onCommit: {}
+            )
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private var styleTool: some View {
+        HStack(spacing: 8) {
+            ForEach(ColorLook.allCases) { look in
+                let selected = session.colorLook == look
+                Button {
+                    session.setColorLook(look)
+                } label: {
+                    VStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(swatch(look))
+                            .frame(width: 62, height: 62)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(selected ? CameraColor.accent : Color.clear, lineWidth: 1.5)
+                            }
+                        Text(look.title)
+                            .font(CameraFont.interface(11))
+                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                    }
+                }
+                .buttonStyle(.plain)
             }
         }
     }
 
-    private var panel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ZStack {
-                Text("Exposure")
-                    .font(CameraFont.interface(17, weight: .medium))
+    private var effectsTool: some View {
+        HStack(spacing: 18) {
+            effectGroup(title: "光晕") {
+                SelectPill(title: "关", selected: session.halo == false, width: 76, height: 34) {
+                    session.setHalo(false)
+                }
+                SelectPill(title: "开", selected: session.halo, width: 76, height: 34) {
+                    session.setHalo(true)
+                }
+            }
+            effectGroup(title: "颗粒") {
+                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 34) {
+                    session.setStyle(.off)
+                }
+                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 34) {
+                    session.setStyle(.fine)
+                }
+            }
+        }
+    }
+
+    private func effectGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(CameraFont.interface(11))
+                .foregroundStyle(CameraColor.textSecondary)
+            HStack(spacing: 8) { content() }
+        }
+    }
+
+    private var toast: some View {
+        Group {
+            if savedCopy {
+                Text("✓ 已保存新照片，原片保留")
+                    .font(CameraFont.interface(12))
                     .foregroundStyle(CameraColor.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(ExposureFormat.signedDecimal(session.exposureEV))
-                        .font(CameraFont.parameter(22, medium: true))
-                    Text("EV")
-                        .font(CameraFont.parameter(12, medium: true))
-                }
-                .foregroundStyle(CameraColor.accent)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Develop exposure \(ExposureFormat.signedDecimal(session.exposureEV)) EV")
-                HStack {
-                    Spacer()
-                    Button(action: onClose) {
-                        PhiIcon(symbol: .close, color: CameraColor.textPrimary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("关闭")
-                }
+                    .frame(width: 260, height: 44)
             }
+        }
+    }
 
-            ExposureRuler(
-                value: session.exposureEV,
-                range: developRange,
-                onChange: { session.setExposure($0) },
-                onCommit: {}
-            )
-
-            Text("DEVELOP")
-                .font(CameraFont.interface(11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(CameraColor.textSecondary)
-                .accessibilityLabel("这是成片曝光，不是相机测光")
-
-            Text("STYLE")
-                .font(CameraFont.interface(11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(CameraColor.textSecondary)
-            ColorLookPicker(selection: session.colorLook) { session.setColorLook($0) }
-            Text("HALO")
-                .font(CameraFont.interface(11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(CameraColor.textSecondary)
-            HaloToggle(enabled: session.halo) { session.setHalo($0) }
-            Text("只在编辑时。正片、负片、黑白、CCD 互斥。光晕可叠在任何一档上，包括无。没有强度。")
-                .font(CameraFont.interface(12))
-                .foregroundStyle(CameraColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("GRAIN")
-                .font(CameraFont.interface(11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(CameraColor.textSecondary)
-            GrainStylePicker(selection: session.style) { session.setStyle($0) }
-            Text("颗粒在色貌之后。打开就是 FINE，没有强度。取景不加颗粒。")
-                .font(CameraFont.interface(12))
-                .foregroundStyle(CameraColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(session.developInfo)
-                .font(CameraFont.parameter(11))
-                .foregroundStyle(CameraColor.textSecondary)
-                .accessibilityLabel(session.developInfo)
-
-            Button(action: onExport) {
-                Text(session.isExporting ? "正在导出" : "保存处理图")
-            }
-            .buttonStyle(QuietButtonStyle())
-            .disabled(session.isExporting || session.preview == nil)
-            .accessibilityHint("把当前显影另存成 HEIF，写入系统相册和 PHI 相册。")
-
-            if canRetryOriginal, session.isSample == false {
+    private var actions: some View {
+        HStack {
+            PhiGlyphButton(glyph: .close, label: "离开编辑") { requestClose() }
+            Spacer()
+            PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
+            Spacer()
+            if canRetryOriginal, savedCopy == false {
                 Button("重试", action: onRetryOriginal)
                     .font(CameraFont.interface(13, weight: .medium))
                     .foregroundStyle(CameraColor.textSecondary)
-                    .frame(minHeight: 44)
             }
+            Button(action: onExport) {
+                Text(session.isExporting ? "保存中…" : "另存照片")
+                    .font(CameraFont.interface(13, weight: .medium))
+                    .foregroundStyle(CameraColor.background)
+                    .frame(width: 120, height: 40)
+                    .background(CameraColor.textPrimary, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(session.isExporting || session.preview == nil)
+        }
+        .padding(.horizontal, 12)
+    }
 
-            if let status = session.status {
-                Text(status)
+    private var discardDialog: some View {
+        ZStack {
+            Color.black.opacity(0.6).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Text("放弃这次调整？")
+                    .font(CameraFont.interface(18, weight: .medium))
+                    .foregroundStyle(CameraColor.textPrimary)
+                Text("原片不会改变。")
                     .font(CameraFont.interface(13))
                     .foregroundStyle(CameraColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Button("继续编辑") { confirmDiscard = false }
+                    .font(CameraFont.interface(14, weight: .medium))
+                    .foregroundStyle(CameraColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                Button("放弃调整") {
+                    confirmDiscard = false
+                    onClose()
+                }
+                .font(CameraFont.interface(14, weight: .medium))
+                .foregroundStyle(CameraColor.textPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
             }
+            .padding(20)
+            .frame(width: 342)
+            .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var savedCopy: Bool {
+        session.status == "已保存新照片，原片保留"
+    }
+
+    private var developLabels: [String] {
+        (0...100).map { ExposureFormat.signedDecimal(-5 + Double($0) * 0.1) }
+    }
+
+    private var developIndex: Int {
+        min(100, max(0, Int(((session.exposureEV + 5) / 0.1).rounded())))
+    }
+
+    private var dirty: Bool {
+        guard capturedBaseline else { return false }
+        return session.exposureEV != baseEV
+            || session.colorLook != baseLook
+            || session.halo != baseHalo
+            || session.style != baseGrain
+    }
+
+    private func captureBaseline() {
+        guard capturedBaseline == false else { return }
+        baseEV = session.exposureEV
+        baseLook = session.colorLook
+        baseHalo = session.halo
+        baseGrain = session.style
+        capturedBaseline = true
+    }
+
+    private func requestClose() {
+        if dirty && savedCopy == false {
+            confirmDiscard = true
+        } else {
+            onClose()
+        }
+    }
+
+    private func resetAdjustments() {
+        session.setExposure(0)
+        session.setColorLook(.none)
+        session.setHalo(false)
+        session.setStyle(.off)
+    }
+
+    private func swatch(_ look: ColorLook) -> Color {
+        switch look {
+        case .none: CameraColor.surface
+        case .positive: Color(red: 0.72, green: 0.38, blue: 0.28)
+        case .negative: Color(red: 0.35, green: 0.48, blue: 0.62)
+        case .mono: Color(white: 0.55)
+        case .ccd: Color(red: 0.45, green: 0.28, blue: 0.32)
+        }
     }
 }
 

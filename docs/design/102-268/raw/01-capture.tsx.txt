@@ -1,0 +1,624 @@
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/8f01d668-41c1-4303-a534-ca1610e919b2";
+const imgFrame = `${assetPathPrefix}/a360a.svg`;
+const imgFrame1 = `${assetPathPrefix}/07215.svg`;
+const imgFrame2 = `${assetPathPrefix}/d7c9c.svg`;
+const imgFrame3 = `${assetPathPrefix}/008c5.svg`;
+const imgFrame4 = `${assetPathPrefix}/88a76.svg`;
+const imgFrame5 = `${assetPathPrefix}/cfc91.svg`;
+const imgPhiV2ShutterWhite = `${assetPathPrefix}/9e1d9.svg`;
+const imgFrame6 = `${assetPathPrefix}/747fe.svg`;
+const imgFrame7 = `${assetPathPrefix}/5a788.svg`;
+const imgPhotoCanvasFixedGeometry = `${assetPathPrefix}/8ca3c.png`;
+const imgFrame8 = `${assetPathPrefix}/9b67c.svg`;
+const imgSwitchOn = `${assetPathPrefix}/6dc5b.svg`;
+
+function PhiV2IconClose({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:136" data-name="PHI v2 / Icon / close">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:137" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashOn({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:108" data-name="PHI v2 / Icon / flash_on">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:109" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame1} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconCheck({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:140" data-name="PHI v2 / Icon / check">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:141" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame2} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashAuto({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:116" data-name="PHI v2 / Icon / flash_auto">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:117" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashOff({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:112" data-name="PHI v2 / Icon / flash_off">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:113" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconSettings({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:130" data-name="PHI v2 / Icon / settings">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:131" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame5} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2ShutterWhite({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[80px]"} data-node-id="100:188" data-name="PHI v2 / Shutter / White">
+      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgPhiV2ShutterWhite} />
+    </div>
+  );
+}
+
+function PhiV2IconGridOn({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:121" data-name="PHI v2 / Icon / grid_on">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:122" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconGridOff({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:126" data-name="PHI v2 / Icon / grid_off">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:127" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame7} />
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV201Capture() {
+  return (
+    <div className="bg-[#151717] content-stretch flex flex-col gap-[32px] items-start px-[64px] py-[48px] relative size-full" data-node-id="100:104" data-name="PHI v2 / 01 Capture">
+      <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] h-[115px] items-start overflow-clip relative shrink-0 w-[1872px] whitespace-nowrap" data-node-id="101:104" data-name="Introduction">
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[17px] not-italic relative shrink-0 text-[#f45135] text-[12px]" data-node-id="101:105">
+          PHI / V2 — CAPTURE
+        </p>
+        <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[52px] relative shrink-0 text-[#f4f3ee] text-[36px]" data-node-id="101:106">
+          把画面还给取景。
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] relative shrink-0 text-[#a5aaa7] text-[16px]" data-node-id="101:107">
+          沉浸式顶栏 · 焦段移出取景器 · 白色快门 · 方形对焦框与红色圆心
+        </p>
+      </div>
+      <div className="content-stretch flex gap-[48px] h-[1120px] items-start overflow-clip relative shrink-0 w-[1872px]" data-node-id="101:108" data-name="Screens">
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:109" data-name="Column / 自动拍摄">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:110" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:111">
+              01 / AUTO
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:112">
+              自动拍摄
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:113" data-name="CameraAuto">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:114" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:115" data-name="Rule" />
+            <PhiV2IconFlashAuto className="absolute left-[17px] size-[44px] top-[11px]" />
+            <PhiV2IconGridOn className="absolute left-[327px] size-[44px] top-[11px]" />
+            <div className="absolute content-stretch flex h-[32px] items-center justify-center left-[119px] overflow-clip top-[53px] w-[150px]" data-node-id="101:124" data-name="Capture format / open settings">
+              <p className="[word-break:break-word] font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:125">
+                RAW · 3:4
+              </p>
+            </div>
+            <div className="absolute h-[520px] left-[-1px] top-[91px] w-[390px]" data-node-id="101:126" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[129px] opacity-18 top-[91px] w-px" data-node-id="101:127" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[259px] opacity-18 top-[91px] w-px" data-node-id="101:128" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[264.3px] w-[390px]" data-node-id="101:129" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[437.6px] w-[390px]" data-node-id="101:130" data-name="Rule" />
+            <div className="absolute left-[156px] size-[76px] top-[299px]" data-node-id="101:131" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame8} />
+            </div>
+            <div className="absolute bg-[rgba(9,10,10,0.88)] content-stretch flex gap-[8px] h-[40px] items-center justify-center left-[74px] overflow-clip rounded-[20px] top-[617px] w-[240px]" data-node-id="101:134" data-name="Focal lengths">
+              <div className="bg-[#090a0a] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:135" data-name="Button / 14">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:136" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  14
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:137" data-name="Button / 25">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:138" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  25
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:139" data-name="Button / 50">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:140" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  50
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:141" data-name="Button / 108">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:142" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  108
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[663px] w-[390px]" data-node-id="101:143" data-name="Exposure mode and EV">
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[88px]" data-node-id="101:144" data-name="Button / A 自动">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:145">
+                  A 自动
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[94px]" data-node-id="101:146" data-name="Button / 0.0 EV">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:147" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  0.0 EV
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[80px] items-center justify-between left-[-1px] overflow-clip px-[28px] top-[710px] w-[390px]" data-node-id="101:148" data-name="Capture controls">
+              <div className="h-[48px] relative rounded-[5px] shrink-0 w-[44px]" data-node-id="101:149" data-name="Photo canvas / fixed geometry">
+                <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+              </div>
+              <PhiV2ShutterWhite className="relative shrink-0 size-[80px]" />
+              <PhiV2IconSettings className="relative shrink-0 size-[44px]" />
+            </div>
+            <div className="[word-break:break-word] absolute content-stretch flex font-['IBM_Plex_Mono:Regular'] h-[22px] items-center justify-between leading-[16px] left-[-1px] not-italic overflow-clip px-[24px] text-[#a5aaa7] text-[11px] top-[793px] w-[390px] whitespace-nowrap" data-node-id="101:158" data-name="Live readouts">
+              <p className="relative shrink-0" data-node-id="101:159">
+                ISO 100
+              </p>
+              <p className="relative shrink-0" data-node-id="101:160">
+                1/250 s
+              </p>
+              <p className="relative shrink-0" data-node-id="101:161">
+                WB AUTO
+              </p>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:162" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:163">
+              顶部仅保留闪光灯与网格；状态栏隐藏，灵动岛及隐私区域由系统管理。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:164">
+              焦段条位于照片外；选中焦段用底色和红字共同标记。点击画面移动 1:1 对焦框。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:165">
+              点击 A 自动切至手动；EV 入口调节曝光补偿。快门保持白色。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:166" data-name="Column / 手动调节">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:167" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:168">
+              02 / MANUAL
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:169">
+              手动调节
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:170" data-name="CameraManual">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:171" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:172" data-name="Rule" />
+            <PhiV2IconFlashOff className="absolute left-[17px] size-[44px] top-[11px]" />
+            <PhiV2IconGridOff className="absolute left-[327px] size-[44px] top-[11px]" />
+            <div className="absolute content-stretch flex h-[32px] items-center justify-center left-[119px] overflow-clip top-[53px] w-[150px]" data-node-id="101:179" data-name="Capture format / open settings">
+              <p className="[word-break:break-word] font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:180">
+                RAW · 3:4
+              </p>
+            </div>
+            <div className="absolute h-[520px] left-[-1px] top-[91px] w-[390px]" data-node-id="101:181" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <div className="absolute left-[156px] size-[76px] top-[299px]" data-node-id="101:182" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame8} />
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[663px] w-[390px]" data-node-id="101:194" data-name="Exposure mode and EV">
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[88px]" data-node-id="101:195" data-name="Button / M 手动">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:196">
+                  M 手动
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[108px]" data-node-id="101:197" data-name="Button / ISO 100">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:198" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  ISO 200
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[108px]" data-node-id="101:199" data-name="Button / 1/250 s">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:200" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  1/250 s
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[80px] items-center justify-between left-[-1px] overflow-clip px-[28px] top-[710px] w-[390px]" data-node-id="101:201" data-name="Capture controls">
+              <div className="h-[48px] relative rounded-[5px] shrink-0 w-[44px]" data-node-id="101:202" data-name="Photo canvas / fixed geometry">
+                <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+              </div>
+              <PhiV2ShutterWhite className="relative shrink-0 size-[80px]" />
+              <PhiV2IconSettings className="relative shrink-0 size-[44px]" />
+            </div>
+            <div className="[word-break:break-word] absolute content-stretch flex font-['IBM_Plex_Mono:Regular'] h-[22px] items-center justify-between leading-[16px] left-[-1px] not-italic overflow-clip px-[24px] text-[#a5aaa7] text-[11px] top-[793px] w-[390px] whitespace-nowrap" data-node-id="101:211" data-name="Live readouts">
+              <p className="relative shrink-0" data-node-id="101:212">
+                ISO 200
+              </p>
+              <p className="relative shrink-0" data-node-id="101:213">
+                1/250 s
+              </p>
+              <p className="relative shrink-0" data-node-id="101:214">
+                WB AUTO
+              </p>
+            </div>
+            <div className="absolute h-[62px] left-[23px] overflow-clip top-[614px] w-[342px]" data-node-id="101:215" data-name="Horizontal ruler">
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-0 top-[8px] w-px" data-node-id="101:216" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[11.4px] top-[8px] w-px" data-node-id="101:217" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[22.8px] top-[8px] w-px" data-node-id="101:218" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[34.2px] top-[8px] w-px" data-node-id="101:219" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[45.6px] top-[8px] w-px" data-node-id="101:220" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[57px] top-[8px] w-px" data-node-id="101:221" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[68.4px] top-[8px] w-px" data-node-id="101:222" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[79.8px] top-[8px] w-px" data-node-id="101:223" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[91.2px] top-[8px] w-px" data-node-id="101:224" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[102.6px] top-[8px] w-px" data-node-id="101:225" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[114px] top-[8px] w-px" data-node-id="101:226" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[125.4px] top-[8px] w-px" data-node-id="101:227" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[136.8px] top-[8px] w-px" data-node-id="101:228" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[148.2px] top-[8px] w-px" data-node-id="101:229" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[159.6px] top-[8px] w-px" data-node-id="101:230" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[171px] top-[8px] w-px" data-node-id="101:231" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[182.4px] top-[8px] w-px" data-node-id="101:232" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[193.8px] top-[8px] w-px" data-node-id="101:233" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[205.2px] top-[8px] w-px" data-node-id="101:234" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[216.6px] top-[8px] w-px" data-node-id="101:235" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[228px] top-[8px] w-px" data-node-id="101:236" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[239.4px] top-[8px] w-px" data-node-id="101:237" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[250.8px] top-[8px] w-px" data-node-id="101:238" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[262.2px] top-[8px] w-px" data-node-id="101:239" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[273.6px] top-[8px] w-px" data-node-id="101:240" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[285px] top-[8px] w-px" data-node-id="101:241" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[296.4px] top-[8px] w-px" data-node-id="101:242" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[307.8px] top-[8px] w-px" data-node-id="101:243" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[319.2px] top-[8px] w-px" data-node-id="101:244" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[330.6px] top-[8px] w-px" data-node-id="101:245" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[342px] top-[8px] w-px" data-node-id="101:246" data-name="Rule" />
+              <div className="absolute bg-[#f45135] h-[30px] left-[171px] top-[2px] w-[2px]" data-node-id="101:247" data-name="Rule" />
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[10px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="101:248">
+                50
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[86px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="101:249">
+                100
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[162px] not-italic text-[#f45135] text-[11px] top-[34px] whitespace-nowrap" data-node-id="101:250">
+                200
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[238px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="101:251">
+                400
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[314px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="101:252">
+                800
+              </p>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:253" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:254">
+              点 ISO / 快门，底部焦段条切换为该参数标尺；同时只调一个参数。当前示例为 ISO 200。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:255">
+              拖动标尺连续调整，松手吸附至设备支持值。再次点击当前参数收起，恢复焦段条。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:256">
+              切回自动由系统接管曝光；自动与手动的 EV 是否可并用需按现有能力确认。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:257" data-name="Column / 闪光灯选择">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:258" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:259">
+              03 / QUICK CONTROL
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:260">
+              闪光灯选择
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:261" data-name="CameraFlash">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:262" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:263" data-name="Rule" />
+            <PhiV2IconFlashAuto className="absolute left-[17px] size-[44px] top-[11px]" />
+            <PhiV2IconGridOn className="absolute left-[327px] size-[44px] top-[11px]" />
+            <div className="absolute content-stretch flex h-[32px] items-center justify-center left-[119px] overflow-clip top-[53px] w-[150px]" data-node-id="101:272" data-name="Capture format / open settings">
+              <p className="[word-break:break-word] font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:273">
+                RAW · 3:4
+              </p>
+            </div>
+            <div className="absolute h-[520px] left-[-1px] top-[91px] w-[390px]" data-node-id="101:274" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[129px] opacity-18 top-[91px] w-px" data-node-id="101:275" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[259px] opacity-18 top-[91px] w-px" data-node-id="101:276" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[264.3px] w-[390px]" data-node-id="101:277" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[437.6px] w-[390px]" data-node-id="101:278" data-name="Rule" />
+            <div className="absolute left-[156px] size-[76px] top-[299px]" data-node-id="101:279" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame8} />
+            </div>
+            <div className="absolute bg-[rgba(9,10,10,0.88)] content-stretch flex gap-[8px] h-[40px] items-center justify-center left-[74px] overflow-clip rounded-[20px] top-[617px] w-[240px]" data-node-id="101:282" data-name="Focal lengths">
+              <div className="bg-[#090a0a] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:283" data-name="Button / 14">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:284" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  14
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:285" data-name="Button / 25">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:286" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  25
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:287" data-name="Button / 50">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:288" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  50
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[32px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[48px]" data-node-id="101:289" data-name="Button / 108">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:290" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  108
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[663px] w-[390px]" data-node-id="101:291" data-name="Exposure mode and EV">
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[88px]" data-node-id="101:292" data-name="Button / A 自动">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:293">
+                  A 自动
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[94px]" data-node-id="101:294" data-name="Button / 0.0 EV">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:295" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  0.0 EV
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[80px] items-center justify-between left-[-1px] overflow-clip px-[28px] top-[710px] w-[390px]" data-node-id="101:296" data-name="Capture controls">
+              <div className="h-[48px] relative rounded-[5px] shrink-0 w-[44px]" data-node-id="101:297" data-name="Photo canvas / fixed geometry">
+                <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+              </div>
+              <PhiV2ShutterWhite className="relative shrink-0 size-[80px]" />
+              <PhiV2IconSettings className="relative shrink-0 size-[44px]" />
+            </div>
+            <div className="[word-break:break-word] absolute content-stretch flex font-['IBM_Plex_Mono:Regular'] h-[22px] items-center justify-between leading-[16px] left-[-1px] not-italic overflow-clip px-[24px] text-[#a5aaa7] text-[11px] top-[793px] w-[390px] whitespace-nowrap" data-node-id="101:306" data-name="Live readouts">
+              <p className="relative shrink-0" data-node-id="101:307">
+                ISO 100
+              </p>
+              <p className="relative shrink-0" data-node-id="101:308">
+                1/250 s
+              </p>
+              <p className="relative shrink-0" data-node-id="101:309">
+                WB AUTO
+              </p>
+            </div>
+            <div className="absolute bg-[#191b1b] h-[174px] left-[13px] overflow-clip rounded-[16px] top-[61px] w-[170px]" data-node-id="101:310" data-name="Flash options">
+              <div className="absolute content-stretch flex gap-[10px] h-[48px] items-center left-[8px] overflow-clip top-[10px] w-[154px]" data-node-id="101:311" data-name="关闭">
+                <PhiV2IconFlashOff className="relative shrink-0 size-[44px]" />
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] relative shrink-0 text-[#f4f3ee] text-[14px] whitespace-nowrap" data-node-id="101:315">
+                  关闭
+                </p>
+              </div>
+              <div className="absolute content-stretch flex gap-[10px] h-[48px] items-center left-[8px] overflow-clip top-[62px] w-[154px]" data-node-id="101:316" data-name="自动">
+                <PhiV2IconFlashAuto className="relative shrink-0 size-[44px]" />
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] relative shrink-0 text-[#f45135] text-[14px] whitespace-nowrap" data-node-id="101:321">
+                  自动
+                </p>
+                <PhiV2IconCheck className="relative shrink-0 size-[44px]" />
+              </div>
+              <div className="absolute content-stretch flex gap-[10px] h-[48px] items-center left-[8px] overflow-clip top-[114px] w-[154px]" data-node-id="101:325" data-name="开启">
+                <PhiV2IconFlashOn className="relative shrink-0 size-[44px]" />
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] relative shrink-0 text-[#f4f3ee] text-[14px] whitespace-nowrap" data-node-id="101:329">
+                  开启
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:330" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:331">
+              点闪光灯打开三态选择，不靠连续点击猜测当前模式；选中后立即关闭。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:332">
+              点击菜单外关闭，不改变原选择。网格按钮直接切换开 / 关，图形与状态同步。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:333">
+              切镜头或格式导致闪光不可用时显示禁用态及原因，不悄悄切回其它模式。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:334" data-name="Column / 拍摄设置">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:335" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:336">
+              04 / CAPTURE SETUP
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:337">
+              拍摄设置
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:338" data-name="CaptureSettings">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:339" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:340" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="101:344">
+              拍摄设置
+            </p>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[117px] whitespace-nowrap" data-node-id="101:345">
+              处理方式
+            </p>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[147px] w-[390px]" data-node-id="101:346" data-name="Processing">
+              <div className="bg-[#191b1b] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[111.333px]" data-node-id="101:347" data-name="Button / RAW">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:348" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  RAW
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[111.333px]" data-node-id="101:349" data-name="Button / ProRAW">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:350" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  ProRAW
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[111.333px]" data-node-id="101:351" data-name="Button / 标准">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:352">
+                  标准
+                </p>
+              </div>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[199px] w-[350px]" data-node-id="101:353">
+              保留 RAW 数据，留给后期更多空间。
+            </p>
+            <div className="absolute bg-[#343737] h-px left-[19px] top-[243px] w-[350px]" data-node-id="101:354" data-name="Rule" />
+            <div className="absolute content-stretch flex h-[48px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[263px] w-[390px]" data-node-id="101:355" data-name="Save companion photo">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] relative shrink-0 text-[#f4f3ee] text-[16px] whitespace-nowrap" data-node-id="101:356">
+                同时保存成片
+              </p>
+              <div className="h-[26px] relative shrink-0 w-[42px]" data-node-id="101:357" data-name="Switch / on">
+                <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgSwitchOn} />
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[319px] w-[390px]" data-node-id="101:359" data-name="Companion format">
+              <div className="bg-[#191b1b] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[171px]" data-node-id="101:360" data-name="Button / HEIC">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:361" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  HEIC
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[171px]" data-node-id="101:362" data-name="Button / JPEG">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:363" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  JPEG
+                </p>
+              </div>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[373px] w-[350px]" data-node-id="101:364">
+              成片与 RAW 一起保存，方便直接查看和分享。
+            </p>
+            <div className="absolute bg-[#343737] h-px left-[19px] top-[422px] w-[350px]" data-node-id="101:365" data-name="Rule" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[447px] whitespace-nowrap" data-node-id="101:366">
+              画幅
+            </p>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[477px] w-[390px]" data-node-id="101:367" data-name="Aspect ratio">
+              <div className="bg-[#090a0a] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[81.5px]" data-node-id="101:368" data-name="Button / 1:1">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:369" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  1:1
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[81.5px]" data-node-id="101:370" data-name="Button / 3:4">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:371" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  3:4
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[81.5px]" data-node-id="101:372" data-name="Button / 2:3">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:373" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  2:3
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[38px] items-center justify-center overflow-clip relative rounded-[19px] shrink-0 w-[81.5px]" data-node-id="101:374" data-name="Button / 9:16">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:375" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  9:16
+                </p>
+              </div>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[534px] w-[350px]" data-node-id="101:376">
+              预览与成片使用所选比例；RAW 保留完整画面。
+            </p>
+            <div className="[word-break:break-word] absolute bg-[#191b1b] h-[92px] left-[19px] overflow-clip rounded-[14px] top-[615px] w-[350px]" data-node-id="101:377" data-name="Help">
+              <p className="absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[16px] text-[#f4f3ee] text-[14px] top-[14px] w-[310px]" data-node-id="101:378">
+                设备支持决定可选格式
+              </p>
+              <p className="absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[16px] text-[#a5aaa7] text-[13px] top-[42px] w-[318px]" data-node-id="101:379">
+                不支持的选项会说明原因。拍摄参数回到取景页直接调整。
+              </p>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:380" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:381">
+              移除 0 / Φ / 1 技术代号，以 RAW / ProRAW / 标准表达处理方式。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:382">
+              仅 RAW 模式显示「同时保存成片」；关闭后隐藏格式选项。标准模式保留输出格式。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:383">
+              不支持 ProRAW / HEIC 时禁用并解释，格式回退要反馈；页面展示为建议，需对接能力矩阵。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI v2 / Icon / flash_auto
+**Node ID:** 100:116
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / grid_on
+**Node ID:** 100:121
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Shutter / White
+**Node ID:** 100:188
+
+White photo shutter, stable at all capture states. Do not use the previous orange shutter.
+
+## PHI v2 / Icon / settings
+**Node ID:** 100:130
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / flash_off
+**Node ID:** 100:112
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / grid_off
+**Node ID:** 100:126
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / check
+**Node ID:** 100:140
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / flash_on
+**Node ID:** 100:108
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / close
+**Node ID:** 100:136
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.
