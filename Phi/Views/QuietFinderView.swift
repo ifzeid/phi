@@ -91,8 +91,12 @@ struct QuietFinderView: View {
         }
         .sheet(isPresented: $showSettings) {
             FinderSettingsSheet(
-                format: capture.captureFormat,
-                onFormat: { capture.setCaptureFormat($0) },
+                mode: capture.processMode,
+                onMode: { capture.setProcessMode($0) },
+                saveHEIF: capture.saveHEIF,
+                onSaveHEIF: { capture.setSaveHEIF($0) },
+                codec: capture.processedCodec,
+                onCodec: { capture.setProcessedCodec($0) },
                 aspect: capture.photoAspect,
                 onAspect: { capture.setPhotoAspect($0) },
                 iso: camera.manualISOValue,
@@ -176,13 +180,15 @@ struct QuietFinderView: View {
 
     private var viewfinder: some View {
         GeometryReader { geo in
-            let fitted = fittedSize(in: geo.size)
+            let ratio = capture.photoAspect.widthOverHeight
+            let fitted = fittedSize(in: geo.size, ratio: ratio)
             ZStack {
                 CameraColor.background
                 stage
                     .frame(width: fitted.width, height: fitted.height)
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .id(capture.photoAspect)
         }
     }
 
@@ -490,9 +496,8 @@ struct QuietFinderView: View {
         }
     }
 
-    private func fittedSize(in bounds: CGSize) -> CGSize {
+    private func fittedSize(in bounds: CGSize, ratio: CGFloat) -> CGSize {
         guard bounds.width > 0, bounds.height > 0 else { return bounds }
-        let ratio = capture.photoAspect.widthOverHeight
         guard ratio > 0 else { return bounds }
         let heightFromWidth = bounds.width / ratio
         if heightFromWidth <= bounds.height {

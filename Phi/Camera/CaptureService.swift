@@ -16,7 +16,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var thumbnail: UIImage?
     @Published private(set) var lastSavedNote: String?
     @Published private(set) var canRetryPhotoSave = false
-    @Published private(set) var captureFormat: CaptureFormat = .jpegAndRaw
+    @Published private(set) var processMode: ProcessMode = .bayer
+    @Published private(set) var saveHEIF = true
+    @Published private(set) var processedCodec: ProcessedCodec = .heic
     @Published private(set) var photoAspect: PhotoAspect = .threeByFour
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
@@ -30,9 +32,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
 
     override init() {
         super.init()
-        captureFormat = CaptureFormat.stored(UserDefaults.standard.string(forKey: CaptureFormat.storageKey))
+        let preference = ProcessMode.load()
+        processMode = preference.mode
+        saveHEIF = preference.saveHEIF
+        processedCodec = ProcessedCodec.stored(UserDefaults.standard.string(forKey: ProcessedCodec.storageKey))
         photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
-        camera.setCaptureFormat(captureFormat)
+        camera.setProcessMode(processMode)
+        camera.setProcessedCodec(processedCodec)
         camera.setPhotoAspect(photoAspect)
         captureCount = UserDefaults.standard.integer(forKey: StillArchive.countKey)
         let unfinished = UserDefaults.standard.bool(forKey: StillArchive.lastSavedKey) == false
@@ -54,10 +60,21 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             .store(in: &cancellables)
     }
 
-    func setCaptureFormat(_ format: CaptureFormat) {
-        captureFormat = format
-        UserDefaults.standard.set(format.rawValue, forKey: CaptureFormat.storageKey)
-        camera.setCaptureFormat(format)
+    func setProcessMode(_ mode: ProcessMode) {
+        processMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: ProcessMode.storageKey)
+        camera.setProcessMode(mode)
+    }
+
+    func setSaveHEIF(_ enabled: Bool) {
+        saveHEIF = enabled
+        UserDefaults.standard.set(enabled, forKey: ProcessMode.saveHEIFKey)
+    }
+
+    func setProcessedCodec(_ codec: ProcessedCodec) {
+        processedCodec = codec
+        UserDefaults.standard.set(codec.rawValue, forKey: ProcessedCodec.storageKey)
+        camera.setProcessedCodec(codec)
     }
 
     func setPhotoAspect(_ aspect: PhotoAspect) {
@@ -407,7 +424,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         shutterTick += 1
         camera.statusMessage = nil
         resetPending()
-        let format = captureFormat
+        let format = processMode
         camera.capturePhoto(format: format, delegate: self, note: { [weak self] usingRaw, codec in
             self?.noteSettings(usingRaw: usingRaw, codec: codec)
         }, completion: { [weak self] started in
@@ -486,7 +503,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     private func finish(_ snapshot: PendingCapture) {
-        let format = captureFormat
+        let format = processMode
+        let keepCompanion = saveHEIF
         let hasRaw = snapshot.raw != nil
         let hasProcessed = snapshot.processed != nil
         guard hasRaw || hasProcessed else {
@@ -514,7 +532,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let rawBox = rawData.map { CapturedContainer.inspect($0) }
             let photosLog = Logger(subsystem: "com.zeid.phi", category: "photos")
             if let processedBox {
-                photosLog.info("capture primary \(processedBox.logLine, privacy: .public) label \(spokenCodec, privacy: .public)")
+                let companion = keepCompanion ? "HEIF on" : "HEIF off, primary kept"
+                photosLog.info("capture primary \(processedBox.logLine, privacy: .public) \(companion, privacy: .public)")
             } else {
                 photosLog.error("capture produced no processed HEIF/JPEG")
             }

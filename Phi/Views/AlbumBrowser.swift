@@ -327,6 +327,8 @@ private struct AlbumShot: Identifiable {
     var hasRaw: Bool
     var needsRetry: Bool
     var missing: Bool
+    var lensZoom: Double
+    var framed: PhotoAspect
 
     static func library(_ asset: PHAsset) -> AlbumShot {
         AlbumShot(
@@ -335,7 +337,9 @@ private struct AlbumShot: Identifiable {
             date: asset.creationDate,
             hasRaw: PhiRawAsset.contains(asset),
             needsRetry: false,
-            missing: false
+            missing: false,
+            lensZoom: PhiShotIndex.lensZoom(for: asset.localIdentifier),
+            framed: PhiShotIndex.aspect(for: asset.localIdentifier) ?? .threeByFour
         )
     }
 
@@ -347,7 +351,9 @@ private struct AlbumShot: Identifiable {
             date: Self.date(fromStamp: shot.id),
             hasRaw: shot.hasRaw,
             needsRetry: shot.saveFailed == true && shot.savedToPhotos == false,
-            missing: resolved.isEmpty
+            missing: resolved.isEmpty,
+            lensZoom: shot.lensZoom ?? 1,
+            framed: PhotoAspect(rawValue: shot.aspect ?? "") ?? .threeByFour
         )
     }
 
@@ -418,10 +424,12 @@ private struct AlbumThumb: View {
                 image = DevelopCache.image(for: asset.localIdentifier)
             }
             if let sharp = await AlbumImage.load(asset, target: AlbumImage.gridTarget, fast: false) {
-                image = sharp
+                image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
             }
         case .local(let local):
-            image = AlbumImage.localPreview(local, maxSide: AlbumImage.gridTarget.width)
+            if let preview = AlbumImage.localPreview(local, maxSide: AlbumImage.gridTarget.width) {
+                image = AlbumImage.framed(preview, aspect: shot.framed, zoom: shot.lensZoom)
+            }
         }
     }
 }
@@ -582,10 +590,12 @@ private struct AlbumPage: View {
                 image = DevelopCache.image(for: asset.localIdentifier)
             }
             if let sharp = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: false) {
-                image = sharp
+                image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
             }
         case .local(let local):
-            image = AlbumImage.localPreview(local, maxSide: AlbumImage.viewerTarget.width)
+            if let preview = AlbumImage.localPreview(local, maxSide: AlbumImage.viewerTarget.width) {
+                image = AlbumImage.framed(preview, aspect: shot.framed, zoom: shot.lensZoom)
+            }
         }
     }
 }
@@ -659,6 +669,12 @@ enum AlbumImage {
             return image
         }
         return await load(asset, target: viewerTarget, fast: false)
+    }
+
+    static func framed(_ image: UIImage, aspect: PhotoAspect, zoom: Double) -> UIImage {
+        let zoomed = LensCrop.cropped(image, zoom: zoom)
+        guard let cg = zoomed.cgImage else { return zoomed }
+        return UIImage(cgImage: aspect.cropped(cg), scale: zoomed.scale, orientation: zoomed.imageOrientation)
     }
 
     static func localPreview(_ shot: PhiLocalShots.Shot, maxSide: CGFloat) -> UIImage? {

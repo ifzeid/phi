@@ -45,7 +45,7 @@ enum StillPipeline {
             let scale = maxSide / longest
             input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-        // Display-encoded HEIF. Exposure runs in linear light. The Process Zero curve stays on the DNG path.
+        // Display-encoded HEIF. Exposure runs in linear light. The global tone curve stays on the DNG path.
         input = input.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
         let bounded = Swift.min(2, Swift.max(-2, exposureEV))
         let exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])

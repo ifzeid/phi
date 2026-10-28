@@ -68,7 +68,9 @@ final class CameraSession: ObservableObject {
     /// Crop stops and non-1× virtual zooms must not request Bayer RAW. `capturePhoto` throws if they do.
     private var rawSuppressed = false
     private var activeStopOptical = true
-    private var captureFormat: CaptureFormat = .jpegAndRaw
+    private var processMode: ProcessMode = .bayer
+    private var processedCodec: ProcessedCodec = .heic
+    private var proRawFellBack = false
     private var photoAspect: PhotoAspect = .threeByFour
     /// The preview's rotation coordinator is created on the main thread. Suspend it before swapping inputs.
     let previewAnchor = PreviewAnchor()
@@ -490,10 +492,20 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    func setCaptureFormat(_ format: CaptureFormat) {
-        captureFormat = format
+    func setProcessMode(_ mode: ProcessMode) {
+        processMode = mode
         sessionQueue.async {
-            self.captureFormat = format
+            self.processMode = mode
+            self.applyProRAWSwitch()
+            guard self.didConfigure else { return }
+            self.publishDeliveryLabel()
+        }
+    }
+
+    func setProcessedCodec(_ codec: ProcessedCodec) {
+        processedCodec = codec
+        sessionQueue.async {
+            self.processedCodec = codec
             guard self.didConfigure else { return }
             self.publishDeliveryLabel()
         }
@@ -530,14 +542,14 @@ final class CameraSession: ObservableObject {
     }
 
     func capturePhoto(
-        format: CaptureFormat,
+        format: ProcessMode,
         delegate: AVCapturePhotoCaptureDelegate,
         note: @escaping (_ usingRaw: Bool, _ codec: String) -> Void,
         completion: @escaping (Bool) -> Void
     ) {
         let flash = flashMode
         sessionQueue.async {
-            self.captureFormat = format
+            self.processMode = format
             guard self.session.isRunning else {
                 DispatchQueue.main.async {
                     self.statusMessage = "相机还没准备好。Camera isn't ready."
@@ -549,7 +561,7 @@ final class CameraSession: ObservableObject {
             let shoot = {
                 self.settleRawCamera()
                 let prepared = self.makeSettings(flash: flash)
-                if prepared.usingRaw == false, self.captureFormat.wantsRaw, self.photoAspect.allowsRaw {
+                if prepared.usingRaw == false, self.processMode.wantsRaw, self.photoAspect.allowsRaw {
                     DispatchQueue.main.async {
                         self.statusMessage = "这一档没有 Bayer RAW，不会把系统成片当成 PHI 显影保存。"
                     }
@@ -692,15 +704,13 @@ final class CameraSession: ObservableObject {
 
     private func discover(_ device: AVCaptureDevice) -> Discovery {
         let raw = photoOutput.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
-        let codec = processedPhotoCodec().name
         let lower = max(-2, Double(device.minExposureTargetBias))
         let upper = min(2, Double(device.maxExposureTargetBias))
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
         let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
-        let hardwareRaw = raw && rawSuppressed == false && activeStopOptical && captureFormat.wantsRaw && photoAspect.allowsRaw
         return Discovery(
-            label: CaptureFormat.label(preference: captureFormat, rawDelivered: hardwareRaw, codec: codec, aspect: photoAspect.title),
+            label: ProcessMode.label(mode: processMode, aspect: photoAspect.title),
             raw: raw,
             range: range,
             manual: manual,
@@ -776,14 +786,15 @@ final class CameraSession: ObservableObject {
 
     private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String) {
         alignPhotoDimensions()
-        let bayer = (captureFormat.wantsRaw && photoAspect.allowsRaw) ? bayerFormatIfDeliverable() : nil
-        let processedCodec = processedPhotoCodec()
-        let processed: [String: Any] = [AVVideoCodecKey: processedCodec.codec]
+        applyProRAWSwitch()
+        let rawPixel = rawPixelFormat()
+        let chosenCodec = processedPhotoCodec()
+        let processed: [String: Any] = [AVVideoCodecKey: chosenCodec.codec]
         let settings: AVCapturePhotoSettings
-        // RAW mode still asks for Apple's processed companion. Photos rejects a DNG with no primary photo,
-        // so the shutter stores that HEIF/JPEG beside the DNG. PHI develop waits until 编辑. JPEG mode never requests Bayer.
-        if let bayer {
-            settings = AVCapturePhotoSettings(rawPixelFormatType: bayer, processedFormat: processed)
+        // A RAW asset still needs Apple's processed file as `.photo`. Photos rejects a DNG with no primary.
+        // 标准 never requests RAW. ProRAW is already multi-frame, demosaiced, and denoised by Apple.
+        if let rawPixel {
+            settings = AVCapturePhotoSettings(rawPixelFormatType: rawPixel, processedFormat: processed)
         } else {
             settings = AVCapturePhotoSettings(format: processed)
         }
@@ -801,14 +812,9 @@ final class CameraSession: ObservableObject {
                 kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: preview)
             ]
         }
-        let usingRaw = bayer != nil
-        let codecName = processedCodec.name
-        let label = CaptureFormat.label(
-            preference: captureFormat,
-            rawDelivered: usingRaw,
-            codec: codecName,
-            aspect: photoAspect.title
-        )
+        let usingRaw = rawPixel != nil
+        let codecName = chosenCodec.name
+        let label = ProcessMode.label(mode: processMode, aspect: photoAspect.title)
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
         }
@@ -816,10 +822,11 @@ final class CameraSession: ObservableObject {
     }
 
     /// HEIC stills use the HEVC photo codec. `AVVideoCodecType` has no `.heic` case; that name is `AVFileType.heic`.
-    /// JPEG is the fallback when HEVC is not in `availablePhotoCodecTypes`.
+    /// JPEG is used when the setting asks for it, or when HEVC is not in `availablePhotoCodecTypes`.
     private func processedPhotoCodec() -> (codec: AVVideoCodecType, name: String) {
         let codecs = photoOutput.availablePhotoCodecTypes
-        if let hevc = codecs.first(where: { $0 == .hevc || $0.rawValue.caseInsensitiveCompare("heic") == .orderedSame }) {
+        if processedCodec == .heic,
+           let hevc = codecs.first(where: { $0 == .hevc || $0.rawValue.caseInsensitiveCompare("heic") == .orderedSame }) {
             return (hevc, "HEIC")
         }
         return (.jpeg, "JPEG")
@@ -1089,7 +1096,7 @@ final class CameraSession: ObservableObject {
     /// Optical and crop stops both need the physical camera at zoom 1 before Bayer is requested.
     /// The virtual camera's zoomed format often lists no RAW, including the tele stop.
     private func needsPhysicalRawSwitch() -> Bool {
-        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
+        guard processMode.wantsRaw, photoAspect.allowsRaw else { return false }
         guard let stop = lensStops.first(where: { $0.id == selectedStopID }) else { return false }
         guard let device else { return false }
         let onNative = device.uniqueID == stop.deviceID && abs(Double(device.videoZoomFactor) - 1) < 0.05
@@ -1098,7 +1105,7 @@ final class CameraSession: ObservableObject {
     }
 
     private func settleRawCamera() {
-        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return }
+        guard processMode.wantsRaw, photoAspect.allowsRaw else { return }
         guard let stop = lensStops.first(where: { $0.id == selectedStopID }),
               let physical = AVCaptureDevice(uniqueID: stop.deviceID) else {
             rawSuppressed = true
@@ -1121,19 +1128,46 @@ final class CameraSession: ObservableObject {
             log.info("stop \(stop.millimeters)mm still on the virtual camera, Bayer not requested")
             return
         }
-        let found = activateBayerFormat(preferFullSensor: stop.isOpticalStep == false, millimeters: stop.millimeters)
+        applyProRAWSwitch()
+        let fullSensor = stop.isOpticalStep == false
+        if processMode.wantsProRaw {
+            if activateBayerFormat(
+                preferFullSensor: fullSensor,
+                millimeters: stop.millimeters,
+                match: { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }
+            ) {
+                proRawFellBack = false
+                rawSuppressed = false
+                return
+            }
+            proRawFellBack = true
+            DispatchQueue.main.async {
+                self.statusMessage = "这一档没有 ProRAW，已改用 Bayer RAW。"
+            }
+        } else {
+            proRawFellBack = false
+        }
+        let found = activateBayerFormat(
+            preferFullSensor: fullSensor,
+            millimeters: stop.millimeters,
+            match: { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
+        )
         rawSuppressed = found == false
     }
 
     /// Sets formats one at a time and reads Bayer types only after `commitConfiguration`.
     /// A ~12MP format on the tele often has no Bayer; the native still format does.
-    private func activateBayerFormat(preferFullSensor: Bool, millimeters: Int) -> Bool {
+    private func activateBayerFormat(
+        preferFullSensor: Bool,
+        millimeters: Int,
+        match: (OSType) -> Bool
+    ) -> Bool {
         guard let device else { return false }
         let ordered = Self.formatsForRaw(on: device, preferFullSensor: preferFullSensor)
-        if preferFullSensor == false, bayerTypes().isEmpty == false {
+        if preferFullSensor == false, rawTypes(matching: match).isEmpty == false {
             logRawTypes(millimeters: millimeters, note: "current")
             alignPhotoDimensions()
-            if bayerTypes().isEmpty == false {
+            if rawTypes(matching: match).isEmpty == false {
                 stillFormatDeviceID = device.uniqueID
                 return true
             }
@@ -1145,14 +1179,14 @@ final class CameraSession: ObservableObject {
                 continue
             }
             logRawTypes(millimeters: millimeters, note: "tried")
-            if bayerTypes().isEmpty == false {
+            if rawTypes(matching: match).isEmpty == false {
                 alignPhotoDimensions()
                 logRawTypes(millimeters: millimeters, note: "chosen")
-                if bayerTypes().isEmpty {
-                    log.info("stop \(millimeters)mm Bayer disappeared after maxPhotoDimensions")
+                if rawTypes(matching: match).isEmpty {
+                    log.info("stop \(millimeters)mm raw list emptied after maxPhotoDimensions")
                 }
                 stillFormatDeviceID = device.uniqueID
-                return bayerTypes().isEmpty == false
+                return rawTypes(matching: match).isEmpty == false
             }
         }
         logRawTypes(millimeters: millimeters, note: "none")
@@ -1174,7 +1208,36 @@ final class CameraSession: ObservableObject {
     }
 
     private func bayerTypes() -> [OSType] {
-        photoOutput.availableRawPhotoPixelFormatTypes.filter { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
+        rawTypes(matching: { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) })
+    }
+
+    private func rawTypes(matching: (OSType) -> Bool) -> [OSType] {
+        photoOutput.availableRawPhotoPixelFormatTypes.filter(matching)
+    }
+
+    /// ProRAW formats appear only after `isAppleProRAWEnabled` is on.
+    private func applyProRAWSwitch() {
+        guard photoOutput.isAppleProRAWSupported else {
+            if photoOutput.isAppleProRAWEnabled {
+                photoOutput.isAppleProRAWEnabled = false
+            }
+            return
+        }
+        let enable = processMode.wantsProRaw
+        if photoOutput.isAppleProRAWEnabled != enable {
+            photoOutput.isAppleProRAWEnabled = enable
+        }
+    }
+
+    private func rawPixelFormat() -> OSType? {
+        guard processMode.wantsRaw, photoAspect.allowsRaw, rawSuppressed == false else { return nil }
+        guard let device, isVirtual(device) == false else { return nil }
+        if processMode.wantsProRaw, proRawFellBack == false {
+            if let pro = rawTypes(matching: { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }).first {
+                return pro
+            }
+        }
+        return bayerTypes().first
     }
 
     private func logRawTypes(millimeters: Int, note: String) {
@@ -1196,14 +1259,9 @@ final class CameraSession: ObservableObject {
             AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
         }
         let cropStop = selectedIsCrop
-        let usingRaw = captureFormat.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false && (cropStop || (activeStopOptical && outputHasBayer))
+        let usingRaw = processMode.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false && (cropStop || (activeStopOptical && outputHasBayer))
         let name = processedPhotoCodec().name
-        let label = CaptureFormat.label(
-            preference: captureFormat,
-            rawDelivered: usingRaw,
-            codec: name,
-            aspect: photoAspect.title
-        )
+        let label = ProcessMode.label(mode: processMode, aspect: photoAspect.title)
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
         }
@@ -1226,10 +1284,13 @@ final class CameraSession: ObservableObject {
     }
 
     private func needsStillFormatWork() -> Bool {
-        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
+        guard processMode.wantsRaw, photoAspect.allowsRaw else { return false }
         guard let stop = lensStops.first(where: { $0.id == selectedStopID }), let device else { return false }
         if isVirtual(device) || device.uniqueID != stop.deviceID { return true }
         if abs(Double(device.videoZoomFactor) - 1) > 0.05 { return true }
+        if processMode.wantsProRaw, rawTypes(matching: { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }).isEmpty {
+            return true
+        }
         return bayerTypes().isEmpty
     }
 
