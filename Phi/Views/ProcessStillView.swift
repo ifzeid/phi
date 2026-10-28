@@ -29,11 +29,12 @@ struct ProcessStillView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let home = max(geo.safeAreaInsets.bottom, ScreenEdge.windowBottom, 21)
-            let chrome = 52 + 48 + toolHeight + 44 + 44 + home + 12
-            let ratio = PhotoAspect.finderWidthOverHeight
-            let ideal = geo.size.width / ratio
-            let photoHeight = min(ideal, max(160, geo.size.height - chrome))
+            let home: CGFloat = max(geo.safeAreaInsets.bottom, ScreenEdge.windowBottom, 21)
+            // Title 52, tabs 48, toast 44, actions 44, and 12pt above the home inset.
+            let chrome: CGFloat = 200 + toolHeight + home
+            let ratio: CGFloat = PhotoAspect.finderWidthOverHeight
+            let ideal: CGFloat = geo.size.width / ratio
+            let photoHeight: CGFloat = min(ideal, max(160, geo.size.height - chrome))
             ZStack {
                 CameraColor.background.ignoresSafeArea()
                 VStack(spacing: 0) {

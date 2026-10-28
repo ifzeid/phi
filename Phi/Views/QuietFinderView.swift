@@ -167,16 +167,22 @@ struct QuietFinderView: View {
 
     private var finder: some View {
         GeometryReader { geo in
-            let width = geo.size.width
-            let height = geo.size.height
-            let island = geo.safeAreaInsets.top > 1 ? geo.safeAreaInsets.top : ScreenEdge.windowTop
-            let home = max(geo.safeAreaInsets.bottom > 1 ? geo.safeAreaInsets.bottom : ScreenEdge.windowBottom, 21)
-            let iconTop = island / 2 - 22
-            let pillTop = island + 8
-            let photoTop = pillTop + 32 + 6
-            let cluster = CGFloat(40 + 6 + 44 + 3 + 80 + 3 + 22)
-            let clusterTop = height - home - cluster
-            let photoHeight = width / PhotoAspect.finderWidthOverHeight
+            let width: CGFloat = geo.size.width
+            let height: CGFloat = geo.size.height
+            let island: CGFloat = geo.safeAreaInsets.top > 1 ? geo.safeAreaInsets.top : ScreenEdge.windowTop
+            let home: CGFloat = max(geo.safeAreaInsets.bottom > 1 ? geo.safeAreaInsets.bottom : ScreenEdge.windowBottom, 21)
+            let iconTop: CGFloat = island / 2 - 22
+            let pillTop: CGFloat = island + 8
+            let photoTop: CGFloat = pillTop + 38
+            // Lens 40, gap 6, exposure 44, gap 3, shutter 80, gap 3, readout 22.
+            let cluster: CGFloat = 198
+            let clusterTop: CGFloat = height - home - cluster
+            let photoHeight: CGFloat = width / PhotoAspect.finderWidthOverHeight
+            let flashCenterX: CGFloat = 40
+            let gridCenterX: CGFloat = width - 40
+            let pillCenterY: CGFloat = pillTop + 16
+            let menuCenterX: CGFloat = 103
+            let menuCenterY: CGFloat = iconTop + 139
             ZStack(alignment: .topLeading) {
                 viewfinder
                     .frame(width: width, height: photoHeight)
@@ -195,11 +201,11 @@ struct QuietFinderView: View {
                     .position(x: width / 2, y: photoTop + photoHeight / 2)
 
                 flashButton
-                    .position(x: 18 + 22, y: iconTop + 22)
+                    .position(x: flashCenterX, y: iconTop + 22)
                 gridButton
-                    .position(x: width - 18 - 22, y: iconTop + 22)
+                    .position(x: gridCenterX, y: iconTop + 22)
                 modePill
-                    .position(x: width / 2, y: pillTop + 16)
+                    .position(x: width / 2, y: pillCenterY)
 
                 VStack(spacing: 0) {
                     lensBar
@@ -228,7 +234,7 @@ struct QuietFinderView: View {
                             flashMenu = false
                         }
                     )
-                    .position(x: 18 + 85, y: iconTop + 44 + 8 + 87)
+                    .position(x: menuCenterX, y: menuCenterY)
                     .zIndex(8)
                 }
             }
