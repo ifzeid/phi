@@ -3,7 +3,7 @@ import Combine
 import UIKit
 import UniformTypeIdentifiers
 
-/// Builds each still at `.speed`, prefers Bayer RAW, and saves it to Photos.
+/// Builds each still at `.speed`. JPEG+RAW is the default; RAW is skipped when this stop cannot deliver Bayer.
 final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     let camera = CameraSession()
 
@@ -13,7 +13,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var thumbnail: UIImage?
     @Published private(set) var lastSavedNote: String?
     @Published private(set) var canRetryPhotoSave = false
-    @Published private(set) var grainStyle: GrainStyle
+    @Published private(set) var captureFormat: CaptureFormat = .jpegAndRaw
+    @Published private(set) var photoAspect: PhotoAspect = .threeByFour
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
 
@@ -22,11 +23,15 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     private var pending = PendingCapture()
 
     override init() {
-        grainStyle = GrainStyle.stored(UserDefaults.standard.string(forKey: StillArchive.grainStyleKey))
         super.init()
+        captureFormat = CaptureFormat.stored(UserDefaults.standard.string(forKey: CaptureFormat.storageKey))
+        photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
+        camera.setCaptureFormat(captureFormat)
+        camera.setPhotoAspect(photoAspect)
         captureCount = UserDefaults.standard.integer(forKey: StillArchive.countKey)
-        canRetryPhotoSave = UserDefaults.standard.string(forKey: StillArchive.lastPathKey) != nil
-            && UserDefaults.standard.bool(forKey: StillArchive.lastSavedKey) == false
+        let unfinished = UserDefaults.standard.bool(forKey: StillArchive.lastSavedKey) == false
+        canRetryPhotoSave = unfinished && (StillArchive.loadLastRecord()?.files.isEmpty == false
+            || UserDefaults.standard.string(forKey: StillArchive.lastPathKey) != nil)
         hasDevelopBase = FileManager.default.fileExists(atPath: StillArchive.basePreviewURL.path)
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let data = try? Data(contentsOf: StillArchive.thumbnailURL),
@@ -43,15 +48,39 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             .store(in: &cancellables)
     }
 
-    func setGrainStyle(_ style: GrainStyle) {
-        grainStyle = style
-        UserDefaults.standard.set(style.rawValue, forKey: StillArchive.grainStyleKey)
+    func setCaptureFormat(_ format: CaptureFormat) {
+        captureFormat = format
+        UserDefaults.standard.set(format.rawValue, forKey: CaptureFormat.storageKey)
+        camera.setCaptureFormat(format)
+    }
+
+    func setPhotoAspect(_ aspect: PhotoAspect) {
+        photoAspect = aspect
+        UserDefaults.standard.set(aspect.rawValue, forKey: PhotoAspect.storageKey)
+        camera.setPhotoAspect(aspect)
+    }
+
+    /// Opens Process for a still chosen in the PHI album. The library original is not overwritten.
+    func openDevelop(image: UIImage, originalWasRaw: Bool) {
+        guard let base = StillPipeline.normalizedCGImage(from: image) else {
+            camera.statusMessage = "这张照片打不开。Couldn't open that still."
+            return
+        }
+        let status = originalWasRaw
+            ? "RAW 原片留在相册里，这里只改处理图。"
+            : "导出时另存处理图，不覆盖相册里的原片。"
+        present(
+            base: base,
+            recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: originalWasRaw),
+            isSample: false,
+            status: status
+        )
     }
 
     /// Opens the last developed still, or the bundled sample when nothing has been captured.
     func openProcess() {
         if let base = StillArchive.loadBasePreview() {
-            let recipe = StillArchive.loadRecipe() ?? StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: false)
+            let recipe = StillArchive.loadRecipe() ?? StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false)
             present(
                 base: base,
                 recipe: recipe,
@@ -70,7 +99,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         }
         present(
             base: base,
-            recipe: StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: false),
+            recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false),
             isSample: true,
             status: "样张，不是这次拍摄。Sample still, not a capture."
         )
@@ -141,7 +170,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         shutterTick += 1
         camera.statusMessage = nil
         resetPending()
-        camera.capturePhoto(delegate: self, note: { [weak self] usingRaw, codec in
+        let format = captureFormat
+        camera.capturePhoto(format: format, delegate: self, note: { [weak self] usingRaw, codec in
             self?.noteSettings(usingRaw: usingRaw, codec: codec)
         }, completion: { [weak self] started in
             if !started {
@@ -157,19 +187,23 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             UIApplication.shared.open(url)
             return
         }
-        let defaults = UserDefaults.standard
-        guard let path = defaults.string(forKey: StillArchive.lastPathKey),
-              let uti = defaults.string(forKey: StillArchive.lastUTIKey) else {
+        guard let record = StillArchive.loadLastRecord() ?? Self.legacyRecord(),
+              let payloads = record.payloads() else {
             camera.statusMessage = "没有可重试的照片。"
-            return
-        }
-        let url = URL(fileURLWithPath: path)
-        guard let data = try? Data(contentsOf: url) else {
-            camera.statusMessage = "App 内的照片文件不在了。"
             canRetryPhotoSave = false
             return
         }
-        Task { await self.saveToPhotos(data: data, uti: uti, filename: url.lastPathComponent, announceFallback: false) }
+        Task { await self.saveToPhotos(payloads, skippedRaw: false, croppedAspect: false) }
+    }
+
+    private static func legacyRecord() -> LibraryRecord? {
+        let defaults = UserDefaults.standard
+        guard let path = defaults.string(forKey: StillArchive.lastPathKey),
+              let uti = defaults.string(forKey: StillArchive.lastUTIKey) else { return nil }
+        let url = URL(fileURLWithPath: path)
+        return LibraryRecord(files: [
+            LibraryRecord.File(path: path, typeIdentifier: uti, filename: url.lastPathComponent, alternate: false)
+        ])
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
@@ -206,36 +240,95 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     private func finish(_ snapshot: PendingCapture) {
-        let payload = snapshot.raw ?? snapshot.processed
-        guard let payload else {
+        let format = captureFormat
+        let hasRaw = snapshot.raw != nil
+        let hasProcessed = snapshot.processed != nil
+        guard hasRaw || hasProcessed else {
             isCapturing = false
             camera.statusMessage = snapshot.error ?? "没有得到照片数据。No photo data."
             return
         }
 
-        let savedRaw = snapshot.raw != nil
-        let ext = savedRaw ? "dng" : (snapshot.codec == "HEIC" ? "heic" : "jpg")
-        let uti = savedRaw
-            ? (UTType(filenameExtension: "dng")?.identifier ?? "com.adobe.raw-image")
-            : (snapshot.codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier)
-        let preview = snapshot.preview
+        let aspect = photoAspect
         let codec = snapshot.codec
-        let usedRaw = snapshot.usedRaw
-        let style = grainStyle
+        let rawUTI = UTType(filenameExtension: "dng")?.identifier ?? "com.adobe.raw-image"
+        let saveRaw = format.wantsRaw && hasRaw && aspect.allowsRaw
+        let saveProcessed = format != .raw || saveRaw == false
+        let skippedRaw = format.wantsRaw && saveRaw == false && hasProcessed
+        let preview = snapshot.preview
+        let rawData = snapshot.raw
+        let originalProcessed = snapshot.processed
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let url = try? StillArchive.write(data: payload, ext: ext)
-            let base = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+            var spokenCodec = codec
+            var processedExt = codec == "HEIC" ? "heic" : "jpg"
+            var processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
+            var bytes = originalProcessed
+            let upright = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+                ?? originalProcessed.flatMap { UIImage(data: $0) }.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+            let framed = upright.map { aspect.cropped($0) }
+            if aspect != .threeByFour, let framed, let encoded = StillPipeline.encodeDeveloped(framed) {
+                bytes = encoded.data
+                processedExt = encoded.ext
+                processedUTI = encoded.uti
+                spokenCodec = encoded.ext == "heic" ? "HEIC" : "JPEG"
+            }
+            let processedData = bytes
+            let stamp = StillArchive.stamp()
+            var files: [LibraryRecord.File] = []
+            var payloads: [LibraryPayload] = []
+            if saveProcessed, let processedData,
+               let url = try? StillArchive.write(data: processedData, stamp: stamp, ext: processedExt) {
+                let file = LibraryRecord.File(
+                    path: url.path,
+                    typeIdentifier: processedUTI,
+                    filename: url.lastPathComponent,
+                    alternate: false
+                )
+                files.append(file)
+                payloads.append(LibraryPayload(
+                    data: processedData,
+                    typeIdentifier: processedUTI,
+                    filename: file.filename,
+                    alternate: false
+                ))
+            }
+            if saveRaw, let rawData,
+               let url = try? StillArchive.write(data: rawData, stamp: stamp, ext: "dng") {
+                let alternate = files.isEmpty == false
+                let file = LibraryRecord.File(
+                    path: url.path,
+                    typeIdentifier: rawUTI,
+                    filename: url.lastPathComponent,
+                    alternate: alternate
+                )
+                files.append(file)
+                payloads.append(LibraryPayload(
+                    data: rawData,
+                    typeIdentifier: rawUTI,
+                    filename: file.filename,
+                    alternate: alternate
+                ))
+            }
+            let base = framed
             if let base {
                 try? StillArchive.writeBasePreview(base)
             }
-            let recipe = StillRecipe(exposureEV: 0, style: style, originalWasRaw: savedRaw)
+            let keptRaw = files.contains { $0.filename.lowercased().hasSuffix(".dng") }
+            let recipe = StillRecipe(exposureEV: 0, style: .off, originalWasRaw: keptRaw)
             if base != nil {
                 StillArchive.writeRecipe(recipe)
             }
-            let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: style, maxSide: 900) }
+            let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: .off, maxSide: 900) }
             let thumb = thumbSource.map { StillArchive.thumbnail(from: UIImage(cgImage: $0)) } ?? preview.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
+            let captureStatus = Self.captureStatus(
+                codec: spokenCodec,
+                savedRaw: keptRaw,
+                savedProcessed: files.contains { $0.alternate == false && $0.filename.lowercased().hasSuffix(".dng") == false },
+                skippedRaw: skippedRaw,
+                croppedAspect: aspect != .threeByFour
+            )
             DispatchQueue.main.async {
                 self.isCapturing = false
                 if let thumb {
@@ -246,49 +339,64 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 self.captureCount += 1
                 UserDefaults.standard.set(self.captureCount, forKey: StillArchive.countKey)
-                if usedRaw && !savedRaw {
-                    self.camera.statusMessage = "这张没能存成 RAW，已改存 \(codec)。"
+                if skippedRaw {
+                    let toast = aspect.allowsRaw
+                        ? "这一档不能保存 RAW，已改存 \(spokenCodec)。"
+                        : "这一画幅按取景裁切，已改存 \(spokenCodec)。"
+                    self.camera.statusMessage = toast
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                        if self.camera.statusMessage == toast {
+                            self.camera.statusMessage = nil
+                        }
+                    }
                 }
                 if let base {
                     self.hasDevelopBase = true
-                    self.present(
-                        base: base,
-                        recipe: recipe,
-                        isSample: false,
-                        status: self.camera.statusMessage
-                    )
+                    self.present(base: base, recipe: recipe, isSample: false, status: captureStatus)
                 }
-                guard let url else {
+                guard files.isEmpty == false else {
                     self.camera.statusMessage = "照片没有留在 App 内。Couldn't keep the still in the app."
                     return
                 }
-                UserDefaults.standard.set(url.path, forKey: StillArchive.lastPathKey)
-                UserDefaults.standard.set(uti, forKey: StillArchive.lastUTIKey)
+                let record = LibraryRecord(files: files)
+                StillArchive.storeLastRecord(record)
+                if let primary = files.first(where: { $0.alternate == false }) ?? files.first {
+                    UserDefaults.standard.set(primary.path, forKey: StillArchive.lastPathKey)
+                    UserDefaults.standard.set(primary.typeIdentifier, forKey: StillArchive.lastUTIKey)
+                }
                 UserDefaults.standard.set(false, forKey: StillArchive.lastSavedKey)
                 self.canRetryPhotoSave = true
                 Task {
-                    await self.saveToPhotos(
-                        data: payload,
-                        uti: uti,
-                        filename: url.lastPathComponent,
-                        announceFallback: usedRaw && !savedRaw
-                    )
+                    await self.saveToPhotos(payloads, skippedRaw: skippedRaw, croppedAspect: aspect != .threeByFour)
                 }
             }
         }
     }
 
-    private func saveToPhotos(data: Data, uti: String, filename: String, announceFallback: Bool) async {
-        do {
-            try await PhotoLibrary.save(data: data, typeIdentifier: uti, filename: filename)
-            let note: String
-            if uti.contains("raw") || filename.lowercased().hasSuffix(".dng") {
-                note = "已保存 RAW（DNG）到相册。Saved a Bayer RAW still."
-            } else if announceFallback {
-                note = "RAW 没有写入，已改存处理过的静帧。Saved the processed still instead of RAW."
-            } else {
-                note = "已保存到相册。Saved to Photos."
+    private static func captureStatus(codec: String, savedRaw: Bool, savedProcessed: Bool, skippedRaw: Bool, croppedAspect: Bool) -> String? {
+        if skippedRaw {
+            if croppedAspect {
+                return "这一画幅按取景裁切，已改存 \(codec)。Saved the cropped \(codec)."
             }
+            return "这一档不能保存 RAW，已改存 \(codec)。Saved \(codec) instead."
+        }
+        if savedRaw && savedProcessed {
+            return "RAW 和 \(codec) 会一起写入相册。这里只改处理图，不覆盖原片。"
+        }
+        if savedRaw {
+            return "RAW 原片单独保存，这里只改处理图。The RAW file stays as captured."
+        }
+        return nil
+    }
+
+    private func saveToPhotos(_ payloads: [LibraryPayload], skippedRaw: Bool, croppedAspect: Bool) async {
+        do {
+            let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true)
+            if let identifier {
+                let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
+                PhiShotIndex.append(localIdentifier: identifier, hasRaw: hasRaw)
+            }
+            let note = Self.savedNote(payloads: payloads, skippedRaw: skippedRaw, croppedAspect: croppedAspect)
             await MainActor.run {
                 self.lastSavedNote = note
                 self.canRetryPhotoSave = false
@@ -314,6 +422,25 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.camera.statusMessage = "未能写入相册，照片留在 App 内。Couldn't save to Photos."
             }
         }
+    }
+
+    private static func savedNote(payloads: [LibraryPayload], skippedRaw: Bool, croppedAspect: Bool) -> String {
+        let rawFile = payloads.first { $0.filename.lowercased().hasSuffix(".dng") }
+        let processed = payloads.first { $0.filename.lowercased().hasSuffix(".dng") == false }
+        let processedName = processed?.filename.lowercased().hasSuffix(".heic") == true ? "HEIC" : "JPEG"
+        if skippedRaw {
+            if croppedAspect {
+                return "这一画幅按取景裁切，已改存 \(processedName)。Saved the cropped \(processedName)."
+            }
+            return "这一档不能保存 RAW，已改存 \(processedName)。Saved \(processedName) instead."
+        }
+        if rawFile != nil, processed != nil {
+            return "已保存 RAW 和 \(processedName) 到相册。Saved RAW and \(processedName) together."
+        }
+        if rawFile != nil {
+            return "已保存 RAW（DNG）到相册。Saved a Bayer RAW still."
+        }
+        return "已保存到相册。Saved to Photos."
     }
 
     private func present(base: CGImage, recipe: StillRecipe, isSample: Bool, status: String?) {

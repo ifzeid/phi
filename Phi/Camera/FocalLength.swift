@@ -69,3 +69,58 @@ enum FocalLengthMath {
         return stops.first { abs($0.zoomFactor - 1) < 0.01 && $0.isOpticalStep } ?? stops.first
     }
 }
+
+/// Zoom factors for one virtual multi-camera. Constituents are widest field of view first.
+struct VirtualZoomDevice {
+    var minimum: Double
+    var maximum: Double
+    var switchOvers: [Double]
+    var constituentIDs: [String]
+}
+
+enum VirtualZoomMath {
+    /// Zoom on the virtual device that frames `millimeters`.
+    /// 1× is the wide camera. Nil when that physical camera is not a constituent, or the factor is outside the zoom range.
+    static func factor(
+        deviceID: String,
+        millimeters: Int,
+        optical: Bool,
+        wideMillimeters: Int,
+        device: VirtualZoomDevice
+    ) -> Double? {
+        guard wideMillimeters > 0, millimeters > 0 else { return nil }
+        guard let index = device.constituentIDs.firstIndex(of: deviceID) else { return nil }
+        guard device.maximum >= device.minimum, device.minimum > 0 else { return nil }
+        let desired = Double(millimeters) / Double(wideMillimeters)
+        guard desired.isFinite else { return nil }
+        let lowerBound = device.minimum
+        let upperBound = device.maximum
+
+        // Virtual multi-cam: zoom 1 is the wide camera, including when an ultrawide sits below 1.
+        if optical, abs(desired - 1) < 0.12 {
+            guard lowerBound <= 1, upperBound >= 1 else { return nil }
+            return 1
+        }
+        if desired < lowerBound - 0.15 || desired > upperBound + 0.15 {
+            return nil
+        }
+
+        let switches = device.switchOvers
+        if optical, desired > 1 {
+            let entry = index > 0 && (index - 1) < switches.count ? switches[index - 1] : lowerBound
+            var zoom = Swift.max(desired, entry)
+            if index > 0, zoom <= entry + 0.0001 {
+                zoom = entry + 0.02
+            }
+            guard zoom <= upperBound + 0.02 else { return nil }
+            return Swift.min(upperBound, Swift.max(lowerBound, zoom))
+        }
+
+        var zoom = Swift.min(upperBound, Swift.max(lowerBound, desired))
+        if optical, index == 0, let handoff = switches.first, zoom >= handoff {
+            zoom = handoff - 0.01
+        }
+        guard zoom.isFinite, zoom + 0.001 >= lowerBound, zoom <= upperBound + 0.001 else { return nil }
+        return Swift.min(upperBound, Swift.max(lowerBound, zoom))
+    }
+}

@@ -87,6 +87,48 @@ enum PhiSymbol {
     }
 }
 
+/// Focus mark from Figma `86:7` viewfinder overlay (360×480).
+/// Ivory corner brackets at 70% and a vermilion dash, both 1.2pt.
+struct FocusReticle: View {
+    var body: some View {
+        Canvas { context, size in
+            let scaleX = size.width / 88
+            let scaleY = size.height / 48
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: x * scaleX, y: y * scaleY)
+            }
+            var brackets = Path()
+            brackets.move(to: p(12, 0))
+            brackets.addLine(to: p(0, 0))
+            brackets.addLine(to: p(0, 12))
+            brackets.move(to: p(76, 0))
+            brackets.addLine(to: p(88, 0))
+            brackets.addLine(to: p(88, 12))
+            brackets.move(to: p(0, 36))
+            brackets.addLine(to: p(0, 48))
+            brackets.addLine(to: p(12, 48))
+            brackets.move(to: p(88, 36))
+            brackets.addLine(to: p(88, 48))
+            brackets.addLine(to: p(76, 48))
+            context.stroke(
+                brackets,
+                with: .color(CameraColor.textPrimary.opacity(0.7)),
+                style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
+            )
+            var dash = Path()
+            dash.move(to: p(32, 24))
+            dash.addLine(to: p(56, 24))
+            context.stroke(
+                dash,
+                with: .color(CameraColor.accent),
+                style: StrokeStyle(lineWidth: 1.2, lineCap: .round)
+            )
+        }
+        .frame(width: 88, height: 48)
+        .accessibilityHidden(true)
+    }
+}
+
 struct PhiIcon: View {
     var symbol: PhiSymbol
     var color: Color = CameraColor.textPrimary

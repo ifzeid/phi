@@ -30,6 +30,8 @@
 	<string>观止需要使用相机来取景和拍摄静帧。Phi needs the camera to preview and capture stills.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>观止会把拍摄的静帧保存到相册。Phi saves captured stills to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>观止只读取自己保存的 PHI 相册，用来回看这台 App 拍过的照片。你可以只允许访问选中的照片。Phi reads the PHI album to show stills it captured. You can limit access to selected photos.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>IBMPlexMono-Regular.ttf</string>

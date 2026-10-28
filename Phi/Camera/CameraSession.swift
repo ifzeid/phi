@@ -44,8 +44,6 @@ final class CameraSession: ObservableObject {
     private var device: AVCaptureDevice?
     private var didConfigure = false
     private var meterObservations: [NSKeyValueObservation] = []
-    private var rotationObservation: NSKeyValueObservation?
-    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var notificationTokens: [NSObjectProtocol] = []
     private var restartAttempts = 0
     private var currentInput: AVCaptureDeviceInput?
@@ -54,8 +52,15 @@ final class CameraSession: ObservableObject {
     private var supportedFlashModes: [AVCaptureDevice.FlashMode] = []
     /// Session-queue copy of the auto/manual choice. The published flag is for SwiftUI.
     private var exposureIsAuto = true
-    private var cachedAspect = "—"
     private var lensStops: [FocalStop] = []
+    private var wideMillimeters = 0
+    /// Crop stops and non-1× virtual zooms must not request Bayer RAW. `capturePhoto` throws if they do.
+    private var rawSuppressed = false
+    private var activeStopOptical = true
+    private var captureFormat: CaptureFormat = .jpegAndRaw
+    private var photoAspect: PhotoAspect = .threeByFour
+    /// The preview's rotation coordinator is created on the main thread. Suspend it before swapping inputs.
+    let previewAnchor = PreviewAnchor()
 
     var videoDevice: AVCaptureDevice? { device }
 
@@ -88,7 +93,6 @@ final class CameraSession: ObservableObject {
 
     deinit {
         meterObservations.forEach { $0.invalidate() }
-        rotationObservation?.invalidate()
         notificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
@@ -179,19 +183,31 @@ final class CameraSession: ObservableObject {
     func select(stop: FocalStop) {
         selectedStopID = stop.id
         sessionQueue.async {
-            do {
-                if let target = AVCaptureDevice(uniqueID: stop.deviceID) {
-                    try self.switchInput(to: target)
+            let switching = self.needsDeviceSwitch(for: stop)
+            let work = {
+                do {
+                    try self.performSelect(stop)
+                    if switching {
+                        self.previewAnchor.resume(device: self.device)
+                    }
+                } catch {
+                    if switching {
+                        self.previewAnchor.resume(device: self.device)
+                    }
+                    DispatchQueue.main.async {
+                        self.statusMessage = "焦段没有切过去。Couldn't change zoom."
+                    }
                 }
-                try self.applyZoom(stop.zoomFactor, ramp: false)
-                if !self.exposureIsAuto {
-                    try self.lockCustomExposure()
-                }
-                self.publishManualRanges()
-            } catch {
+            }
+            if switching {
+                // Drop the preview coordinator on the main thread before beginConfiguration.
+                // Creating or destroying it on the session queue deadlocks the telephoto switch.
                 DispatchQueue.main.async {
-                    self.statusMessage = "焦段没有切过去。Couldn't change zoom."
+                    self.previewAnchor.suspend()
+                    self.sessionQueue.async(execute: work)
                 }
+            } else {
+                work()
             }
         }
     }
@@ -199,7 +215,7 @@ final class CameraSession: ObservableObject {
     func setManualISO(_ iso: Float) {
         manualISOValue = iso
         autoExposure = false
-        sessionQueue.async {
+        runOnSessionAfterSuspendingPreview {
             self.exposureIsAuto = false
             self.manualISO = iso
             self.applyCustomOrExplain()
@@ -209,7 +225,7 @@ final class CameraSession: ObservableObject {
     func setManualShutter(_ seconds: Double) {
         manualShutterSeconds = seconds
         autoExposure = false
-        sessionQueue.async {
+        runOnSessionAfterSuspendingPreview {
             self.exposureIsAuto = false
             self.manualDuration = CMTime(seconds: seconds, preferredTimescale: 1_000_000_000)
             self.applyCustomOrExplain()
@@ -273,9 +289,16 @@ final class CameraSession: ObservableObject {
             exposureEV = 0
         }
         let ev = exposureEV
-        sessionQueue.async {
-            self.exposureIsAuto = enabled
-            self.applyExposureMode(enabled: enabled, ev: ev)
+        if enabled {
+            sessionQueue.async {
+                self.exposureIsAuto = enabled
+                self.applyExposureMode(enabled: enabled, ev: ev)
+            }
+        } else {
+            runOnSessionAfterSuspendingPreview {
+                self.exposureIsAuto = enabled
+                self.applyExposureMode(enabled: enabled, ev: ev)
+            }
         }
         return true
     }
@@ -353,13 +376,33 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    func setCaptureFormat(_ format: CaptureFormat) {
+        captureFormat = format
+        sessionQueue.async {
+            self.captureFormat = format
+            guard self.didConfigure else { return }
+            self.publishDeliveryLabel()
+        }
+    }
+
+    func setPhotoAspect(_ aspect: PhotoAspect) {
+        photoAspect = aspect
+        sessionQueue.async {
+            self.photoAspect = aspect
+            guard self.didConfigure else { return }
+            self.publishDeliveryLabel()
+        }
+    }
+
     func capturePhoto(
+        format: CaptureFormat,
         delegate: AVCapturePhotoCaptureDelegate,
         note: @escaping (_ usingRaw: Bool, _ codec: String) -> Void,
         completion: @escaping (Bool) -> Void
     ) {
         let flash = flashMode
         sessionQueue.async {
+            self.captureFormat = format
             guard self.session.isRunning else {
                 DispatchQueue.main.async {
                     self.statusMessage = "相机还没准备好。Camera isn't ready."
@@ -445,10 +488,13 @@ final class CameraSession: ObservableObject {
         if photoOutput.isAutoDeferredPhotoDeliverySupported {
             photoOutput.isAutoDeferredPhotoDeliveryEnabled = false
         }
-        installRotation(for: device)
-        observeMeter(device)
-        let discovery = discover(device)
-        cachedAspect = discovery.aspect
+        // Upgrade before the preview exists, so the later 108mm stop only ramps zoom.
+        adoptVirtualCameraIfPossible()
+        let active = self.device ?? device
+        try? prepare(active)
+        applyCaptureRotation()
+        observeMeter(active)
+        let discovery = discover(active)
         didConfigure = true
         if !exposureIsAuto {
             applyExposureMode(enabled: false, ev: 0)
@@ -480,7 +526,6 @@ final class CameraSession: ObservableObject {
 
     private struct Discovery {
         var label: String
-        var aspect: String
         var raw: Bool
         var range: ClosedRange<Double>
         var manual: Bool
@@ -491,17 +536,14 @@ final class CameraSession: ObservableObject {
     private func discover(_ device: AVCaptureDevice) -> Discovery {
         let raw = photoOutput.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
         let codec = processedPhotoCodec().name
-        let dimensions = device.activeFormat.supportedMaxPhotoDimensions
-        let largest = dimensions.max { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }
-        let aspect = largest.map { AspectLabel.photo(width: Int($0.width), height: Int($0.height)) } ?? "—"
         let lower = max(-2, Double(device.minExposureTargetBias))
         let upper = min(2, Double(device.maxExposureTargetBias))
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
         let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
+        let hardwareRaw = raw && rawSuppressed == false && activeStopOptical && captureFormat.wantsRaw && photoAspect.allowsRaw
         return Discovery(
-            label: "\(raw ? "RAW" : codec) · \(aspect)",
-            aspect: aspect,
+            label: CaptureFormat.label(preference: captureFormat, rawDelivered: hardwareRaw, codec: codec, aspect: photoAspect.title),
             raw: raw,
             range: range,
             manual: manual,
@@ -523,16 +565,13 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    private func installRotation(for device: AVCaptureDevice) {
-        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
-        rotationCoordinator = coordinator
-        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.initial, .new]) { [weak self] coordinator, _ in
-            let angle = coordinator.videoRotationAngleForHorizonLevelCapture
-            self?.sessionQueue.async {
-                guard let connection = self?.photoOutput.connection(with: .video),
-                      connection.isVideoRotationAngleSupported(angle) else { return }
-                connection.videoRotationAngle = angle
-            }
+    /// Portrait, rear camera. The app is portrait-only, so the still connection does not need a coordinator.
+    /// `RotationCoordinator` created off the main thread while a preview is attached deadlocks the session.
+    private func applyCaptureRotation() {
+        guard let connection = photoOutput.connection(with: .video) else { return }
+        let portrait: CGFloat = 90
+        if connection.isVideoRotationAngleSupported(portrait) {
+            connection.videoRotationAngle = portrait
         }
     }
 
@@ -586,10 +625,13 @@ final class CameraSession: ObservableObject {
     }
 
     private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String) {
-        let bayer = photoOutput.availableRawPhotoPixelFormatTypes.first { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
+        alignPhotoDimensions()
+        let bayer = (captureFormat.wantsRaw && photoAspect.allowsRaw) ? bayerFormatIfDeliverable() : nil
         let processedCodec = processedPhotoCodec()
         let processed: [String: Any] = [AVVideoCodecKey: processedCodec.codec]
         let settings: AVCapturePhotoSettings
+        // RAW-only still asks for a processed companion so the in-app preview exists.
+        // Photos receives only the DNG in that mode. JPEG mode never requests Bayer.
         if let bayer {
             settings = AVCapturePhotoSettings(rawPixelFormatType: bayer, processedFormat: processed)
         } else {
@@ -607,7 +649,12 @@ final class CameraSession: ObservableObject {
         }
         let usingRaw = bayer != nil
         let codecName = processedCodec.name
-        let label = "\(usingRaw ? "RAW" : codecName) · \(cachedAspect)"
+        let label = CaptureFormat.label(
+            preference: captureFormat,
+            rawDelivered: usingRaw,
+            codec: codecName,
+            aspect: photoAspect.title
+        )
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
         }
@@ -626,11 +673,13 @@ final class CameraSession: ObservableObject {
 
     private func applyZoom(_ factor: Double, ramp: Bool) throws {
         try lockDevice { device in
-            let zoom = min(max(CGFloat(factor), device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+            let lower = device.minAvailableVideoZoomFactor
+            let upper = device.maxAvailableVideoZoomFactor
+            let zoom = Swift.min(upper, Swift.max(lower, CGFloat(factor)))
             guard zoom.isFinite else { return }
             if abs(device.videoZoomFactor - zoom) < 0.01 { return }
             if ramp, device.isRampingVideoZoom == false {
-                device.ramp(toVideoZoomFactor: zoom, withRate: 3.5)
+                device.ramp(toVideoZoomFactor: zoom, withRate: 8)
             } else {
                 device.videoZoomFactor = zoom
             }
@@ -655,7 +704,7 @@ final class CameraSession: ObservableObject {
         currentInput = input
         device = newDevice
         session.commitConfiguration()
-        installRotation(for: newDevice)
+        applyCaptureRotation()
         observeMeter(newDevice)
         let deviceID = newDevice.uniqueID
         DispatchQueue.main.async {
@@ -672,15 +721,21 @@ final class CameraSession: ObservableObject {
     private func ensureCustomExposureDevice() throws {
         guard let device else { return }
         if device.isExposureModeSupported(.custom) { return }
+        let selectedID = selectedStopID
+        let stop = lensStops.first { $0.id == selectedID }
+        let match = Self.backCameras().first { camera in
+            camera.uniqueID == stop?.deviceID && camera.isExposureModeSupported(.custom)
+        }
         let constituent = device.constituentDevices.first { $0.deviceType == .builtInWideAngleCamera && $0.isExposureModeSupported(.custom) }
             ?? device.constituentDevices.first { $0.isExposureModeSupported(.custom) }
         let fallback = Self.backCameras().first { $0.deviceType == .builtInWideAngleCamera && $0.isExposureModeSupported(.custom) }
             ?? Self.backCameras().first { $0.isExposureModeSupported(.custom) }
-        guard let target = constituent ?? fallback else { return }
+        guard let target = match ?? constituent ?? fallback else { return }
         try switchInput(to: target)
-        if let native = lensStops.first(where: { $0.deviceID == target.uniqueID && abs($0.zoomFactor - 1) < 0.01 }) {
-            DispatchQueue.main.async { self.selectedStopID = native.id }
-        }
+        let zoom = stop?.zoomFactor ?? 1
+        try applyZoom(zoom, ramp: false)
+        rawSuppressed = abs(zoom - 1) > 0.05 || stop?.isOpticalStep == false
+        publishDeliveryLabel()
     }
 
     private func lockCustomExposure(seedFromMeter: Bool = false) throws {
@@ -720,6 +775,159 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    /// Main-thread suspend, then session-queue work, then reattach the preview coordinator.
+    private func runOnSessionAfterSuspendingPreview(_ work: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            self.previewAnchor.suspend()
+            self.sessionQueue.async {
+                work()
+                self.previewAnchor.resume(device: self.device)
+            }
+        }
+    }
+
+    private func isVirtual(_ device: AVCaptureDevice) -> Bool {
+        device.constituentDevices.isEmpty == false
+    }
+
+    private static func virtualBackCamera() -> AVCaptureDevice? {
+        let types: [AVCaptureDevice.DeviceType] = [
+            .builtInTripleCamera,
+            .builtInDualWideCamera,
+            .builtInDualCamera
+        ]
+        for type in types {
+            if let device = AVCaptureDevice.default(type, for: .video, position: .back) {
+                return device
+            }
+        }
+        return nil
+    }
+
+    /// Swap the wide camera for the virtual multi-cam once, at 1×, before the preview exists.
+    private func adoptVirtualCameraIfPossible() {
+        guard let current = device, isVirtual(current) == false else { return }
+        guard let virtual = Self.virtualBackCamera(), virtual.uniqueID != current.uniqueID else { return }
+        do {
+            try switchInput(to: virtual)
+            try applyZoom(1, ramp: false)
+            log.info("Using virtual camera for focal changes")
+        } catch {
+            log.error("Virtual camera upgrade failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func virtualDeviceSnapshot() -> VirtualZoomDevice? {
+        let source = device.flatMap { isVirtual($0) ? $0 : nil } ?? Self.virtualBackCamera()
+        guard let source, isVirtual(source) else { return nil }
+        return VirtualZoomDevice(
+            minimum: Double(source.minAvailableVideoZoomFactor),
+            maximum: Double(source.maxAvailableVideoZoomFactor),
+            switchOvers: source.virtualDeviceSwitchOverVideoZoomFactors.map { Double($0) },
+            constituentIDs: source.constituentDevices.map(\.uniqueID)
+        )
+    }
+
+    private func virtualZoom(for stop: FocalStop) -> Double? {
+        guard let snapshot = virtualDeviceSnapshot() else { return nil }
+        return VirtualZoomMath.factor(
+            deviceID: stop.deviceID,
+            millimeters: stop.millimeters,
+            optical: stop.isOpticalStep,
+            wideMillimeters: wideMillimeters,
+            device: snapshot
+        )
+    }
+
+    private func needsDeviceSwitch(for stop: FocalStop) -> Bool {
+        guard let device else { return false }
+        if exposureIsAuto, virtualZoom(for: stop) != nil {
+            return isVirtual(device) == false && Self.virtualBackCamera() != nil
+        }
+        return device.uniqueID != stop.deviceID
+    }
+
+    private func performSelect(_ stop: FocalStop) throws {
+        activeStopOptical = stop.isOpticalStep
+        let zoom: Double
+        let ramp: Bool
+        if exposureIsAuto, let virtualZoom = virtualZoom(for: stop) {
+            if let device, isVirtual(device) == false, let virtual = Self.virtualBackCamera() {
+                try switchInput(to: virtual)
+            }
+            zoom = virtualZoom
+            ramp = true
+        } else if let target = AVCaptureDevice(uniqueID: stop.deviceID) {
+            try switchInput(to: target)
+            zoom = stop.zoomFactor
+            ramp = zoom > 1.05
+        } else {
+            zoom = stop.zoomFactor
+            ramp = true
+        }
+        rawSuppressed = !stop.isOpticalStep || abs(zoom - 1) > 0.05
+        // Lock exposure before the zoom ramp. Locking again afterwards cancels the ramp.
+        if !exposureIsAuto {
+            try lockCustomExposure()
+        } else {
+            let bias = self.exposureEV
+            try lockDevice { device in
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
+                }
+                device.setExposureTargetBias(self.clampedBias(Float(bias), device: device), completionHandler: nil)
+            }
+        }
+        try applyZoom(zoom, ramp: ramp)
+        alignPhotoDimensions()
+        publishManualRanges()
+        publishDeliveryLabel()
+    }
+
+    /// Bayer RAW is only requested at a native 1× optical stop.
+    /// A 2× crop (the ~50mm stop) still advertises RAW formats and then throws inside `capturePhoto`.
+    private func bayerFormatIfDeliverable() -> OSType? {
+        guard rawSuppressed == false, activeStopOptical, let device else { return nil }
+        guard abs(Double(device.videoZoomFactor) - 1) < 0.05 else { return nil }
+        let outputTypes = photoOutput.availableRawPhotoPixelFormatTypes.filter {
+            AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
+        }
+        guard outputTypes.isEmpty == false else { return nil }
+        let supported = device.activeFormat.supportedRawPhotoPixelFormatTypes
+        if supported.isEmpty == false {
+            return outputTypes.first { supported.contains($0) }
+        }
+        return outputTypes.first
+    }
+
+    private func publishDeliveryLabel() {
+        let outputHasBayer = photoOutput.availableRawPhotoPixelFormatTypes.contains {
+            AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
+        }
+        let usingRaw = captureFormat.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false && activeStopOptical && outputHasBayer
+        let name = processedPhotoCodec().name
+        let label = CaptureFormat.label(
+            preference: captureFormat,
+            rawDelivered: usingRaw,
+            codec: name,
+            aspect: photoAspect.title
+        )
+        DispatchQueue.main.async {
+            if self.formatLabel != label { self.formatLabel = label }
+        }
+    }
+
+    private func alignPhotoDimensions() {
+        guard let device else { return }
+        guard let largest = device.activeFormat.supportedMaxPhotoDimensions.max(by: { lhs, rhs in
+            Int(lhs.width) * Int(lhs.height) < Int(rhs.width) * Int(rhs.height)
+        }) else { return }
+        let current = photoOutput.maxPhotoDimensions
+        if current.width != largest.width || current.height != largest.height {
+            photoOutput.maxPhotoDimensions = largest
+        }
+    }
+
     private func publishLensesAndManualSupport() {
         let samples: [LensSample] = Self.backCameras().compactMap { camera in
             guard let millimeters = Self.millimeters(for: camera) else { return nil }
@@ -733,6 +941,7 @@ final class CameraSession: ObservableObject {
         }
         let stops = FocalLengthMath.stops(from: samples)
         lensStops = stops
+        wideMillimeters = samples.first { $0.isWide }?.millimeters ?? 0
         let wideID = samples.first { $0.isWide }?.id ?? device?.uniqueID
         let selected = FocalLengthMath.defaultStop(stops, wideDeviceID: wideID)
         let manual = (device.map(supportsCustomExposure) ?? false) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
