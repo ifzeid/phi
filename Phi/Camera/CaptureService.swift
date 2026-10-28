@@ -61,26 +61,34 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     func setProcessMode(_ mode: ProcessMode) {
-        processMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: ProcessMode.storageKey)
-        camera.setProcessMode(mode)
+        SettingsTiming.measure("setProcessMode", label: mode.mark) {
+            processMode = mode
+            UserDefaults.standard.set(mode.rawValue, forKey: ProcessMode.storageKey)
+            camera.setProcessMode(mode)
+        }
     }
 
     func setSaveHEIF(_ enabled: Bool) {
-        saveHEIF = enabled
-        UserDefaults.standard.set(enabled, forKey: ProcessMode.saveHEIFKey)
+        SettingsTiming.measure("setSaveHEIF", label: enabled ? "on" : "off") {
+            saveHEIF = enabled
+            UserDefaults.standard.set(enabled, forKey: ProcessMode.saveHEIFKey)
+        }
     }
 
     func setProcessedCodec(_ codec: ProcessedCodec) {
-        processedCodec = codec
-        UserDefaults.standard.set(codec.rawValue, forKey: ProcessedCodec.storageKey)
-        camera.setProcessedCodec(codec)
+        SettingsTiming.measure("setProcessedCodec", label: codec.title) {
+            processedCodec = codec
+            UserDefaults.standard.set(codec.rawValue, forKey: ProcessedCodec.storageKey)
+            camera.setProcessedCodec(codec)
+        }
     }
 
     func setPhotoAspect(_ aspect: PhotoAspect) {
-        photoAspect = aspect
-        UserDefaults.standard.set(aspect.rawValue, forKey: PhotoAspect.storageKey)
-        camera.setPhotoAspect(aspect)
+        SettingsTiming.measure("setPhotoAspect", label: aspect.title) {
+            photoAspect = aspect
+            UserDefaults.standard.set(aspect.rawValue, forKey: PhotoAspect.storageKey)
+            camera.setPhotoAspect(aspect)
+        }
     }
 
     func openLocalShot(id: String) {
@@ -818,6 +826,21 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         pending.usedRaw = usingRaw
         pending.codec = codec
         pendingLock.unlock()
+    }
+}
+
+private enum SettingsTiming {
+    static let log = Logger(subsystem: "com.zeid.phi", category: "settings")
+    static let signposter = OSSignposter(subsystem: "com.zeid.phi", category: "settings")
+
+    static func measure(_ name: StaticString, label: String, _ body: () -> Void) {
+        let state = signposter.beginInterval(name)
+        let start = CFAbsoluteTimeGetCurrent()
+        body()
+        let milliseconds = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        signposter.endInterval(name, state)
+        let line = String(format: "%@ %.2f ms", label, milliseconds)
+        log.info("\(line, privacy: .public)")
     }
 }
 
