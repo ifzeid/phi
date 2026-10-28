@@ -27,6 +27,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     private var developRetryID: String?
 
     private var cancellables = Set<AnyCancellable>()
+    private var cameraPublishQueued = false
     private let pendingLock = NSLock()
     private var pending = PendingCapture()
 
@@ -55,7 +56,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         camera.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.objectWillChange.send()
+                guard let self else { return }
+                if self.cameraPublishQueued { return }
+                self.cameraPublishQueued = true
+                DispatchQueue.main.async {
+                    self.cameraPublishQueued = false
+                    self.objectWillChange.send()
+                }
             }
             .store(in: &cancellables)
     }

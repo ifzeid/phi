@@ -60,7 +60,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     }
 
     func setExposure(_ value: Double) {
-        exposureEV = (min(2, max(-2, value)) * 10).rounded() / 10
+        exposureEV = (min(5, max(-5, value)) * 10).rounded() / 10
         schedule()
     }
 

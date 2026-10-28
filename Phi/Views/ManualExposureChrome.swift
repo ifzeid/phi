@@ -28,67 +28,84 @@ struct ExposureBadge: View {
     }
 }
 
-struct ManualTickScale: View {
-    var labels: [String]
+/// Shared Quiet Finder tick scale. Exposure compensation, shutter, and ISO use the same ivory ticks.
+struct QuietTickScale: View {
+    var label: String
     var index: Int
+    var count: Int
     var horizontal: Bool
-    var onSelect: (Int) -> Void
+    /// When set, a drag moves the center tick. Exposure compensation leaves this nil and is driven by the viewfinder.
+    var onSelect: ((Int) -> Void)?
 
     @State private var drag = DragBase()
+    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
 
     var body: some View {
-        GeometryReader { geo in
+        GeometryReader { _ in
             ZStack {
                 Canvas { context, size in
                     let span = horizontal ? size.width : size.height
                     let mid = span / 2
                     let step: CGFloat = 14
-                    for offset in labels.indices {
+                    let upper = max(count - 1, 0)
+                    for offset in 0...upper {
                         let delta = CGFloat(offset - index) * step
                         let position = mid + (horizontal ? delta : -delta)
-                        if position < -10 || position > span + 10 { continue }
+                        if position < -12 || position > span + 12 { continue }
                         let selected = offset == index
-                        let height: CGFloat = selected ? 16 : (offset % 3 == 0 ? 10 : 6)
+                        let major = offset % 5 == 0
+                        let length: CGFloat = selected ? 18 : (major ? 11 : 6)
                         var path = Path()
                         if horizontal {
                             path.move(to: CGPoint(x: position, y: 0))
-                            path.addLine(to: CGPoint(x: position, y: height))
+                            path.addLine(to: CGPoint(x: position, y: length))
                         } else {
                             path.move(to: CGPoint(x: size.width, y: position))
-                            path.addLine(to: CGPoint(x: size.width - height, y: position))
+                            path.addLine(to: CGPoint(x: size.width - length, y: position))
                         }
-                        let color = selected ? CameraColor.textPrimary : CameraColor.textSecondary.opacity(0.8)
-                        context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: selected ? 1.2 : 0.8, lineCap: .round))
+                        let color = selected ? CameraColor.textPrimary : CameraColor.textSecondary.opacity(major ? 0.9 : 0.55)
+                        context.stroke(
+                            path,
+                            with: .color(color),
+                            style: StrokeStyle(lineWidth: selected ? 1.2 : 0.8, lineCap: .round)
+                        )
                     }
                 }
-                if labels.indices.contains(index) {
-                    Text(labels[index])
-                        .font(CameraFont.parameter(12, medium: true))
-                        .foregroundStyle(CameraColor.textPrimary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: horizontal ? .bottom : .leading)
-                        .padding(.bottom, horizontal ? 2 : 0)
-                        .padding(.leading, horizontal ? 0 : 2)
-                }
+                .allowsHitTesting(false)
+                Text(label)
+                    .font(CameraFont.parameter(12, medium: true))
+                    .foregroundStyle(CameraColor.textPrimary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: horizontal ? .bottom : .leading)
+                    .padding(.bottom, horizontal ? 2 : 0)
+                    .padding(.leading, horizontal ? 0 : 2)
+                    .allowsHitTesting(false)
             }
         }
         .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { value in
-                    guard labels.isEmpty == false else { return }
-                    if drag.index == nil { drag.index = index }
-                    let base = drag.index ?? index
-                    let travel = horizontal ? value.translation.width : -value.translation.height
-                    let steps = Int((travel / 14).rounded())
-                    let next = min(max(base + steps, 0), labels.count - 1)
-                    if next != index { onSelect(next) }
-                }
-                .onEnded { _ in
-                    drag.index = nil
-                }
-        )
-        .accessibilityLabel(horizontal ? "快门" : "感光度")
-        .accessibilityValue(labels.indices.contains(index) ? labels[index] : "")
+        .gesture(dragGesture)
+        .onAppear { haptic.prepare() }
+        .onChange(of: index) { _, _ in
+            haptic.impactOccurred(intensity: 0.45)
+            haptic.prepare()
+        }
+        .accessibilityLabel(horizontal ? "快门" : "刻度")
+        .accessibilityValue(label)
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                guard let onSelect, count > 0 else { return }
+                if drag.index == nil { drag.index = index }
+                let base = drag.index ?? index
+                let travel = horizontal ? value.translation.width : -value.translation.height
+                let steps = Int((travel / 14).rounded())
+                let next = min(max(base + steps, 0), count - 1)
+                if next != index { onSelect(next) }
+            }
+            .onEnded { _ in
+                drag.index = nil
+            }
     }
 }
 

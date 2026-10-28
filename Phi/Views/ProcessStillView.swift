@@ -9,7 +9,7 @@ struct ProcessStillView: View {
     var onRetryOriginal: () -> Void
     var onClose: () -> Void
 
-    private let developRange: ClosedRange<Double> = -2...2
+    private let developRange: ClosedRange<Double> = -5...5
 
     var body: some View {
         ZStack {

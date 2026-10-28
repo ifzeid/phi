@@ -427,8 +427,13 @@ private struct AlbumThumb: View {
                 image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
             }
         case .local(let local):
-            if let preview = AlbumImage.localPreview(local, maxSide: AlbumImage.gridTarget.width) {
-                image = AlbumImage.framed(preview, aspect: shot.framed, zoom: shot.lensZoom)
+            let maxSide = AlbumImage.gridTarget.width
+            let aspect = shot.framed
+            let zoom = shot.lensZoom
+            if let preview = await Task.detached(priority: .utility, operation: {
+                AlbumImage.localPreview(local, maxSide: maxSide)
+            }).value {
+                image = AlbumImage.framed(preview, aspect: aspect, zoom: zoom)
             }
         }
     }
@@ -593,8 +598,13 @@ private struct AlbumPage: View {
                 image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
             }
         case .local(let local):
-            if let preview = AlbumImage.localPreview(local, maxSide: AlbumImage.viewerTarget.width) {
-                image = AlbumImage.framed(preview, aspect: shot.framed, zoom: shot.lensZoom)
+            let maxSide = AlbumImage.viewerTarget.width
+            let aspect = shot.framed
+            let zoom = shot.lensZoom
+            if let preview = await Task.detached(priority: .userInitiated, operation: {
+                AlbumImage.localPreview(local, maxSide: maxSide)
+            }).value {
+                image = AlbumImage.framed(preview, aspect: aspect, zoom: zoom)
             }
         }
     }

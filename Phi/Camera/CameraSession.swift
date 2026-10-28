@@ -55,6 +55,8 @@ final class CameraSession: ObservableObject {
     /// Device whose active format was chosen so the HEIF and the DNG share one pixel size.
     private var stillFormatDeviceID: String?
     private var customExposureQueued = false
+    private var evApplyQueued = false
+    private var pendingEV: Double?
     private var focusReturnObservation: NSKeyValueObservation?
     private var focusGeneration = 0
     private var didHintTooClose = false
@@ -472,11 +474,18 @@ final class CameraSession: ObservableObject {
         autoExposure = true
         sessionQueue.async {
             self.exposureIsAuto = true
-            try? self.lockDevice { device in
-                if device.isExposureModeSupported(.continuousAutoExposure) {
-                    device.exposureMode = .continuousAutoExposure
+            self.pendingEV = stepped
+            if self.evApplyQueued { return }
+            self.evApplyQueued = true
+            self.sessionQueue.async {
+                self.evApplyQueued = false
+                let ev = self.pendingEV ?? stepped
+                try? self.lockDevice { device in
+                    if device.isExposureModeSupported(.continuousAutoExposure) {
+                        device.exposureMode = .continuousAutoExposure
+                    }
+                    device.setExposureTargetBias(self.clampedBias(Float(ev), device: device), completionHandler: nil)
                 }
-                device.setExposureTargetBias(self.clampedBias(Float(stepped), device: device), completionHandler: nil)
             }
         }
     }
@@ -701,8 +710,8 @@ final class CameraSession: ObservableObject {
 
     private func discover(_ device: AVCaptureDevice) -> Discovery {
         let raw = photoOutput.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
-        let lower = max(-2, Double(device.minExposureTargetBias))
-        let upper = min(2, Double(device.maxExposureTargetBias))
+        let lower = max(-4, Double(device.minExposureTargetBias))
+        let upper = min(4, Double(device.maxExposureTargetBias))
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
         let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
