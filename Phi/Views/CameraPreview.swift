@@ -22,11 +22,13 @@ final class PreviewAnchor {
     }
 
     func resume(device: AVCaptureDevice?) {
-        let apply = { self.view?.resumeCoordinator(device: device) }
+        let apply = {
+            self.view?.resumeCoordinator(device: device)
+        }
         if Thread.isMainThread {
-            apply()
+            _ = apply()
         } else {
-            DispatchQueue.main.async(execute: apply)
+            DispatchQueue.main.async { _ = apply() }
         }
     }
 }
