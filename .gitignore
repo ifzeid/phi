@@ -1,0 +1,22 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+.swiftpm/
+timeline.xctimeline
+playground.xcworkspace
+
+# macOS
+.DS_Store
+
+# Signing material
+*.mobileprovision
+*.p12
+*.cer

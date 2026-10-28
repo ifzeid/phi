@@ -1,0 +1,10 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="80" height="80" fill="#F5F5F5"/>
+<g id="Camera &#226;&#128;&#148; Components &#38; source image">
+<rect width="900" height="900" transform="translate(-660 -32)" fill="#222323"/>
+<g id="Camera / Shutter">
+<circle id="Outer ring" cx="40" cy="40" r="38.25" stroke="#343737" stroke-width="1.5"/>
+<circle id="Capture surface" cx="40" cy="40" r="32" fill="#F45135"/>
+</g>
+</g>
+</svg>
