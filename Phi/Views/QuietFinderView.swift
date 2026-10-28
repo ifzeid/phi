@@ -1,6 +1,30 @@
 import SwiftUI
 import UIKit
 
+/// Rule-of-thirds lines. Stroke stays thin so it reads on both bright and dark frames.
+private struct CompositionGrid: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            let thirdX = size.width / 3
+            let thirdY = size.height / 3
+            path.move(to: CGPoint(x: thirdX, y: 0))
+            path.addLine(to: CGPoint(x: thirdX, y: size.height))
+            path.move(to: CGPoint(x: thirdX * 2, y: 0))
+            path.addLine(to: CGPoint(x: thirdX * 2, y: size.height))
+            path.move(to: CGPoint(x: 0, y: thirdY))
+            path.addLine(to: CGPoint(x: size.width, y: thirdY))
+            path.move(to: CGPoint(x: 0, y: thirdY * 2))
+            path.addLine(to: CGPoint(x: size.width, y: thirdY * 2))
+            context.stroke(
+                path,
+                with: .color(CameraColor.textPrimary.opacity(0.42)),
+                style: StrokeStyle(lineWidth: 0.6, lineCap: .round)
+            )
+        }
+    }
+}
+
 private enum DragParameter {
     case ev
     case iso
@@ -18,6 +42,7 @@ private enum DragParameter {
 struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
+    @AppStorage("phi.showGrid") private var showGrid = false
     @State private var dragParameter: DragParameter = .ev
     @State private var dragBaseEV: Double = 0
     @State private var dragBaseISO: Float = 100
@@ -106,10 +131,10 @@ struct QuietFinderView: View {
                 )
                 Spacer()
                 IconHitButton(
-                    symbol: .focus,
-                    active: camera.focusLocked,
-                    label: camera.focusLocked ? "对焦已锁定" : "连续对焦",
-                    action: { camera.setFocusLocked(!camera.focusLocked) }
+                    symbol: .grid,
+                    active: showGrid,
+                    label: showGrid ? "隐藏九宫格" : "显示九宫格",
+                    action: { showGrid.toggle() }
                 )
             }
         }
@@ -156,6 +181,13 @@ struct QuietFinderView: View {
             }
         }
         .clipped()
+        .overlay {
+            if showGrid {
+                CompositionGrid()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay {
             if camera.isConfigured, let message = camera.statusMessage ?? (camera.isRunning ? nil : "正在打开相机") {
                 Text(message)
