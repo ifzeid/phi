@@ -66,11 +66,13 @@ struct QuietFinderView: View {
         .fullScreenCover(isPresented: $showAlbum, onDismiss: {
             guard let pending = pendingDevelop else { return }
             pendingDevelop = nil
-            switch pending {
-            case .library(let localIdentifier):
-                capture.openLibraryShot(localIdentifier: localIdentifier)
-            case .local(let id):
-                capture.openLocalShot(id: id)
+            DispatchQueue.main.async {
+                switch pending {
+                case .library(let localIdentifier):
+                    capture.openLibraryShot(localIdentifier: localIdentifier)
+                case .local(let id):
+                    capture.openLocalShot(id: id)
+                }
             }
         }) {
             AlbumBrowser(
@@ -115,7 +117,7 @@ struct QuietFinderView: View {
                     Task { await capture.exportDeveloped(session) }
                     return
                 },
-                onRetryOriginal: { capture.retryPhotoSave() },
+                onRetryOriginal: { capture.retryFailedSave() },
                 onClose: { capture.dismissProcess() }
             )
         }

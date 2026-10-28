@@ -1,3 +1,4 @@
+import ImageIO
 import Photos
 import PhotosUI
 import SwiftUI
@@ -69,7 +70,8 @@ struct AlbumBrowser: View {
                     onClose: { self.viewerIndex = nil },
                     onEditLibrary: onEditLibrary,
                     onEditLocal: onEditLocal,
-                    onRetryLocal: onRetryLocal
+                    onRetryLocal: onRetryLocal,
+                    onDeleteLocal: deleteLocal
                 )
             }
         }
@@ -195,6 +197,12 @@ struct AlbumBrowser: View {
         PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: controller)
     }
 
+    private func deleteLocal(_ id: String) {
+        PhiLocalShots.forget(id: id)
+        viewerIndex = nil
+        Task { await reload() }
+    }
+
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
@@ -212,6 +220,7 @@ private struct AlbumShot: Identifiable {
     var date: Date?
     var hasRaw: Bool
     var needsRetry: Bool
+    var missing: Bool
 
     static func library(_ asset: PHAsset) -> AlbumShot {
         AlbumShot(
@@ -219,17 +228,20 @@ private struct AlbumShot: Identifiable {
             source: .library(asset),
             date: asset.creationDate,
             hasRaw: PhiRawAsset.contains(asset),
-            needsRetry: false
+            needsRetry: false,
+            missing: false
         )
     }
 
     static func local(_ shot: PhiLocalShots.Shot) -> AlbumShot {
-        AlbumShot(
+        let resolved = shot.files.compactMap { StillArchive.resolve($0.path) }
+        return AlbumShot(
             id: "local-\(shot.id)",
             source: .local(shot),
             date: Self.date(fromStamp: shot.id),
             hasRaw: shot.hasRaw,
-            needsRetry: shot.saveFailed == true && shot.savedToPhotos == false
+            needsRetry: shot.saveFailed == true && shot.savedToPhotos == false,
+            missing: resolved.isEmpty
         )
     }
 
@@ -253,6 +265,12 @@ private struct AlbumThumb: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                } else if shot.missing {
+                    Text("文件丢失")
+                        .font(CameraFont.parameter(9, medium: true))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(CameraColor.surface)
                 } else {
                     CameraColor.surface
                 }
@@ -280,14 +298,14 @@ private struct AlbumThumb: View {
     private func load() async {
         switch shot.source {
         case .library(let asset):
-            if let cached = DevelopCache.image(for: asset.localIdentifier) {
-                image = cached
-                return
+            if image == nil {
+                image = DevelopCache.image(for: asset.localIdentifier)
             }
-            let target = CGSize(width: 240, height: 240)
-            image = await AlbumImage.load(asset, target: target, fast: true)
+            if let sharp = await AlbumImage.load(asset, target: AlbumImage.gridTarget, fast: false) {
+                image = sharp
+            }
         case .local(let local):
-            image = AlbumImage.localPreview(local)
+            image = AlbumImage.localPreview(local, maxSide: AlbumImage.gridTarget.width)
         }
     }
 }
@@ -299,6 +317,7 @@ private struct AlbumPager: View {
     var onEditLibrary: (PHAsset) -> Void
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
+    var onDeleteLocal: (String) -> Void
 
     var body: some View {
         ZStack {
@@ -311,7 +330,8 @@ private struct AlbumPager: View {
                             shot: shot,
                             onEditLibrary: onEditLibrary,
                             onEditLocal: onEditLocal,
-                            onRetryLocal: onRetryLocal
+                            onRetryLocal: onRetryLocal,
+                            onDeleteLocal: onDeleteLocal
                         )
                         .tag(offset)
                     }
@@ -361,6 +381,7 @@ private struct AlbumPage: View {
     var onEditLibrary: (PHAsset) -> Void
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
+    var onDeleteLocal: (String) -> Void
     @State private var image: UIImage?
     @State private var share = false
 
@@ -373,7 +394,7 @@ private struct AlbumPage: View {
                         .resizable()
                         .scaledToFit()
                 } else {
-                    Text(shot.hasRaw ? "RAW" : "正在打开")
+                    Text(shot.missing ? "文件丢失" : (shot.hasRaw ? "RAW" : "正在打开"))
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
                 }
@@ -386,7 +407,12 @@ private struct AlbumPage: View {
                         .foregroundStyle(CameraColor.accent)
                 }
                 Spacer()
-                if shot.needsRetry, case .local(let local) = shot.source {
+                if shot.missing, case .local(let local) = shot.source {
+                    Button("删除") { onDeleteLocal(local.id) }
+                        .font(CameraFont.interface(15, weight: .medium))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .frame(minHeight: 44)
+                } else if shot.needsRetry, case .local(let local) = shot.source {
                     Button("重试") { onRetryLocal(local.id) }
                         .font(CameraFont.interface(15, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
@@ -436,24 +462,46 @@ private struct AlbumPage: View {
     private func load() async {
         switch shot.source {
         case .library(let asset):
-            if let cached = DevelopCache.image(for: asset.localIdentifier) {
-                image = cached
-                return
+            if image == nil {
+                image = DevelopCache.image(for: asset.localIdentifier)
             }
-            image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false)
+            if let sharp = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: false) {
+                image = sharp
+            }
         case .local(let local):
-            image = AlbumImage.localPreview(local)
+            image = AlbumImage.localPreview(local, maxSide: AlbumImage.viewerTarget.width)
         }
     }
 }
 
 enum AlbumImage {
+    private static var screen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen
+    }
+
+    static var screenScale: CGFloat {
+        let scale = screen?.scale ?? 3
+        return scale > 0 ? scale : 3
+    }
+
+    static var gridTarget: CGSize {
+        let width = screen?.bounds.width ?? 390
+        let side = max(120, width / 3) * screenScale
+        return CGSize(width: side, height: side)
+    }
+
+    static var viewerTarget: CGSize {
+        let bounds = screen?.bounds ?? CGRect(x: 0, y: 0, width: 390, height: 844)
+        return CGSize(width: bounds.width * screenScale, height: bounds.height * screenScale)
+    }
+
     static func load(_ asset: PHAsset, target: CGSize, fast: Bool) async -> UIImage? {
         await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
             options.isNetworkAccessAllowed = true
-            options.deliveryMode = fast ? .fastFormat : .highQualityFormat
-            options.resizeMode = fast ? .fast : .none
+            options.deliveryMode = .highQualityFormat
+            options.resizeMode = .exact
+            options.version = .current
             let resumed = ResumeOnce()
             PHImageManager.default().requestImage(
                 for: asset,
@@ -462,21 +510,90 @@ enum AlbumImage {
                 options: options
             ) { image, info in
                 let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
-                let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
                 if cancelled {
                     resumed.resume(continuation, with: nil)
                     return
                 }
-                if fast || degraded == false {
+                let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                if fast == false || degraded == false {
                     resumed.resume(continuation, with: image)
                 }
             }
         }
     }
 
-    static func localPreview(_ shot: PhiLocalShots.Shot) -> UIImage? {
-        guard let file = PhiLocalShots.displayFile(of: shot) else { return nil }
-        return UIImage(contentsOfFile: file.path)
+    /// Full original pixels for 编辑. Avoids PHImageManagerMaximumSize, which often returns a degraded frame and then nothing.
+    static func loadOriginal(_ asset: PHAsset) async -> UIImage? {
+        let data: Data? = await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
+            options.version = .original
+            let resumed = DataResume()
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
+                let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
+                if cancelled {
+                    resumed.resume(continuation, with: nil)
+                    return
+                }
+                resumed.resume(continuation, with: data)
+            }
+        }
+        if let data, let image = image(data: data, maxSide: nil) {
+            return image
+        }
+        return await load(asset, target: viewerTarget, fast: false)
+    }
+
+    static func localPreview(_ shot: PhiLocalShots.Shot, maxSide: CGFloat) -> UIImage? {
+        let ordered = shot.files.sorted { lhs, rhs in
+            let leftRaw = lhs.filename.lowercased().hasSuffix(".dng")
+            let rightRaw = rhs.filename.lowercased().hasSuffix(".dng")
+            return leftRaw == false && rightRaw
+        }
+        for file in ordered {
+            guard let url = StillArchive.resolve(file.path),
+                  let image = fileImage(url: url, maxSide: maxSide) else { continue }
+            return image
+        }
+        return nil
+    }
+
+    static func fileImage(url: URL, maxSide: CGFloat?) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return image(from: source, maxSide: maxSide)
+    }
+
+    private static func image(data: Data, maxSide: CGFloat?) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return image(from: source, maxSide: maxSide)
+    }
+
+    private static func image(from source: CGImageSource, maxSide: CGFloat?) -> UIImage? {
+        var options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        if let maxSide, maxSide > 0 {
+            options[kCGImageSourceThumbnailMaxPixelSize] = maxSide
+            options[kCGImageSourceCreateThumbnailFromImageAlways] = true
+        }
+        let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
+        guard let cg else { return nil }
+        return UIImage(cgImage: cg)
+    }
+}
+
+private final class DataResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func resume(_ continuation: CheckedContinuation<Data?, Never>, with data: Data?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard didResume == false else { return }
+        didResume = true
+        continuation.resume(returning: data)
     }
 }
 

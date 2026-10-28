@@ -4,6 +4,10 @@ import CoreMedia
 import CoreVideo
 import os
 
+private final class FocusWatch: @unchecked Sendable {
+    var sawAdjusting = false
+}
+
 enum CameraGate: Equatable {
     case unknown
     case needsPermission
@@ -52,6 +56,8 @@ final class CameraSession: ObservableObject {
     private var stillFormatDeviceID: String?
     private var customExposureQueued = false
     private var focusReturnObservation: NSKeyValueObservation?
+    private var focusGeneration = 0
+    private var didHintTooClose = false
     private var manualISO: Float?
     private var manualDuration: CMTime?
     private var supportedFlashModes: [AVCaptureDevice.FlashMode] = []
@@ -270,67 +276,100 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    /// One-shot autofocus at the tap, then back to continuous. Smooth autofocus stays off.
+    /// One-shot autofocus at the tap, then back to continuous on this same device.
     private func applyTapFocus(_ point: CGPoint) {
         focusReturnObservation?.invalidate()
         focusReturnObservation = nil
-        try? lockDevice { device in
-            Self.prepareFocusHardware(device)
-            if device.isFocusPointOfInterestSupported {
-                device.focusPointOfInterest = point
-            }
-            if device.isExposurePointOfInterestSupported {
-                device.exposurePointOfInterest = point
-            }
-            if device.isFocusModeSupported(.autoFocus) {
-                device.focusMode = .autoFocus
-            } else if device.isFocusModeSupported(.continuousAutoFocus) {
-                device.focusMode = .continuousAutoFocus
-            }
-            if self.exposureIsAuto {
-                if device.isExposureModeSupported(.autoExpose) {
-                    device.exposureMode = .autoExpose
-                } else if device.isExposureModeSupported(.continuousAutoExposure) {
-                    device.exposureMode = .continuousAutoExposure
-                }
+        guard let current = device else { return }
+        let token = current.uniqueID
+        focusGeneration += 1
+        let generation = focusGeneration
+        let watch = FocusWatch()
+        do {
+            try current.lockForConfiguration()
+        } catch {
+            return
+        }
+        Self.applyFocusLimits(current)
+        if current.isFocusPointOfInterestSupported {
+            current.focusPointOfInterest = point
+        }
+        if current.isExposurePointOfInterestSupported {
+            current.exposurePointOfInterest = point
+        }
+        if current.isFocusModeSupported(.autoFocus) {
+            current.focusMode = .autoFocus
+        } else if current.isFocusModeSupported(.continuousAutoFocus) {
+            current.focusMode = .continuousAutoFocus
+        }
+        if exposureIsAuto {
+            if current.isExposureModeSupported(.autoExpose) {
+                current.exposureMode = .autoExpose
+            } else if current.isExposureModeSupported(.continuousAutoExposure) {
+                current.exposureMode = .continuousAutoExposure
             }
         }
-        guard let device else { return }
-        focusReturnObservation = device.observe(\.isAdjustingFocus, options: [.new]) { [weak self] device, _ in
-            guard device.isAdjustingFocus == false else { return }
+        current.unlockForConfiguration()
+        focusReturnObservation = current.observe(\.isAdjustingFocus, options: [.new]) { [weak self] device, _ in
+            if device.isAdjustingFocus {
+                watch.sawAdjusting = true
+                return
+            }
+            guard watch.sawAdjusting else { return }
             self?.sessionQueue.async {
-                self?.restoreContinuousFocus()
+                guard self?.device?.uniqueID == token, self?.focusGeneration == generation else { return }
+                self?.engageContinuousAutofocus()
             }
         }
-        sessionQueue.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let device = self?.device, device.isAdjustingFocus == false else { return }
-            self?.restoreContinuousFocus()
+        sessionQueue.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+            guard self?.device?.uniqueID == token, self?.focusGeneration == generation else { return }
+            guard self?.device?.isAdjustingFocus == false else { return }
+            self?.engageContinuousAutofocus()
         }
         DispatchQueue.main.async {
             self.focusLocked = false
         }
     }
 
-    private func restoreContinuousFocus() {
+    /// Continuous autofocus on the device that is actually in the session. Custom exposure does not take the lens.
+    private func engageContinuousAutofocus() {
         focusReturnObservation?.invalidate()
         focusReturnObservation = nil
         try? lockDevice { device in
-            Self.prepareFocusHardware(device)
-            if device.isFocusModeSupported(.continuousAutoFocus), device.focusMode != .continuousAutoFocus {
+            Self.applyFocusLimits(device)
+            if device.isFocusModeSupported(.continuousAutoFocus) {
                 device.focusMode = .continuousAutoFocus
             }
-            if self.exposureIsAuto, device.isExposureModeSupported(.continuousAutoExposure), device.exposureMode != .continuousAutoExposure {
+            if self.exposureIsAuto, device.isExposureModeSupported(.continuousAutoExposure) {
                 device.exposureMode = .continuousAutoExposure
             }
         }
     }
 
-    private static func prepareFocusHardware(_ device: AVCaptureDevice) {
+    /// Physical cameras only. The virtual multi-cam's own focus defaults are what let tele zoom focus.
+    private static func applyFocusLimits(_ device: AVCaptureDevice) {
+        guard device.constituentDevices.isEmpty else { return }
         if device.isSmoothAutoFocusSupported {
             device.isSmoothAutoFocusEnabled = false
         }
         if device.isAutoFocusRangeRestrictionSupported {
             device.autoFocusRangeRestriction = .none
+        }
+    }
+
+    private func noteTooClose(_ device: AVCaptureDevice) {
+        let tele = device.deviceType == .builtInTelephotoCamera
+        let nearest = device.lensPosition >= 0.98
+        let settled = device.isAdjustingFocus == false
+        let show = tele && nearest && settled && device.minimumFocusDistance > 0
+        DispatchQueue.main.async {
+            if show {
+                guard self.didHintTooClose == false else { return }
+                self.didHintTooClose = true
+                self.statusMessage = "太近"
+            } else if self.didHintTooClose {
+                self.didHintTooClose = false
+            }
         }
     }
 
@@ -617,7 +656,7 @@ final class CameraSession: ObservableObject {
             if device.isLowLightBoostSupported {
                 device.automaticallyEnablesLowLightBoostWhenAvailable = false
             }
-            Self.prepareFocusHardware(device)
+            Self.applyFocusLimits(device)
         }
     }
 
@@ -673,6 +712,9 @@ final class CameraSession: ObservableObject {
             },
             device.observe(\.whiteBalanceMode, options: [.initial, .new]) { [weak self] device, _ in
                 self?.publishMeter(device)
+            },
+            device.observe(\.lensPosition, options: [.new]) { [weak self] device, _ in
+                self?.noteTooClose(device)
             }
         ]
     }
@@ -813,6 +855,7 @@ final class CameraSession: ObservableObject {
             stillFormatDeviceID = active.uniqueID
         }
         session.commitConfiguration()
+        engageContinuousAutofocus()
         if sameDevice == false {
             observeMeter(newDevice)
             let deviceID = newDevice.uniqueID
@@ -886,6 +929,10 @@ final class CameraSession: ObservableObject {
             self.manualISO = iso
             self.manualDuration = duration
             device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: nil)
+            Self.applyFocusLimits(device)
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            }
             let seconds = CMTimeGetSeconds(duration)
             DispatchQueue.main.async {
                 self.manualISOValue = iso
@@ -1013,6 +1060,7 @@ final class CameraSession: ObservableObject {
         }
         try applyZoom(zoom, ramp: ramp)
         alignPhotoDimensions()
+        engageContinuousAutofocus()
         publishManualRanges()
         publishDeliveryLabel()
     }

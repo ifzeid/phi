@@ -104,7 +104,14 @@ final class ProcessSession: ObservableObject, Identifiable {
                         draft: false
                     )
                 }
-                return StillPipeline.render(base, exposureEV: ev, style: style, maxSide: 1600)
+                return StillPipeline.render(
+                    base,
+                    exposureEV: ev,
+                    style: style,
+                    look: look,
+                    halo: haloOn,
+                    maxSide: 1600
+                )
             }.value
             guard current == self.token, let rendered else { return }
             let image = UIImage(cgImage: rendered)
