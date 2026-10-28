@@ -2,8 +2,12 @@ import SwiftUI
 
 /// Format, aspect, ISO, and shutter. Grain stays on the develop screen.
 struct FinderSettingsSheet: View {
-    var format: CaptureFormat
-    var onFormat: (CaptureFormat) -> Void
+    var mode: ProcessMode
+    var onMode: (ProcessMode) -> Void
+    var saveHEIF: Bool
+    var onSaveHEIF: (Bool) -> Void
+    var codec: ProcessedCodec
+    var onCodec: (ProcessedCodec) -> Void
     var aspect: PhotoAspect
     var onAspect: (PhotoAspect) -> Void
     var iso: Float
@@ -21,11 +25,22 @@ struct FinderSettingsSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
-                section("FORMAT", caption: formatCaption) {
-                    CaptureFormatPicker(selection: format, onSelect: onFormat)
+                section("处理", caption: modeCaption) {
+                    ProcessModePicker(selection: mode, onSelect: onMode)
+                    if mode.wantsRaw {
+                        Toggle(isOn: Binding(get: { saveHEIF }, set: onSaveHEIF)) {
+                            Text("同时保存 HEIF")
+                                .font(CameraFont.interface(15, weight: .medium))
+                                .foregroundStyle(CameraColor.textPrimary)
+                        }
+                        .tint(CameraColor.accent)
+                    }
                 }
-                section("ASPECT", caption: "默认 3:4，即整幅传感器。其他画幅从中心裁切，取景和成片一致。这些画幅不写 RAW。") {
+                section("画幅", caption: "取景框、缩略图和显影按这个比例中心裁切。DNG 仍是整幅，裁切记在这张照片上。") {
                     PhotoAspectPicker(selection: aspect, onSelect: onAspect)
+                }
+                section("成片", caption: "苹果处理后的那张。设备没有 HEVC 时，HEIC 会改存 JPEG。") {
+                    ProcessedCodecPicker(selection: codec, onSelect: onCodec)
                 }
                 section("ISO / SHUTTER", caption: exposureCaption) {
                     HStack(spacing: 12) {
@@ -115,14 +130,16 @@ struct FinderSettingsSheet: View {
         return "默认关闭。取景框下方仍是自动曝光。打开后，快门和感光度出现在取景框里。"
     }
 
-    private var formatCaption: String {
-        switch format {
-        case .jpegAndRaw:
-            "默认。苹果的 HEIF/JPEG 和 RAW 作为同一张进相册。拍完不进入编辑。这一档如果不能出 RAW，就只存 HEIF/JPEG。"
-        case .raw:
-            "DNG 和苹果的 HEIF/JPEG 配成同一张。只存 DNG 时系统相册会拒收。编辑时才从 DNG 显影。"
-        case .jpeg:
-            "不请求 RAW。这台设备能写 HEIC 时存成 HEIC，否则 JPEG。拍完不进入编辑。"
+    private var modeCaption: String {
+        switch mode {
+        case .bayer:
+            saveHEIF
+                ? "单帧 Bayer。苹果的 HEIF 是主图，DNG 是副档。关掉「同时保存 HEIF」时系统仍需要这张主图，否则会拒收单独的 DNG。"
+                : "单帧 Bayer。系统相册不能只有 DNG，所以仍会带上苹果的 HEIF 作为主图。"
+        case .proRaw:
+            "Apple ProRAW。这一档如果没有，会改用 Bayer RAW。ProRAW 在写入前已经过多帧和降噪。"
+        case .standard:
+            "只存苹果处理好的 HEIF 或 JPEG，不请求 RAW。"
         }
     }
 
@@ -193,23 +210,59 @@ private struct PhotoAspectPicker: View {
     }
 }
 
-private struct CaptureFormatPicker: View {
-    var selection: CaptureFormat
-    var onSelect: (CaptureFormat) -> Void
+private struct ProcessModePicker: View {
+    var selection: ProcessMode
+    var onSelect: (ProcessMode) -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(CaptureFormat.allCases) { format in
-                let selected = format == selection
+            ForEach(ProcessMode.allCases) { mode in
+                let selected = mode == selection
                 Button {
-                    onSelect(format)
+                    onSelect(mode)
                 } label: {
-                    VStack(spacing: 5) {
-                        Text(format.title)
-                            .font(CameraFont.parameter(12, medium: selected))
+                    VStack(spacing: 4) {
+                        Text(mode.mark)
+                            .font(CameraFont.parameter(16, medium: selected))
                             .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
+                        Text(mode.fullName)
+                            .font(CameraFont.interface(11))
+                            .foregroundStyle(selected ? CameraColor.textPrimary : CameraColor.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Rectangle()
+                            .fill(selected ? CameraColor.accent : Color.clear)
+                            .frame(width: 14, height: 1.5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 56)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mode.fullName)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+    }
+}
+
+private struct ProcessedCodecPicker: View {
+    var selection: ProcessedCodec
+    var onSelect: (ProcessedCodec) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(ProcessedCodec.allCases) { codec in
+                let selected = codec == selection
+                Button {
+                    onSelect(codec)
+                } label: {
+                    VStack(spacing: 5) {
+                        Text(codec.title)
+                            .font(CameraFont.parameter(12, medium: selected))
+                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
                         Rectangle()
                             .fill(selected ? CameraColor.accent : Color.clear)
                             .frame(width: 14, height: 1.5)
@@ -219,7 +272,7 @@ private struct CaptureFormatPicker: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(format.title)
+                .accessibilityLabel(codec.title)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
