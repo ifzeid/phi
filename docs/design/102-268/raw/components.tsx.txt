@@ -1,0 +1,438 @@
+<cursor_untrusted_data_1337 source="CallDynamicTool">
+
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/20845d52-76e5-4fd0-8260-a2384a3ce836";
+const imgPhiV2ShutterWhite = `${assetPathPrefix}/9e1d9.svg`;
+const imgFrame = `${assetPathPrefix}/9bb2b.svg`;
+const imgFrame1 = `${assetPathPrefix}/563f0.svg`;
+const imgFrame2 = `${assetPathPrefix}/c0b00.svg`;
+const imgFrame3 = `${assetPathPrefix}/eddd2.svg`;
+const imgFrame4 = `${assetPathPrefix}/73f80.svg`;
+const imgExposureSun = `${assetPathPrefix}/1ba38.svg`;
+const imgFrame5 = `${assetPathPrefix}/0dbc8.svg`;
+const imgFrame6 = `${assetPathPrefix}/b4af3.svg`;
+const imgFrame7 = `${assetPathPrefix}/f1d26.svg`;
+const imgFrame8 = `${assetPathPrefix}/fb1f2.svg`;
+const imgFrame9 = `${assetPathPrefix}/d7c9c.svg`;
+const imgFrame10 = `${assetPathPrefix}/a360a.svg`;
+const imgFrame11 = `${assetPathPrefix}/cfc91.svg`;
+const imgFrame12 = `${assetPathPrefix}/5a788.svg`;
+const imgFrame13 = `${assetPathPrefix}/747fe.svg`;
+const imgFrame14 = `${assetPathPrefix}/008c5.svg`;
+const imgFrame15 = `${assetPathPrefix}/88a76.svg`;
+const imgFrame16 = `${assetPathPrefix}/07215.svg`;
+const imgFrame17 = `${assetPathPrefix}/9b67c.svg`;
+
+function PhiV2ShutterWhite({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[80px]"} data-node-id="100:188" data-name="PHI v2 / Shutter / White">
+      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgPhiV2ShutterWhite} />
+    </div>
+  );
+}
+
+function PhiV2IconMissing({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:183" data-name="PHI v2 / Icon / missing">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:184" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconChevron({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:179" data-name="PHI v2 / Icon / chevron">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:180" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame1} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconReset({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:175" data-name="PHI v2 / Icon / reset">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:176" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame2} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconEffects({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:170" data-name="PHI v2 / Icon / effects">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:171" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconStyle({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:165" data-name="PHI v2 / Icon / style">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:166" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconExposure({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:160" data-name="PHI v2 / Icon / exposure">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="106:258" data-name="Exposure / sun">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgExposureSun} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconCompare({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:156" data-name="PHI v2 / Icon / compare">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:157" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame5} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconTrash({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:152" data-name="PHI v2 / Icon / trash">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:153" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconShare({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:148" data-name="PHI v2 / Icon / share">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:149" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame7} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconBack({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:144" data-name="PHI v2 / Icon / back">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:145" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame8} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconCheck({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:140" data-name="PHI v2 / Icon / check">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:141" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame9} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconClose({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:136" data-name="PHI v2 / Icon / close">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:137" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame10} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconSettings({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:130" data-name="PHI v2 / Icon / settings">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:131" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame11} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconGridOff({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:126" data-name="PHI v2 / Icon / grid_off">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:127" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame12} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconGridOn({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:121" data-name="PHI v2 / Icon / grid_on">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:122" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame13} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashAuto({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:116" data-name="PHI v2 / Icon / flash_auto">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:117" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame14} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashOff({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:112" data-name="PHI v2 / Icon / flash_off">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:113" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame15} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashOn({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:108" data-name="PHI v2 / Icon / flash_on">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:109" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame16} />
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV2Components() {
+  return (
+    <div className="bg-[#202222] relative size-full" data-node-id="100:107" data-name="PHI v2 / Components">
+      <PhiV2IconFlashOn className="absolute left-[40px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[40px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:111">
+        flash_on
+      </p>
+      <PhiV2IconFlashOff className="absolute left-[180px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[180px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:115">
+        flash_off
+      </p>
+      <PhiV2IconFlashAuto className="absolute left-[320px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[320px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:120">
+        flash_auto
+      </p>
+      <PhiV2IconGridOn className="absolute left-[460px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[460px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:125">
+        grid_on
+      </p>
+      <PhiV2IconGridOff className="absolute left-[600px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[600px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:129">
+        grid_off
+      </p>
+      <PhiV2IconSettings className="absolute left-[740px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[740px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:135">
+        settings
+      </p>
+      <PhiV2IconClose className="absolute left-[880px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[880px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:139">
+        close
+      </p>
+      <PhiV2IconCheck className="absolute left-[1020px] size-[44px] top-[196px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[1020px] not-italic text-[#a5aaa7] text-[10px] top-[248px] whitespace-nowrap" data-node-id="100:143">
+        check
+      </p>
+      <PhiV2IconBack className="absolute left-[40px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[40px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:147">
+        back
+      </p>
+      <PhiV2IconShare className="absolute left-[180px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[180px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:151">
+        share
+      </p>
+      <PhiV2IconTrash className="absolute left-[320px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[320px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:155">
+        trash
+      </p>
+      <PhiV2IconCompare className="absolute left-[460px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[460px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:159">
+        compare
+      </p>
+      <PhiV2IconExposure className="absolute left-[600px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[600px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:164">
+        exposure
+      </p>
+      <PhiV2IconStyle className="absolute left-[740px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[740px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:169">
+        style
+      </p>
+      <PhiV2IconEffects className="absolute left-[880px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[880px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:174">
+        effects
+      </p>
+      <PhiV2IconReset className="absolute left-[1020px] size-[44px] top-[321px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[1020px] not-italic text-[#a5aaa7] text-[10px] top-[373px] whitespace-nowrap" data-node-id="100:178">
+        reset
+      </p>
+      <PhiV2IconChevron className="absolute left-[40px] size-[44px] top-[446px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[40px] not-italic text-[#a5aaa7] text-[10px] top-[498px] whitespace-nowrap" data-node-id="100:182">
+        chevron
+      </p>
+      <PhiV2IconMissing className="absolute left-[180px] size-[44px] top-[446px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[180px] not-italic text-[#a5aaa7] text-[10px] top-[498px] whitespace-nowrap" data-node-id="100:187">
+        missing
+      </p>
+      <PhiV2ShutterWhite className="absolute left-[40px] size-[80px] top-[636px]" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[40px] not-italic text-[#f45135] text-[12px] top-[32px] whitespace-nowrap" data-node-id="105:213">
+        PHI / V2 — CONTROLS
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[41px] left-[40px] text-[#f4f3ee] text-[28px] top-[60px] whitespace-nowrap" data-node-id="105:214">
+        统一图标与操作尺度
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] left-[40px] text-[#a5aaa7] text-[14px] top-[111px] whitespace-nowrap" data-node-id="105:215">
+        24 px 图形 · 1.5 px 线宽 · 44×44 pt 触控区 · 状态同时用形状与选中标记表达
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] left-[40px] text-[#f4f3ee] text-[16px] top-[746px] whitespace-nowrap" data-node-id="105:216">
+        白色快门
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] left-[40px] text-[#a5aaa7] text-[14px] top-[780px] whitespace-nowrap" data-node-id="105:217">
+        拍摄动作保持白色；红色用于选择、数值和对焦圆心。
+      </p>
+      <div className="absolute left-[380px] size-[76px] top-[636px]" data-node-id="105:218" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame17} />
+      </div>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] left-[360px] text-[#f4f3ee] text-[16px] top-[746px] whitespace-nowrap" data-node-id="105:221">
+        1:1 对焦框
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[360px] text-[#a5aaa7] text-[13px] top-[780px] whitespace-nowrap" data-node-id="105:222">
+        轻触定位；锁定状态另显示 AE/AF LOCK。
+      </p>
+      <div className="[word-break:break-word] absolute content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[14px] h-[190px] items-start left-[40px] overflow-clip top-[860px] w-[1120px] whitespace-nowrap" data-node-id="105:223" data-name="Control rules">
+        <p className="leading-[23px] relative shrink-0 text-[#f4f3ee] text-[16px]" data-node-id="105:224">
+          控件行为
+        </p>
+        <p className="leading-[20px] relative shrink-0 text-[#a5aaa7] text-[14px]" data-node-id="105:225">
+          闪光灯：点按打开关 / 自动 / 开列表；网格：一次点击直接切换开 / 关。
+        </p>
+        <p className="leading-[20px] relative shrink-0 text-[#a5aaa7] text-[14px]" data-node-id="105:226">
+          参数：同时只展开一个标尺；点击当前参数或取景器空白处收起，恢复焦段行。
+        </p>
+        <p className="leading-[20px] relative shrink-0 text-[#a5aaa7] text-[14px]" data-node-id="105:227">
+          焦段显示等效毫米数并读出“25 毫米”；可用焦段来自当前设备，不能硬编码为示例四档。
+        </p>
+      </div>
+    </div>
+  );
+}
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI v2 / Icon / flash_on
+**Node ID:** 100:108
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / flash_off
+**Node ID:** 100:112
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / flash_auto
+**Node ID:** 100:116
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / grid_on
+**Node ID:** 100:121
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / grid_off
+**Node ID:** 100:126
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / settings
+**Node ID:** 100:130
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / close
+**Node ID:** 100:136
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / check
+**Node ID:** 100:140
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / back
+**Node ID:** 100:144
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / share
+**Node ID:** 100:148
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / trash
+**Node ID:** 100:152
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / compare
+**Node ID:** 100:156
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / exposure
+**Node ID:** 100:160
+
+曝光：完整圆心与八向光芒。24 px 图形，1.5 px 线宽，44 pt 触控区；不使用斜杠。
+
+## PHI v2 / Icon / style
+**Node ID:** 100:165
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / effects
+**Node ID:** 100:170
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / reset
+**Node ID:** 100:175
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / chevron
+**Node ID:** 100:179
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / missing
+**Node ID:** 100:183
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Shutter / White
+**Node ID:** 100:188
+
+White photo shutter, stable at all capture states. Do not use the previous orange shutter.
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.
+
+Saved this image to disk at file:///cursor/stores/store-581c1ff3-d0b1-4da6-8a66-71c9096ec5f8/grok-bot/agents/0fa6fee4-de64-41fe-9e47-0009e0df4046/assets/798a44cdaa3b3e9b94be0e4b3a7641229fc8c0dda69b60f8253a96b29c3afc7e.png (1024x939). To show it to the user, pass that path to SendToUser as {"type":"attachment","url":"file:///cursor/stores/store-581c1ff3-d0b1-4da6-8a66-71c9096ec5f8/grok-bot/agents/0fa6fee4-de64-41fe-9e47-0009e0df4046/assets/798a44cdaa3b3e9b94be0e4b3a7641229fc8c0dda69b60f8253a96b29c3afc7e.png"}.
+
+</cursor_untrusted_data_1337>

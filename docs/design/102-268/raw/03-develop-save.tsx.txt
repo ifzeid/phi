@@ -1,0 +1,513 @@
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/f2b2a3ae-4c71-4504-a991-dde83a854626";
+const imgFrame = `${assetPathPrefix}/c0b00.svg`;
+const imgFrame1 = `${assetPathPrefix}/a360a.svg`;
+const imgFrame2 = `${assetPathPrefix}/0dbc8.svg`;
+const imgFrame3 = `${assetPathPrefix}/f1d26.svg`;
+const imgFrame4 = `${assetPathPrefix}/b4af3.svg`;
+const imgFrame5 = `${assetPathPrefix}/d7c9c.svg`;
+const imgPhotoCanvasFixedGeometry = `${assetPathPrefix}/8ca3c.png`;
+const imgPhotoCanvasFixedGeometry1 = `${assetPathPrefix}/a662c.png`;
+
+function PhiV2IconReset({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:175" data-name="PHI v2 / Icon / reset">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:176" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconClose({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:136" data-name="PHI v2 / Icon / close">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:137" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame1} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconCompare({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:156" data-name="PHI v2 / Icon / compare">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:157" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame2} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconShare({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:148" data-name="PHI v2 / Icon / share">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:149" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconTrash({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:152" data-name="PHI v2 / Icon / trash">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:153" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconCheck({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:140" data-name="PHI v2 / Icon / check">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:141" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame5} />
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV203DevelopSave() {
+  return (
+    <div className="bg-[#151717] content-stretch flex flex-col gap-[32px] items-start px-[64px] py-[48px] relative size-full" data-node-id="100:106" data-name="PHI v2 / 03 Develop & Save">
+      <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] h-[115px] items-start overflow-clip relative shrink-0 w-[1872px] whitespace-nowrap" data-node-id="103:390" data-name="Introduction">
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[17px] not-italic relative shrink-0 text-[#f45135] text-[12px]" data-node-id="103:391">{`PHI / V2 — DEVELOP & SAVE`}</p>
+        <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[52px] relative shrink-0 text-[#f4f3ee] text-[36px]" data-node-id="103:392">
+          底部调整，画面不动。
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] relative shrink-0 text-[#a5aaa7] text-[16px]" data-node-id="103:393">
+          曝光、风格、效果共享固定高度的工具区；一屏只呈现当前所需控件。
+        </p>
+      </div>
+      <div className="content-stretch flex gap-[48px] h-[1120px] items-start overflow-clip relative shrink-0 w-[1872px]" data-node-id="103:394" data-name="Screens">
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:395" data-name="Column / 选择风格">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:396" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:397">
+              09 / STYLE
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:398">
+              选择风格
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:399" data-name="EditorStyle">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:400" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:401" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:405">
+              编辑照片
+            </p>
+            <div className="absolute h-[520px] left-[-1px] top-[95px] w-[390px]" data-node-id="103:406" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiV2IconCompare className="absolute left-[331px] size-[44px] top-[49px]" />
+            <div className="absolute content-stretch flex h-[48px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[615px] w-[390px]" data-node-id="103:410" data-name="Editor categories">
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:411" data-name="Button / 曝光">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:412">
+                  曝光
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:413" data-name="Button / 风格">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:414">
+                  风格
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:415" data-name="Button / 效果">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:416">
+                  效果
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex gap-[10px] h-[84px] items-center left-[19px] overflow-clip top-[675px] w-[350px]" data-node-id="103:417" data-name="Style previews">
+              <div className="content-stretch flex flex-col gap-[5px] h-[84px] items-center overflow-clip relative shrink-0 w-[62px]" data-node-id="103:418" data-name="Style / 无">
+                <div className="h-[55px] relative rounded-[5px] shrink-0 w-[62px]" data-node-id="103:419" data-name="Photo canvas / fixed geometry">
+                  <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+                </div>
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[16px] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="103:420">
+                  无
+                </p>
+              </div>
+              <div className="content-stretch flex flex-col gap-[5px] h-[84px] items-center overflow-clip relative shrink-0 w-[62px]" data-node-id="103:421" data-name="Style / 正片">
+                <div className="border-2 border-[#f45135] border-solid h-[55px] relative rounded-[5px] shrink-0 w-[62px]" data-node-id="103:422" data-name="Photo canvas / fixed geometry">
+                  <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+                </div>
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[16px] relative shrink-0 text-[#f45135] text-[11px] whitespace-nowrap" data-node-id="103:423">
+                  正片
+                </p>
+              </div>
+              <div className="content-stretch flex flex-col gap-[5px] h-[84px] items-center overflow-clip relative shrink-0 w-[62px]" data-node-id="103:424" data-name="Style / 负片">
+                <div className="h-[55px] relative rounded-[5px] shrink-0 w-[62px]" data-node-id="103:425" data-name="Photo canvas / fixed geometry">
+                  <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+                </div>
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[16px] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="103:426">
+                  负片
+                </p>
+              </div>
+              <div className="content-stretch flex flex-col gap-[5px] h-[84px] items-center overflow-clip relative shrink-0 w-[62px]" data-node-id="103:427" data-name="Style / 黑白">
+                <div className="h-[55px] relative rounded-[5px] shrink-0 w-[62px]" data-node-id="103:428" data-name="Photo canvas / fixed geometry">
+                  <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry1} />
+                </div>
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[16px] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="103:429">
+                  黑白
+                </p>
+              </div>
+              <div className="content-stretch flex flex-col gap-[5px] h-[84px] items-center overflow-clip relative shrink-0 w-[62px]" data-node-id="103:430" data-name="Style / CCD">
+                <div className="h-[55px] relative rounded-[5px] shrink-0 w-[62px]" data-node-id="103:431" data-name="Photo canvas / fixed geometry">
+                  <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+                </div>
+                <p className="[word-break:break-word] font-['SF_Pro:Regular'] font-normal leading-[16px] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="103:432" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  CCD
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[16px] top-[769px] w-[390px]" data-node-id="103:433" data-name="Editor actions">
+              <PhiV2IconClose className="relative shrink-0 size-[44px]" />
+              <PhiV2IconReset className="relative shrink-0 size-[44px]" />
+              <div className="bg-[#f4f3ee] content-stretch flex h-[40px] items-center justify-center overflow-clip relative rounded-[20px] shrink-0 w-[120px]" data-node-id="103:440" data-name="Button / 另存照片">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#090a0a] text-[13px] whitespace-nowrap" data-node-id="103:441">
+                  另存照片
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:442" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:443">
+              风格为单选：无 / 正片 / 负片 / 黑白 / CCD。不新增当前尚无的强度滑杆。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:444">
+              缩略图仅用于方向预览，最终效果以真实处理管线为准。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:445">
+              切换类别保留已调数值；切换风格不清空曝光与效果。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:446" data-name="Column / 效果叠加">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:447" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:448">
+              10 / EFFECTS
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:449">
+              效果叠加
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:450" data-name="EditorEffects">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:451" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:452" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:456">
+              编辑照片
+            </p>
+            <div className="absolute h-[520px] left-[-1px] top-[95px] w-[390px]" data-node-id="103:457" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiV2IconCompare className="absolute left-[331px] size-[44px] top-[49px]" />
+            <div className="absolute content-stretch flex h-[48px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[615px] w-[390px]" data-node-id="103:461" data-name="Editor categories">
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:462" data-name="Button / 曝光">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:463">
+                  曝光
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:464" data-name="Button / 风格">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:465">
+                  风格
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:466" data-name="Button / 效果">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:467">
+                  效果
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[42px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[670px] w-[390px]" data-node-id="103:468" data-name="Halation choice">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] relative shrink-0 text-[#f4f3ee] text-[14px] whitespace-nowrap" data-node-id="103:469">
+                光晕
+              </p>
+              <div className="content-stretch flex gap-[4px] h-[36px] items-center overflow-clip relative shrink-0 w-[160px]" data-node-id="103:470" data-name="Halation states">
+                <div className="bg-[#090a0a] content-stretch flex h-[34px] items-center justify-center overflow-clip relative rounded-[17px] shrink-0 w-[76px]" data-node-id="103:471" data-name="Button / 关">
+                  <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:472">
+                    关
+                  </p>
+                </div>
+                <div className="bg-[#191b1b] content-stretch flex h-[34px] items-center justify-center overflow-clip relative rounded-[17px] shrink-0 w-[76px]" data-node-id="103:473" data-name="Button / 开">
+                  <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:474">
+                    开
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[42px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[718px] w-[390px]" data-node-id="103:475" data-name="Grain choice">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] relative shrink-0 text-[#f4f3ee] text-[14px] whitespace-nowrap" data-node-id="103:476">
+                颗粒
+              </p>
+              <div className="content-stretch flex gap-[4px] h-[36px] items-center overflow-clip relative shrink-0 w-[160px]" data-node-id="103:477" data-name="Grain states">
+                <div className="bg-[#090a0a] content-stretch flex h-[34px] items-center justify-center overflow-clip relative rounded-[17px] shrink-0 w-[76px]" data-node-id="103:478" data-name="Button / 关">
+                  <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:479">
+                    关
+                  </p>
+                </div>
+                <div className="bg-[#191b1b] content-stretch flex h-[34px] items-center justify-center overflow-clip relative rounded-[17px] shrink-0 w-[76px]" data-node-id="103:480" data-name="Button / 细颗粒">
+                  <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:481">
+                    细颗粒
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[16px] top-[769px] w-[390px]" data-node-id="103:482" data-name="Editor actions">
+              <PhiV2IconClose className="relative shrink-0 size-[44px]" />
+              <PhiV2IconReset className="relative shrink-0 size-[44px]" />
+              <div className="bg-[#f4f3ee] content-stretch flex h-[40px] items-center justify-center overflow-clip relative rounded-[20px] shrink-0 w-[120px]" data-node-id="103:489" data-name="Button / 另存照片">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#090a0a] text-[13px] whitespace-nowrap" data-node-id="103:490">
+                  另存照片
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:491" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:492">
+              光晕开 / 关，颗粒关 / 细颗粒；二者独立，可与风格同时使用。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:493">
+              不添加尚未实现的强度控制；效果只作用于编辑结果。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:494">
+              该区高度与曝光、风格相同，切换时照片和保存操作保持原位。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:495" data-name="Column / 另存完成">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:496" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:497">
+              11 / SAVED
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:498">
+              另存完成
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:499" data-name="SavedPhoto">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:500" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:501" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:505">
+              编辑后的照片
+            </p>
+            <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[19px] left-[319px] not-italic text-[#a5aaa7] text-[13px] top-[62px] whitespace-nowrap" data-node-id="103:506">
+              13/13
+            </p>
+            <div className="absolute h-[520px] left-[-1px] top-[95px] w-[390px]" data-node-id="103:507" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] font-normal leading-[16px] left-[19px] text-[#a5aaa7] text-[11px] top-[635px] whitespace-nowrap" data-node-id="103:508">
+              HEIC · 编辑副本
+            </p>
+            <div className="absolute content-stretch flex gap-[6px] h-[44px] items-center justify-center left-[64px] overflow-clip top-[691px] w-[260px]" data-node-id="103:509" data-name="Save confirmation">
+              <PhiV2IconCheck className="relative shrink-0 size-[44px]" />
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] relative shrink-0 text-[#f4f3ee] text-[12px] whitespace-nowrap" data-node-id="103:513">
+                已保存新照片，原片保留
+              </p>
+            </div>
+            <div className="absolute content-stretch flex h-[52px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[753px] w-[390px]" data-node-id="103:514" data-name="Photo actions">
+              <PhiV2IconTrash className="relative shrink-0 size-[44px]" />
+              <PhiV2IconShare className="relative shrink-0 size-[44px]" />
+              <div className="bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[88px]" data-node-id="103:521" data-name="Button / 编辑">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:522">
+                  编辑
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:523" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:524">
+              保存时按钮显示“保存中…”并禁用重复提交；失败留在编辑页，保留全部参数。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:525">
+              成功进入新副本浏览，短提示“原片保留”。相册新增一张。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:526">
+              导出与保存分开：导出走系统分享，另存产生编辑副本。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:527" data-name="Column / 退出编辑">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:528" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:529">
+              12 / LEAVE
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:530">
+              退出编辑
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:531" data-name="DiscardChanges">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:532" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:533" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:537">
+              编辑照片
+            </p>
+            <div className="absolute h-[520px] left-[-1px] top-[95px] w-[390px]" data-node-id="103:538" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiV2IconCompare className="absolute left-[331px] size-[44px] top-[49px]" />
+            <div className="absolute content-stretch flex h-[48px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[615px] w-[390px]" data-node-id="103:542" data-name="Editor categories">
+              <div className="bg-[#191b1b] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:543" data-name="Button / 曝光">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:544">
+                  曝光
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:545" data-name="Button / 风格">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:546">
+                  风格
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[36px] items-center justify-center overflow-clip relative rounded-[18px] shrink-0 w-[104px]" data-node-id="103:547" data-name="Button / 效果">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:548">
+                  效果
+                </p>
+              </div>
+            </div>
+            <div className="[word-break:break-word] absolute content-stretch flex h-[24px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[663px] w-[390px] whitespace-nowrap" data-node-id="103:549" data-name="Exposure value">
+              <p className="font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] relative shrink-0 text-[#a5aaa7] text-[12px]" data-node-id="103:550">
+                曝光补偿
+              </p>
+              <p className="font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f45135] text-[13px]" data-node-id="103:551">
+                +0.3 EV
+              </p>
+            </div>
+            <div className="absolute h-[62px] left-[23px] overflow-clip top-[695px] w-[342px]" data-node-id="103:552" data-name="Horizontal ruler">
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-0 top-[8px] w-px" data-node-id="103:553" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[11.4px] top-[8px] w-px" data-node-id="103:554" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[22.8px] top-[8px] w-px" data-node-id="103:555" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[34.2px] top-[8px] w-px" data-node-id="103:556" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[45.6px] top-[8px] w-px" data-node-id="103:557" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[57px] top-[8px] w-px" data-node-id="103:558" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[68.4px] top-[8px] w-px" data-node-id="103:559" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[79.8px] top-[8px] w-px" data-node-id="103:560" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[91.2px] top-[8px] w-px" data-node-id="103:561" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[102.6px] top-[8px] w-px" data-node-id="103:562" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[114px] top-[8px] w-px" data-node-id="103:563" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[125.4px] top-[8px] w-px" data-node-id="103:564" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[136.8px] top-[8px] w-px" data-node-id="103:565" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[148.2px] top-[8px] w-px" data-node-id="103:566" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[159.6px] top-[8px] w-px" data-node-id="103:567" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[171px] top-[8px] w-px" data-node-id="103:568" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[182.4px] top-[8px] w-px" data-node-id="103:569" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[193.8px] top-[8px] w-px" data-node-id="103:570" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[205.2px] top-[8px] w-px" data-node-id="103:571" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[216.6px] top-[8px] w-px" data-node-id="103:572" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[228px] top-[8px] w-px" data-node-id="103:573" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[239.4px] top-[8px] w-px" data-node-id="103:574" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[250.8px] top-[8px] w-px" data-node-id="103:575" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[262.2px] top-[8px] w-px" data-node-id="103:576" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[273.6px] top-[8px] w-px" data-node-id="103:577" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[285px] top-[8px] w-px" data-node-id="103:578" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[296.4px] top-[8px] w-px" data-node-id="103:579" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[307.8px] top-[8px] w-px" data-node-id="103:580" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[319.2px] top-[8px] w-px" data-node-id="103:581" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[8px] left-[330.6px] top-[8px] w-px" data-node-id="103:582" data-name="Rule" />
+              <div className="absolute bg-[#a5aaa7] h-[18px] left-[342px] top-[8px] w-px" data-node-id="103:583" data-name="Rule" />
+              <div className="absolute bg-[#f45135] h-[30px] left-[171px] top-[2px] w-[2px]" data-node-id="103:584" data-name="Rule" />
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[10px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="103:585">
+                −2
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[86px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="103:586">
+                −1
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[162px] not-italic text-[#f45135] text-[11px] top-[34px] whitespace-nowrap" data-node-id="103:587">
+                0
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[238px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="103:588">
+                +1
+              </p>
+              <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[314px] not-italic text-[#a5aaa7] text-[11px] top-[34px] whitespace-nowrap" data-node-id="103:589">
+                +2
+              </p>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[16px] top-[769px] w-[390px]" data-node-id="103:590" data-name="Editor actions">
+              <PhiV2IconClose className="relative shrink-0 size-[44px]" />
+              <PhiV2IconReset className="relative shrink-0 size-[44px]" />
+              <div className="bg-[#f4f3ee] content-stretch flex h-[40px] items-center justify-center overflow-clip relative rounded-[20px] shrink-0 w-[120px]" data-node-id="103:597" data-name="Button / 另存照片">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#090a0a] text-[13px] whitespace-nowrap" data-node-id="103:598">
+                  另存照片
+                </p>
+              </div>
+            </div>
+            <div className="absolute bg-black h-[844px] left-[-1px] opacity-60 top-[-1px] w-[390px]" data-node-id="103:599" data-name="Modal scrim" />
+            <div className="absolute bg-[#191b1b] content-stretch flex flex-col gap-[12px] h-[204px] items-center left-[23px] overflow-clip py-[20px] rounded-[18px] top-[339px] w-[342px]" data-node-id="103:600" data-name="Discard confirmation">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[26px] relative shrink-0 text-[#f4f3ee] text-[18px] whitespace-nowrap" data-node-id="103:601">
+                放弃这次调整？
+              </p>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-nowrap" data-node-id="103:602">
+                原片不会改变。
+              </p>
+              <div className="bg-[#090a0a] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[294px]" data-node-id="103:603" data-name="Button / 继续编辑">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:604">
+                  继续编辑
+                </p>
+              </div>
+              <div className="bg-[#090a0a] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[294px]" data-node-id="103:605" data-name="Button / 放弃调整">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:606">
+                  放弃调整
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:607" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:608">
+              有改动时退出，二次确认；无改动直接返回照片浏览。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:609">
+              继续编辑完整保留曝光、风格与效果；放弃仅丢弃本次未保存调整。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:610">
+              保存失败、权限不足等反馈停留在当前上下文，并提供重试。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI v2 / Icon / close
+**Node ID:** 100:136
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / compare
+**Node ID:** 100:156
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / reset
+**Node ID:** 100:175
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / check
+**Node ID:** 100:140
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / trash
+**Node ID:** 100:152
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / share
+**Node ID:** 100:148
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.

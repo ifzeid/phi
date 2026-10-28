@@ -1,0 +1,162 @@
+<cursor_untrusted_data_1337 source="CallDynamicTool">
+
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/8fded996-1203-4143-bce0-aa92d91f0421";
+const imgGrainRingThickerBand = `${assetPathPrefix}/4e027.svg`;
+const imgGrainRingThickerBand1 = `${assetPathPrefix}/bf180.svg`;
+const imgGrainRingThickerBand2 = `${assetPathPrefix}/ce510.svg`;
+const imgGrainRingThickerBand3 = `${assetPathPrefix}/3c627.svg`;
+const imgGrainRingThickerBand4 = `${assetPathPrefix}/68e3a.svg`;
+const imgGrainRingThickerBand5 = `${assetPathPrefix}/7e805.svg`;
+const imgGrainRingThickerBand6 = `${assetPathPrefix}/831d8.svg`;
+const imgGrainRingThickerBand7 = `${assetPathPrefix}/19112.svg`;
+
+function PhiGrainRingRefinedLight({ className }: { className?: string }) {
+  return (
+    <div className={className || "bg-[#f1f2ec] overflow-clip relative rounded-[66px] size-[300px]"} data-node-id="109:357" data-name="PHI / Grain ring / Refined / Light">
+      <div className="absolute left-0 size-[300px] top-0" data-node-id="113:452" data-name="Grain ring / thicker band">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand} />
+      </div>
+    </div>
+  );
+}
+
+function PhiGrainRingRefinedDark({ className }: { className?: string }) {
+  return (
+    <div className={className || "bg-[#101413] overflow-clip relative rounded-[66px] size-[300px]"} data-node-id="109:316" data-name="PHI / Grain ring / Refined / Dark">
+      <div className="absolute left-0 size-[300px] top-0" data-node-id="113:444" data-name="Grain ring / thicker band">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand1} />
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV204AppIconSelectedGrainRing() {
+  return (
+    <div className="bg-[#141817] content-stretch flex flex-col gap-[24px] items-start p-[48px] relative size-full" data-node-id="115:444" data-name="PHI v2 / 04 App Icon — Selected Grain Ring">
+      <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f45135] text-[12px] whitespace-nowrap" data-node-id="115:445">
+        PHI / APP ICON — SELECTED
+      </p>
+      <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f4f3ee] text-[30px] whitespace-nowrap" data-node-id="115:446">
+        颗粒圆环 · 当前方案
+      </p>
+      <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[16px] whitespace-nowrap" data-node-id="115:447">
+        加粗环带 / 中心留空 / 上亮下淡 / 深浅双色
+      </p>
+      <div className="content-stretch flex gap-[32px] h-[590px] items-start overflow-clip relative shrink-0 w-[1104px]" data-node-id="115:448" data-name="Dark and Light">
+        <div className="content-stretch flex flex-col gap-[24px] h-[590px] items-start overflow-clip relative shrink-0 w-[536px]" data-node-id="115:449" data-name="Dark">
+          <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f4f3ee] text-[20px] whitespace-nowrap" data-node-id="115:450">
+            Dark Mode
+          </p>
+          <div className="bg-[#242a28] content-stretch flex h-[360px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[536px]" data-node-id="115:451" data-name="Master icon">
+            <PhiGrainRingRefinedDark className="bg-[#101413] overflow-clip relative rounded-[66px] shrink-0 size-[300px]" />
+          </div>
+          <div className="bg-[#242a28] content-stretch flex gap-[32px] items-center overflow-clip pl-[32px] relative rounded-[12px] shrink-0 w-[536px]" data-node-id="115:461" data-name="60 / 40 / 29 px">
+            <div className="content-stretch flex flex-col gap-[7px] items-center justify-center overflow-clip relative shrink-0 size-[90px]" data-node-id="115:462" data-name="60 px">
+              <div className="bg-[#101413] overflow-clip relative rounded-[66px] shrink-0 size-[60px]" data-node-id="115:463" data-name="PHI / Grain ring / Refined / Dark">
+                <div className="absolute left-0 size-[60px] top-0" data-node-id="I115:463;113:444" data-name="Grain ring / thicker band">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand2} />
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="115:472">
+                60 px
+              </p>
+            </div>
+            <div className="content-stretch flex flex-col gap-[7px] items-center justify-center overflow-clip relative shrink-0 size-[90px]" data-node-id="115:473" data-name="40 px">
+              <div className="bg-[#101413] overflow-clip relative rounded-[66px] shrink-0 size-[40px]" data-node-id="115:474" data-name="PHI / Grain ring / Refined / Dark">
+                <div className="absolute left-0 size-[40px] top-0" data-node-id="I115:474;113:444" data-name="Grain ring / thicker band">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand3} />
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="115:483">
+                40 px
+              </p>
+            </div>
+            <div className="content-stretch flex flex-col gap-[7px] items-center justify-center overflow-clip relative shrink-0 size-[90px]" data-node-id="115:484" data-name="29 px">
+              <div className="bg-[#101413] overflow-clip relative rounded-[66px] shrink-0 size-[29px]" data-node-id="115:485" data-name="PHI / Grain ring / Refined / Dark">
+                <div className="absolute left-0 size-[29px] top-0" data-node-id="I115:485;113:444" data-name="Grain ring / thicker band">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand4} />
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[11px] whitespace-nowrap" data-node-id="115:494">
+                29 px
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[24px] h-[590px] items-start overflow-clip relative shrink-0 w-[536px]" data-node-id="115:495" data-name="Light">
+          <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f4f3ee] text-[20px] whitespace-nowrap" data-node-id="115:496">
+            Light Mode
+          </p>
+          <div className="bg-[#e4e7e1] content-stretch flex h-[360px] items-center justify-center overflow-clip relative rounded-[16px] shrink-0 w-[536px]" data-node-id="115:497" data-name="Master icon">
+            <PhiGrainRingRefinedLight className="bg-[#f1f2ec] overflow-clip relative rounded-[66px] shrink-0 size-[300px]" />
+          </div>
+          <div className="bg-[#e4e7e1] content-stretch flex gap-[32px] items-center overflow-clip pl-[32px] relative rounded-[12px] shrink-0 w-[536px]" data-node-id="115:507" data-name="60 / 40 / 29 px">
+            <div className="content-stretch flex flex-col gap-[7px] items-center justify-center overflow-clip relative shrink-0 size-[90px]" data-node-id="115:508" data-name="60 px">
+              <div className="bg-[#f1f2ec] overflow-clip relative rounded-[66px] shrink-0 size-[60px]" data-node-id="115:509" data-name="PHI / Grain ring / Refined / Light">
+                <div className="absolute left-0 size-[60px] top-0" data-node-id="I115:509;113:452" data-name="Grain ring / thicker band">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand5} />
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#566259] text-[11px] whitespace-nowrap" data-node-id="115:518">
+                60 px
+              </p>
+            </div>
+            <div className="content-stretch flex flex-col gap-[7px] items-center justify-center overflow-clip relative shrink-0 size-[90px]" data-node-id="115:519" data-name="40 px">
+              <div className="bg-[#f1f2ec] overflow-clip relative rounded-[66px] shrink-0 size-[40px]" data-node-id="115:520" data-name="PHI / Grain ring / Refined / Light">
+                <div className="absolute left-0 size-[40px] top-0" data-node-id="I115:520;113:452" data-name="Grain ring / thicker band">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand6} />
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#566259] text-[11px] whitespace-nowrap" data-node-id="115:529">
+                40 px
+              </p>
+            </div>
+            <div className="content-stretch flex flex-col gap-[7px] items-center justify-center overflow-clip relative shrink-0 size-[90px]" data-node-id="115:530" data-name="29 px">
+              <div className="bg-[#f1f2ec] overflow-clip relative rounded-[66px] shrink-0 size-[29px]" data-node-id="115:531" data-name="PHI / Grain ring / Refined / Light">
+                <div className="absolute left-0 size-[29px] top-0" data-node-id="I115:531;113:452" data-name="Grain ring / thicker band">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgGrainRingThickerBand7} />
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#566259] text-[11px] whitespace-nowrap" data-node-id="115:540">
+                29 px
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f4f3ee] text-[20px] whitespace-nowrap" data-node-id="115:541">
+        设计说明
+      </p>
+      <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[16px] w-[1104px]" data-node-id="115:542">
+        仅保留颗粒圆环，不加入实心快门或中轴。环带在上一版基础上适度加粗，保留自然消散的边缘与中心负空间。
+      </p>
+      <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[14px] w-[1104px]" data-node-id="115:543">
+        主组件已移入此处；外部探索画板保留关联实例，便于追溯。
+      </p>
+    </div>
+  );
+}
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI / Grain ring / Refined / Dark
+**Node ID:** 109:316
+
+纯颗粒圆环。颗粒径向分布宽度由 7.5 增至 10，约加粗三分之一；中心留空，保留上亮下淡。
+
+## PHI / Grain ring / Refined / Light
+**Node ID:** 109:357
+
+纯颗粒圆环。颗粒径向分布宽度由 7.5 增至 10，约加粗三分之一；中心留空，保留上亮下淡。
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.
+
+Saved this image to disk at file:///cursor/stores/store-581c1ff3-d0b1-4da6-8a66-71c9096ec5f8/grok-bot/agents/0fa6fee4-de64-41fe-9e47-0009e0df4046/assets/4b6c1469aa1bdab3bc2385adba6124901760aac7f75d7b79c7b4cbb1c64314db.png (1024x990). To show it to the user, pass that path to SendToUser as {"type":"attachment","url":"file:///cursor/stores/store-581c1ff3-d0b1-4da6-8a66-71c9096ec5f8/grok-bot/agents/0fa6fee4-de64-41fe-9e47-0009e0df4046/assets/4b6c1469aa1bdab3bc2385adba6124901760aac7f75d7b79c7b4cbb1c64314db.png"}.
+
+</cursor_untrusted_data_1337>
