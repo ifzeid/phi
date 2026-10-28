@@ -15,15 +15,15 @@ struct FinderSettingsSheet: View {
     var body: some View {
         GeometryReader { geo in
             let scale = geo.size.width / SettingsToken.designWidth
-            ScrollView {
-                column
-                    .environment(\.settingsScale, scale)
-            }
-            .scrollIndicators(.hidden)
-            .contentMargins(.top, 0, for: .scrollContent)
+            column
+                .environment(\.settingsScale, scale)
+                .padding(.top, 49)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                .ignoresSafeArea(edges: .top)
         }
-        .background(CameraColor.background)
-        .modifier(UnderIsland())
+        .ignoresSafeArea(edges: .top)
+        .background(CameraColor.background.ignoresSafeArea())
+        .dynamicTypeSize(.large)
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
         .presentationBackground(CameraColor.background)

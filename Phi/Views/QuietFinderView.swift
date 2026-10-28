@@ -53,15 +53,16 @@ struct QuietFinderView: View {
                     CameraColor.background
                 case .needsPermission:
                     CameraGateView(denied: false) { camera.requestAccess() }
+                        .modifier(UnderIsland())
                 case .denied:
                     CameraGateView(denied: true, onPrimary: openSettings)
+                        .modifier(UnderIsland())
                 case .authorized:
                     finder
                 }
             }
         }
         .modifier(HiddenSystemChrome())
-        .modifier(UnderIsland())
         .onAppear {
             #if DEBUG
             if PHIUITest.screen == .flash {
@@ -137,38 +138,72 @@ struct QuietFinderView: View {
 
     private var finder: some View {
         GeometryReader { geo in
-            VStack(spacing: 0) {
-                topBar
+            let width = geo.size.width
+            let height = geo.size.height
+            let island = geo.safeAreaInsets.top > 1 ? geo.safeAreaInsets.top : ScreenEdge.windowTop
+            let home = max(geo.safeAreaInsets.bottom > 1 ? geo.safeAreaInsets.bottom : ScreenEdge.windowBottom, 21)
+            let iconTop = island / 2 - 22
+            let pillTop = island + 8
+            let photoTop = pillTop + 32 + 6
+            let cluster = CGFloat(40 + 6 + 44 + 3 + 80 + 3 + 22)
+            let clusterTop = height - home - cluster
+            let ratio = max(capture.photoAspect.widthOverHeight, 0.01)
+            let photoHeight = width / ratio
+            ZStack(alignment: .topLeading) {
                 viewfinder
-                    .frame(width: geo.size.width)
-                parameterSlot
-                    .frame(height: 62)
-                exposureRow
-                    .frame(height: 44)
-                controlRow
-                    .frame(height: 80)
-                    .padding(.horizontal, 28)
-                captionRow
-                    .frame(height: 28)
-            }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-        }
-        .overlay(alignment: .topLeading) {
-            if flashMenu {
-                FlashChoiceMenu(
-                    selection: camera.flashMode,
-                    enabled: camera.flashAvailable,
-                    reason: camera.flashAvailable ? nil : "这枚镜头或当前格式不能用闪光灯。",
-                    onSelect: { mode in
-                        camera.setFlash(mode)
-                        flashMenu = false
+                    .frame(width: width, height: photoHeight)
+                    .overlay(alignment: .bottom) {
+                        if let openRuler {
+                            activeRuler(openRuler)
+                                .padding(.horizontal, 24)
+                                .frame(height: 62)
+                                .allowsHitTesting(true)
+                        }
                     }
-                )
-                .padding(.leading, 18)
-                .padding(.top, 48)
-                .zIndex(8)
+                    .position(x: width / 2, y: photoTop + photoHeight / 2)
+
+                flashButton
+                    .position(x: 18 + 22, y: iconTop + 22)
+                gridButton
+                    .position(x: width - 18 - 22, y: iconTop + 22)
+                modePill
+                    .position(x: width / 2, y: pillTop + 16)
+
+                VStack(spacing: 0) {
+                    lensBar
+                        .frame(height: 40)
+                    Color.clear.frame(height: 6)
+                    exposureRow
+                        .frame(height: 44)
+                    Color.clear.frame(height: 3)
+                    controlRow
+                        .frame(height: 80)
+                        .padding(.horizontal, 28)
+                    Color.clear.frame(height: 3)
+                    captionRow
+                        .frame(height: 22)
+                }
+                .frame(width: width)
+                .position(x: width / 2, y: clusterTop + cluster / 2)
+
+                if flashMenu {
+                    FlashChoiceMenu(
+                        selection: camera.flashMode,
+                        enabled: camera.flashAvailable,
+                        reason: camera.flashAvailable ? nil : "这枚镜头或当前格式不能用闪光灯。",
+                        onSelect: { mode in
+                            camera.setFlash(mode)
+                            flashMenu = false
+                        }
+                    )
+                    .position(x: 18 + 85, y: iconTop + 44 + 8 + 87)
+                    .zIndex(8)
+                }
             }
+            .frame(width: width, height: height)
+            .ignoresSafeArea()
         }
+        .ignoresSafeArea()
     }
 
     private var showsFinder: Bool {
@@ -184,20 +219,16 @@ struct QuietFinderView: View {
         return "\(camera.formatLabel) · \(camera.activeLensMillimeters)"
     }
 
-    private var topBar: some View {
-        HStack(spacing: 4) {
-            PhiGlyphButton(glyph: flashGlyph, label: flashLabel) {
-                flashMenu.toggle()
-            }
-            Spacer(minLength: 4)
-            modePill
-            Spacer(minLength: 4)
-            PhiGlyphButton(glyph: showGrid ? .gridOn : .gridOff, label: showGrid ? "隐藏九宫格" : "显示九宫格") {
-                showGrid.toggle()
-            }
+    private var flashButton: some View {
+        PhiGlyphButton(glyph: flashGlyph, label: flashLabel) {
+            flashMenu.toggle()
         }
-        .padding(.horizontal, 8)
-        .frame(height: 44)
+    }
+
+    private var gridButton: some View {
+        PhiGlyphButton(glyph: showGrid ? .gridOn : .gridOff, label: showGrid ? "隐藏九宫格" : "显示九宫格") {
+            showGrid.toggle()
+        }
     }
 
     private var flashGlyph: PhiGlyph {
@@ -379,22 +410,9 @@ struct QuietFinderView: View {
                 .font(CameraFont.parameter(13))
                 .foregroundStyle(CameraColor.textPrimary)
                 .lineLimit(1)
-                .frame(width: 150, height: 32)
-                .background(CameraColor.scrim, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PillPlateStyle(fill: CameraColor.scrim, width: 150, height: 32))
         .accessibilityLabel("拍摄设置 \(finderLabel)")
-    }
-
-    private var parameterSlot: some View {
-        Group {
-            if let openRuler {
-                activeRuler(openRuler)
-                    .padding(.horizontal, 24)
-            } else {
-                lensBar
-            }
-        }
     }
 
     private var shownStops: [FocalStop] {
@@ -415,18 +433,25 @@ struct QuietFinderView: View {
                     camera.select(stop: stop)
                 } label: {
                     Text("\(stop.millimeters)")
-                        .font(CameraFont.interface(13, weight: .medium))
+                        .font(CameraFont.fixed(13, weight: .medium))
                         .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
-                        .frame(width: 48, height: 32)
-                        .background(selected ? CameraColor.surface : CameraColor.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PillPlateStyle(
+                    fill: selected ? CameraColor.surface : CameraColor.background,
+                    width: 48,
+                    height: 32
+                ))
                 .accessibilityLabel("\(stop.millimeters) 毫米")
             }
         }
         .padding(.horizontal, 8)
         .frame(width: 240, height: 40)
-        .background(CameraColor.scrim, in: Capsule())
+        .background {
+            Capsule().fill(CameraColor.scrim)
+        }
+        .overlay {
+            Capsule().strokeBorder(CameraColor.border, lineWidth: 1)
+        }
         .frame(maxWidth: .infinity)
     }
 
@@ -480,20 +505,20 @@ struct QuietFinderView: View {
 
     private var exposureRow: some View {
         HStack(spacing: 8) {
-            SelectPill(title: camera.autoExposure ? "A 自动" : "M 手动", selected: true, width: 88) {
+            SelectPill(title: camera.autoExposure ? "A 自动" : "M 手动", selected: true, width: 88, height: 36, plate: CameraColor.surface) {
                 _ = camera.setAutoExposure(camera.autoExposure == false)
                 openRuler = nil
             }
             Spacer(minLength: 8)
             if camera.autoExposure {
-                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: openRuler == .ev, width: 94, height: 36) {
+                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: openRuler == .ev, width: 94, height: 36, plate: CameraColor.surface) {
                     toggleRuler(.ev)
                 }
             } else {
-                SelectPill(title: "ISO \(isoBadge)", selected: openRuler == .iso, width: 108) {
+                SelectPill(title: "ISO \(isoBadge)", selected: openRuler == .iso, width: 108, height: 36, plate: CameraColor.surface) {
                     toggleRuler(.iso)
                 }
-                SelectPill(title: shutterBadge, selected: openRuler == .shutter, width: 108) {
+                SelectPill(title: shutterBadge, selected: openRuler == .shutter, width: 108, height: 36, plate: CameraColor.surface) {
                     toggleRuler(.shutter)
                 }
             }

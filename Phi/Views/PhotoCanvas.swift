@@ -34,6 +34,23 @@ private struct FullWidthPhotoLayout: Layout {
 }
 
 enum ScreenEdge {
+    static var windowTop: CGFloat {
+        let window = keyWindow
+        let safe = window?.safeAreaInsets.top ?? 0
+        return safe > 1 ? safe : 59
+    }
+
+    static var windowBottom: CGFloat {
+        let window = keyWindow
+        let safe = window?.safeAreaInsets.bottom ?? 0
+        return safe > 1 ? safe : 34
+    }
+
+    private static var keyWindow: UIWindow? {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+    }
+
     /// From the physical top to the first control. Clears the island, then the Figma 12pt, and drops the hidden status-bar row.
     static var topContent: CGFloat {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first

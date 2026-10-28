@@ -8,6 +8,11 @@ enum CameraFont {
         .system(size: size, weight: weight, design: .default)
     }
 
+    /// Point size stays put when the system text size is not the default.
+    static func fixed(_ size: CGFloat, weight: UIFont.Weight = .regular) -> Font {
+        Font(UIFont.systemFont(ofSize: size, weight: weight))
+    }
+
     static func parameter(_ size: CGFloat, medium: Bool = false) -> Font {
         let name = medium ? "IBMPlexMono-Medium" : "IBMPlexMono-Regular"
         if UIFont(name: name, size: size) != nil {

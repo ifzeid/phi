@@ -133,22 +133,41 @@ struct SelectPill: View {
     var selected: Bool
     var width: CGFloat? = nil
     var height: CGFloat = 36
+    /// Unselected plates use the page color, which disappears on `#090a0a`. Pass a fill to keep the capsule visible.
+    var plate: Color? = nil
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(CameraFont.interface(13, weight: .medium))
+                .font(CameraFont.fixed(13, weight: .medium))
                 .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(width: width)
-                .frame(maxWidth: width == nil ? .infinity : nil)
-                .frame(height: height)
-                .background(selected ? CameraColor.surface : CameraColor.background, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PillPlateStyle(
+            fill: plate ?? (selected ? CameraColor.surface : CameraColor.background),
+            width: width,
+            height: height
+        ))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Draws the capsule in the button style body, so the plate is not dropped with the label background.
+struct PillPlateStyle: ButtonStyle {
+    var fill: Color
+    var width: CGFloat?
+    var height: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: width == nil ? .infinity : nil)
+            .frame(width: width, height: height)
+            .background {
+                Capsule().fill(fill)
+            }
+            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 

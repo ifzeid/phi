@@ -35,12 +35,12 @@ enum SettingsToken {
     static let aspectCaptionGap: CGFloat = 13
     static let aspectCaptionToCard: CGFloat = 62
 
-    static func sectionFont() -> Font { .system(size: 13, weight: .regular) }
-    static func rowFont() -> Font { .system(size: 16, weight: .regular) }
-    static func pillFont() -> Font { .system(size: 13, weight: .medium) }
-    static func titleFont() -> Font { .system(size: 14, weight: .medium) }
-    static func cardTitleFont() -> Font { .system(size: 14, weight: .medium) }
-    static func cardBodyFont() -> Font { .system(size: 13, weight: .regular) }
+    static func sectionFont() -> Font { CameraFont.fixed(13, weight: .regular) }
+    static func rowFont() -> Font { CameraFont.fixed(16, weight: .regular) }
+    static func pillFont() -> Font { CameraFont.fixed(13, weight: .medium) }
+    static func titleFont() -> Font { CameraFont.fixed(14, weight: .medium) }
+    static func cardTitleFont() -> Font { CameraFont.fixed(14, weight: .medium) }
+    static func cardBodyFont() -> Font { CameraFont.fixed(13, weight: .regular) }
 }
 
 private struct SettingsScaleKey: EnvironmentKey {
@@ -151,21 +151,20 @@ struct SettingsSwitch: View {
     var onChange: (Bool) -> Void
 
     var body: some View {
-        Button {
-            onChange(!isOn)
-        } label: {
-            ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(isOn ? CameraColor.accent : CameraColor.border)
+        Capsule()
+            .fill(isOn ? CameraColor.accent : CameraColor.border)
+            .frame(width: SettingsToken.switchWidth, height: SettingsToken.switchHeight)
+            .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
                     .fill(CameraColor.textPrimary)
-                    .padding(2)
-                    .frame(width: SettingsToken.switchHeight - 4, height: SettingsToken.switchHeight - 4)
+                    .frame(width: 22, height: 22)
+                    .padding(.horizontal, 2)
             }
             .frame(width: SettingsToken.switchWidth, height: SettingsToken.switchHeight)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isOn ? "已打开" : "已关闭")
+            .contentShape(Capsule())
+            .onTapGesture { onChange(!isOn) }
+            .accessibilityLabel(isOn ? "已打开" : "已关闭")
+            .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -187,14 +186,12 @@ struct SettingsPillGroup: View {
                         .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: SettingsToken.pillHeight)
-                        .background(
-                            selected ? CameraColor.surface : CameraColor.background,
-                            in: RoundedRectangle(cornerRadius: SettingsToken.pillRadius, style: .continuous)
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PillPlateStyle(
+                    fill: selected ? CameraColor.surface : CameraColor.background,
+                    width: nil,
+                    height: SettingsToken.pillHeight
+                ))
                 .accessibilityLabel(titles[index])
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }

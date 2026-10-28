@@ -28,28 +28,39 @@ struct ProcessStillView: View {
     private let toolHeight: CGFloat = 168
 
     var body: some View {
-        ZStack {
-            CameraColor.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                titleBar
-                editorImage
-                tabBar
-                    .frame(height: 48)
-                tool
-                    .frame(height: toolHeight)
-                toast
-                    .frame(height: 44)
-                actions
-                    .frame(height: 56)
+        GeometryReader { geo in
+            let home = max(geo.safeAreaInsets.bottom, ScreenEdge.windowBottom, 21)
+            let chrome = 52 + 48 + toolHeight + 44 + 44 + home + 12
+            let ratio = max(session.framedAspect.widthOverHeight, 0.01)
+            let ideal = geo.size.width / ratio
+            let photoHeight = min(ideal, max(160, geo.size.height - chrome))
+            ZStack {
+                CameraColor.background.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    titleBar
+                    editorImage
+                        .frame(height: photoHeight, alignment: .top)
+                        .clipped()
+                    tabBar
+                        .frame(height: 48)
+                    tool
+                        .frame(height: toolHeight)
+                    toast
+                        .frame(height: 44)
+                    actions
+                        .frame(height: 44)
+                    Color.clear.frame(height: home + 12)
+                }
+                if confirmDiscard {
+                    discardDialog
+                }
             }
-            if confirmDiscard {
-                discardDialog
-            }
+            .ignoresSafeArea()
         }
+        .ignoresSafeArea(edges: .bottom)
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())
-        .safeAreaPadding(.bottom, 8)
         .onAppear(perform: captureBaseline)
     }
 
@@ -206,28 +217,29 @@ struct ProcessStillView: View {
     }
 
     private var actions: some View {
-        HStack {
+        HStack(spacing: 0) {
             PhiGlyphButton(glyph: .close, label: "离开编辑") { requestClose() }
-            Spacer()
+            Spacer(minLength: 0)
             PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
-            Spacer()
+            Spacer(minLength: 0)
             if canRetryOriginal, savedCopy == false {
                 Button("重试", action: onRetryOriginal)
-                    .font(CameraFont.interface(13, weight: .medium))
+                    .font(CameraFont.fixed(13, weight: .medium))
                     .foregroundStyle(CameraColor.textSecondary)
+                    .padding(.trailing, 8)
             }
             Button(action: onExport) {
                 Text(session.isExporting ? "保存中…" : "另存照片")
-                    .font(CameraFont.interface(13, weight: .medium))
+                    .font(CameraFont.fixed(13, weight: .medium))
                     .foregroundStyle(CameraColor.background)
-                    .frame(width: 120, height: 40)
-                    .background(CameraColor.textPrimary, in: Capsule())
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PillPlateStyle(fill: CameraColor.textPrimary, width: 120, height: 40))
             .disabled(session.isExporting || session.preview == nil)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .padding(.leading, 16)
+        .padding(.trailing, 16)
+        .frame(height: 44)
     }
 
     private var discardDialog: some View {
