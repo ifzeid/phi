@@ -1,11 +1,27 @@
 import SwiftUI
 import UIKit
 
+private enum DragParameter {
+    case ev
+    case iso
+    case shutter
+
+    var accessibilityName: String {
+        switch self {
+        case .ev: "曝光补偿"
+        case .iso: "ISO"
+        case .shutter: "快门"
+        }
+    }
+}
+
 struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
-    @State private var showExposure = false
-    @State private var editingISO = true
+    @State private var dragParameter: DragParameter = .ev
+    @State private var dragBaseEV: Double = 0
+    @State private var dragBaseISO: Float = 100
+    @State private var dragBaseShutter: Double = 1.0 / 125
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
     @State private var flashOpacity: Double = 0
@@ -62,8 +78,6 @@ struct QuietFinderView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             metaRow
                 .frame(height: 44)
-                .opacity(showExposure ? 0 : 1)
-                .allowsHitTesting(showExposure == false)
                 .padding(.horizontal, 16)
             controlRow
                 .frame(height: controls)
@@ -72,39 +86,6 @@ struct QuietFinderView: View {
                 .frame(height: caption)
         }
         .padding(.bottom, bottomPad)
-        .overlay(alignment: .bottom) {
-            if showExposure {
-                Group {
-                    if camera.autoExposure {
-                        ExposureSheet(
-                            ev: camera.exposureEV,
-                            range: camera.exposureRange,
-                            autoExposure: camera.autoExposure,
-                            onEV: { camera.setExposureEV($0) },
-                            onCommit: { camera.commitExposureEV() },
-                            onAuto: { enabled in
-                                _ = camera.setAutoExposure(enabled)
-                            },
-                            onClose: { setExposure(false) }
-                        )
-                    } else {
-                        ManualExposureSheet(
-                            iso: camera.manualISOValue,
-                            shutterSeconds: camera.manualShutterSeconds,
-                            isoChoices: camera.isoChoices,
-                            shutterChoices: camera.shutterChoices,
-                            editingISO: editingISO,
-                            onEditingISO: { editingISO = $0 },
-                            onISO: { camera.setManualISO($0) },
-                            onShutter: { camera.setManualShutter($0) },
-                            onClose: { setExposure(false) }
-                        )
-                    }
-                }
-                .padding(.bottom, caption + controls + bottomPad + 8)
-                .transition(.opacity)
-            }
-        }
     }
 
     private var topBar: some View {
@@ -155,6 +136,8 @@ struct QuietFinderView: View {
                     focusPoint = viewPoint
                     focusToken += 1
                     camera.focus(at: devicePoint)
+                } onDrag: { event in
+                    handleDrag(event)
                 }
                 .id(camera.activeDeviceID)
             } else {
@@ -205,12 +188,15 @@ struct QuietFinderView: View {
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .bottom) {
-            if !showExposure, camera.focalStops.isEmpty == false {
-                FocalLengthPicker(stops: camera.focalStops, selectedID: camera.selectedStopID) { stop in
-                    camera.select(stop: stop)
+            VStack(spacing: 10) {
+                dragTargets
+                if camera.focalStops.isEmpty == false {
+                    FocalLengthPicker(stops: camera.focalStops, selectedID: camera.selectedStopID) { stop in
+                        camera.select(stop: stop)
+                    }
                 }
-                .padding(.bottom, 16)
             }
+            .padding(.bottom, 14)
         }
         .overlay {
             if let focusPoint {
@@ -240,16 +226,12 @@ struct QuietFinderView: View {
                 GrainStylePicker(selection: capture.grainStyle) { capture.setGrainStyle($0) }
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            Text(camera.autoExposure
-                 ? "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV"
-                 : "\(Int(camera.manualISOValue.rounded())) · \(MeterFormat.shutter(seconds: camera.manualShutterSeconds))")
+            Text(activeValueText)
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(CameraColor.accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .accessibilityLabel(camera.autoExposure
-                    ? "相机曝光补偿 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV"
-                    : "手动 ISO \(Int(camera.manualISOValue.rounded()))，快门 \(camera.shutterText)")
+                .accessibilityLabel(activeValueText)
         }
     }
 
@@ -266,12 +248,9 @@ struct QuietFinderView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(capture.hasDevelopBase ? "最近一张，进入处理" : "打开样张")
                 Spacer()
-                IconHitButton(
-                    symbol: .controls,
-                    active: showExposure,
-                    label: showExposure ? "关闭曝光" : "曝光",
-                    action: { setExposure(!showExposure) }
-                )
+                Color.clear
+                    .frame(width: 48, height: 48)
+                    .accessibilityHidden(true)
             }
             ShutterButton(isReady: camera.isRunning, isCapturing: capture.isCapturing) {
                 capture.capture()
@@ -299,51 +278,117 @@ struct QuietFinderView: View {
     }
 
     private var captionRow: some View {
-        Group {
-            if showExposure {
-                ZStack {
-                    HStack {
-                        Text(camera.isoText)
-                            .frame(width: 88, alignment: .leading)
-                        Spacer()
-                        Text(camera.whiteBalanceText)
-                            .frame(width: 88, alignment: .trailing)
-                    }
-                    Text(camera.shutterText)
-                }
-                .font(CameraFont.parameter(12))
-                .foregroundStyle(CameraColor.textSecondary)
-            } else {
-                HStack(spacing: 18) {
-                    modeButton("PHOTO", selected: camera.autoExposure) {
-                        _ = camera.setAutoExposure(true)
-                    }
-                    modeButton("MANUAL", selected: !camera.autoExposure) {
-                        if camera.setAutoExposure(false) {
-                            setExposure(true)
-                        }
-                    }
-                }
+        HStack {
+            Text(camera.isoText)
+                .frame(width: 88, alignment: .leading)
+            Spacer()
+            Text(camera.shutterText)
+            Spacer()
+            Text(camera.whiteBalanceText)
+                .frame(width: 88, alignment: .trailing)
+        }
+        .font(CameraFont.parameter(12))
+        .foregroundStyle(CameraColor.textSecondary)
+        .padding(.horizontal, 8)
+    }
+
+    private var dragTargets: some View {
+        HStack(spacing: 8) {
+            dragChip(.ev, title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
+            dragChip(.iso, title: isoChip)
+            dragChip(.shutter, title: shutterChip)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Color.black.opacity(0.88), in: Capsule())
+    }
+
+    private func dragChip(_ parameter: DragParameter, title: String) -> some View {
+        let selected = dragParameter == parameter
+        return Button {
+            dragParameter = parameter
+        } label: {
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(CameraFont.parameter(12, medium: selected))
+                    .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
+                    .lineLimit(1)
+                Rectangle()
+                    .fill(selected ? CameraColor.accent : Color.clear)
+                    .frame(width: 14, height: 1.5)
+            }
+            .frame(minWidth: 64, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(parameter.accessibilityName)
+        .accessibilityHint("在取景画面上上下拖动")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var isoChip: String {
+        let value = camera.manualISOValue
+        return value >= 100 ? "\(Int(value.rounded()))" : String(format: "%.0f", value)
+    }
+
+    private var shutterChip: String {
+        MeterFormat.shutter(seconds: camera.manualShutterSeconds).replacingOccurrences(of: " S", with: "")
+    }
+
+    private var activeValueText: String {
+        switch dragParameter {
+        case .ev:
+            "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV"
+        case .iso:
+            "ISO \(isoChip)"
+        case .shutter:
+            MeterFormat.shutter(seconds: camera.manualShutterSeconds)
+        }
+    }
+
+    private func handleDrag(_ event: PreviewDrag) {
+        switch event {
+        case .began:
+            dragBaseEV = camera.exposureEV
+            dragBaseISO = camera.manualISOValue
+            dragBaseShutter = camera.manualShutterSeconds
+        case .changed(let translationY):
+            let steps = Int((-translationY / 22).rounded())
+            switch dragParameter {
+            case .ev:
+                camera.setExposureEV(dragBaseEV + Double(steps) * 0.1)
+            case .iso:
+                nudgeISO(steps)
+            case .shutter:
+                nudgeShutter(steps)
+            }
+        case .ended:
+            if dragParameter == .ev {
+                camera.commitExposureEV()
             }
         }
     }
 
-    private func modeButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Text(title)
-                    .font(CameraFont.interface(11, weight: selected ? .semibold : .regular))
-                    .tracking(1.1)
-                    .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
-                Rectangle()
-                    .fill(selected ? CameraColor.accent : Color.clear)
-                    .frame(width: 16, height: 1.5)
-            }
-            .frame(minWidth: 72, minHeight: 44)
-            .contentShape(Rectangle())
+    private func nudgeISO(_ steps: Int) {
+        let choices = camera.isoChoices
+        guard choices.isEmpty == false else {
+            camera.setManualISO(dragBaseISO)
+            return
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        let start = ExposureStops.nearestIndex(to: dragBaseISO, in: choices)
+        let index = min(max(start + steps, 0), choices.count - 1)
+        camera.setManualISO(choices[index])
+    }
+
+    private func nudgeShutter(_ steps: Int) {
+        let choices = camera.shutterChoices
+        guard choices.isEmpty == false else {
+            camera.setManualShutter(dragBaseShutter)
+            return
+        }
+        let start = ExposureStops.nearestIndex(to: dragBaseShutter, in: choices)
+        let index = min(max(start + steps, 0), choices.count - 1)
+        camera.setManualShutter(choices[index])
     }
 
     private var counterText: String {
@@ -365,12 +410,6 @@ struct QuietFinderView: View {
             return CGSize(width: bounds.width, height: heightFromWidth)
         }
         return CGSize(width: bounds.height * 3 / 4, height: bounds.height)
-    }
-
-    private func setExposure(_ open: Bool) {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showExposure = open
-        }
     }
 
     private func openSettings() {

@@ -198,17 +198,21 @@ final class CameraSession: ObservableObject {
 
     func setManualISO(_ iso: Float) {
         manualISOValue = iso
+        autoExposure = false
         sessionQueue.async {
+            self.exposureIsAuto = false
             self.manualISO = iso
-            try? self.lockCustomExposure()
+            self.applyCustomOrExplain()
         }
     }
 
     func setManualShutter(_ seconds: Double) {
         manualShutterSeconds = seconds
+        autoExposure = false
         sessionQueue.async {
+            self.exposureIsAuto = false
             self.manualDuration = CMTime(seconds: seconds, preferredTimescale: 1_000_000_000)
-            try? self.lockCustomExposure()
+            self.applyCustomOrExplain()
         }
     }
 
@@ -291,35 +295,49 @@ final class CameraSession: ObservableObject {
             }
             try ensureCustomExposureDevice()
             guard let device, device.isExposureModeSupported(.custom) else {
-                exposureIsAuto = true
-                DispatchQueue.main.async {
-                    self.autoExposure = true
-                    self.manualExposureSupported = false
-                    self.statusMessage = "这台设备不能关闭自动曝光。Manual exposure isn't available."
-                }
+                failCustomLock()
                 return
             }
             try lockCustomExposure(seedFromMeter: manualISO == nil)
             publishManualRanges()
         } catch {
-            exposureIsAuto = true
-            DispatchQueue.main.async {
-                self.autoExposure = true
-                self.statusMessage = "自动曝光切不过去。Couldn't change exposure mode."
+            failCustomLock()
+        }
+    }
+
+    private func applyCustomOrExplain() {
+        do {
+            try ensureCustomExposureDevice()
+            guard device?.isExposureModeSupported(.custom) == true else {
+                failCustomLock()
+                return
             }
+            try lockCustomExposure()
+            publishManualRanges()
+        } catch {
+            failCustomLock()
+        }
+    }
+
+    private func failCustomLock() {
+        exposureIsAuto = true
+        DispatchQueue.main.async {
+            self.autoExposure = true
+            self.statusMessage = "这枚镜头不能单独锁定 ISO 或快门。"
         }
     }
 
     func setExposureEV(_ value: Double) {
         let stepped = (min(max(value, exposureRange.lowerBound), exposureRange.upperBound) * 10).rounded() / 10
         exposureEV = stepped
+        autoExposure = true
         sessionQueue.async {
+            self.exposureIsAuto = true
             try? self.lockDevice { device in
-                if self.exposureIsAuto {
-                    device.setExposureTargetBias(self.clampedBias(Float(stepped), device: device), completionHandler: nil)
-                } else {
-                    self.applyManual(ev: stepped, device: device)
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
                 }
+                device.setExposureTargetBias(self.clampedBias(Float(stepped), device: device), completionHandler: nil)
             }
         }
     }
@@ -534,13 +552,21 @@ final class CameraSession: ObservableObject {
     }
 
     private func publishMeter(_ device: AVCaptureDevice) {
-        let iso = MeterFormat.iso(device.iso)
-        let shutter = MeterFormat.shutter(seconds: CMTimeGetSeconds(device.exposureDuration))
+        let isoValue = device.iso
+        let shutterSeconds = CMTimeGetSeconds(device.exposureDuration)
+        let iso = MeterFormat.iso(isoValue)
+        let shutter = MeterFormat.shutter(seconds: shutterSeconds)
         let whiteBalance = Self.whiteBalanceLabel(device)
         DispatchQueue.main.async {
             if self.isoText != iso { self.isoText = iso }
             if self.shutterText != shutter { self.shutterText = shutter }
             if self.whiteBalanceText != whiteBalance { self.whiteBalanceText = whiteBalance }
+            if self.autoExposure {
+                self.manualISOValue = isoValue
+                if shutterSeconds.isFinite, shutterSeconds > 0 {
+                    self.manualShutterSeconds = shutterSeconds
+                }
+            }
         }
     }
 
@@ -712,6 +738,7 @@ final class CameraSession: ObservableObject {
         let manual = (device.map(supportsCustomExposure) ?? false) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
         let lensList = stops.map { String($0.millimeters) }.joined(separator: "/")
         log.info("Lenses \(lensList, privacy: .public), manual \(manual, privacy: .public)")
+        publishManualRanges()
         DispatchQueue.main.async {
             self.focalStops = stops
             if self.selectedStopID == nil {
@@ -735,23 +762,6 @@ final class CameraSession: ObservableObject {
         format.supportedMaxPhotoDimensions.reduce(0) { partial, dimensions in
             partial + Int(dimensions.width) * Int(dimensions.height)
         }
-    }
-
-    private func applyManual(ev: Double, device: AVCaptureDevice) {
-        guard device.isExposureModeSupported(.custom), let baseISO = manualISO, let baseDuration = manualDuration else { return }
-        let format = device.activeFormat
-        var iso = baseISO * Float(pow(2.0, ev))
-        var duration = baseDuration
-        if iso > format.maxISO {
-            duration = CMTimeMultiplyByFloat64(duration, multiplier: Double(iso / format.maxISO))
-            iso = format.maxISO
-        } else if iso < format.minISO {
-            duration = CMTimeMultiplyByFloat64(duration, multiplier: Double(iso / format.minISO))
-            iso = format.minISO
-        }
-        if CMTimeCompare(duration, format.minExposureDuration) < 0 { duration = format.minExposureDuration }
-        if CMTimeCompare(duration, format.maxExposureDuration) > 0 { duration = format.maxExposureDuration }
-        device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: nil)
     }
 
     private func clampedBias(_ value: Float, device: AVCaptureDevice) -> Float {

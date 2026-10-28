@@ -2,16 +2,24 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
+enum PreviewDrag {
+    case began
+    case changed(CGFloat)
+    case ended
+}
+
 struct CameraPreview: UIViewRepresentable {
     var session: AVCaptureSession
     var device: AVCaptureDevice?
     var onTap: (CGPoint, CGPoint) -> Void
+    var onDrag: (PreviewDrag) -> Void
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
         view.device = device
         view.onTap = onTap
+        view.onDrag = onDrag
         return view
     }
 
@@ -23,6 +31,7 @@ struct CameraPreview: UIViewRepresentable {
             view.device = device
         }
         view.onTap = onTap
+        view.onDrag = onDrag
     }
 }
 
@@ -31,6 +40,7 @@ final class PreviewView: UIView {
 
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     var onTap: ((CGPoint, CGPoint) -> Void)?
+    var onDrag: ((PreviewDrag) -> Void)?
 
     var device: AVCaptureDevice? {
         didSet {
@@ -47,7 +57,11 @@ final class PreviewView: UIView {
         previewLayer.videoGravity = .resizeAspectFill
         backgroundColor = .clear
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = false
         addGestureRecognizer(tap)
+        addGestureRecognizer(pan)
     }
 
     @available(*, unavailable)
@@ -79,5 +93,18 @@ final class PreviewView: UIView {
         let point = tap.location(in: self)
         let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: point)
         onTap?(point, devicePoint)
+    }
+
+    @objc private func handlePan(_ pan: UIPanGestureRecognizer) {
+        switch pan.state {
+        case .began:
+            onDrag?(.began)
+        case .changed:
+            onDrag?(.changed(pan.translation(in: self).y))
+        case .ended, .cancelled, .failed:
+            onDrag?(.ended)
+        default:
+            break
+        }
     }
 }
