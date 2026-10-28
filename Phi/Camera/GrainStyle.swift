@@ -9,8 +9,8 @@ enum GrainStyle: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .off: "OFF"
-        case .fine: "FINE"
+        case .off: "关"
+        case .fine: "细颗粒"
         }
     }
 

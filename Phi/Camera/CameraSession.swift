@@ -190,6 +190,13 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    func setFlash(_ mode: AVCaptureDevice.FlashMode) {
+        guard flashAvailable else { return }
+        guard supportedFlashModes.contains(mode) else { return }
+        flashMode = mode
+        statusMessage = nil
+    }
+
     func cycleFlash() {
         guard flashAvailable else {
             statusMessage = "后置闪光灯不可用。Flash isn't available on this camera."

@@ -37,6 +37,8 @@ struct QuietFinderView: View {
     @State private var focusPoint: CGPoint?
     @State private var flashOpacity: Double = 0
     @State private var statusTicket = 0
+    @State private var openRuler: CaptureRuler?
+    @State private var flashMenu = false
 
     private var camera: CameraSession { capture.camera }
 
@@ -99,17 +101,6 @@ struct QuietFinderView: View {
                 onCodec: { capture.setProcessedCodec($0) },
                 aspect: capture.photoAspect,
                 onAspect: { capture.setPhotoAspect($0) },
-                iso: camera.manualISOValue,
-                isoChoices: camera.isoChoices,
-                shutter: camera.manualShutterSeconds,
-                shutterChoices: camera.shutterChoices,
-                manualSupported: camera.manualExposureSupported,
-                manual: camera.autoExposure == false,
-                onManual: { enabled in
-                    _ = camera.setAutoExposure(enabled == false)
-                },
-                onISO: { camera.setManualISO($0) },
-                onShutter: { camera.setManualShutter($0) },
                 onClose: { showSettings = false }
             )
         }
@@ -129,25 +120,26 @@ struct QuietFinderView: View {
     }
 
     private var finder: some View {
-        let caption: CGFloat = 44
-        let controls: CGFloat = 80
-        let bottomPad: CGFloat = 8
-        return VStack(spacing: 0) {
-            topBar
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-            viewfinder
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            metaRow
-                .frame(height: 44)
-                .padding(.horizontal, 16)
-            controlRow
-                .frame(height: controls)
-                .padding(.horizontal, 24)
-            captionRow
-                .frame(height: caption)
+        GeometryReader { geo in
+            let chrome: CGFloat = 56 + 62 + 44 + 80 + 28
+            let canvas = min(geo.size.width * 520 / 390, max(geo.size.height - chrome, 160))
+            VStack(spacing: 0) {
+                topBar
+                viewfinder
+                    .frame(height: canvas)
+                parameterSlot
+                    .frame(height: 62)
+                exposureRow
+                    .frame(height: 44)
+                controlRow
+                    .frame(height: 80)
+                    .padding(.horizontal, 28)
+                captionRow
+                    .frame(height: 28)
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
-        .padding(.bottom, bottomPad)
+        .statusBarHidden(true)
     }
 
     /// Mode and aspect, plus the millimeters of the camera that is actually running.
@@ -157,31 +149,41 @@ struct QuietFinderView: View {
     }
 
     private var topBar: some View {
-        ZStack {
-            Text(finderLabel)
-                .font(CameraFont.parameter(13, medium: true))
-                .foregroundStyle(camera.formatLabel == "—" ? CameraColor.textSecondary : CameraColor.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .accessibilityLabel("拍摄格式 \(finderLabel)")
+        ZStack(alignment: .topLeading) {
             HStack {
-                IconHitButton(
-                    symbol: .flash,
-                    active: camera.flashMode != .off,
-                    badge: camera.flashMode == .auto ? "A" : nil,
-                    label: flashLabel,
-                    action: { camera.cycleFlash() }
-                )
+                PhiGlyphButton(glyph: flashGlyph, label: flashLabel) {
+                    flashMenu.toggle()
+                }
                 Spacer()
-                IconHitButton(
-                    symbol: .grid,
-                    active: showGrid,
-                    label: showGrid ? "隐藏九宫格" : "显示九宫格",
-                    action: { showGrid.toggle() }
+                PhiGlyphButton(glyph: showGrid ? .gridOn : .gridOff, label: showGrid ? "隐藏九宫格" : "显示九宫格") {
+                    showGrid.toggle()
+                }
+            }
+            .padding(.horizontal, 8)
+            if flashMenu {
+                FlashChoiceMenu(
+                    selection: camera.flashMode,
+                    enabled: camera.flashAvailable,
+                    reason: camera.flashAvailable ? nil : "这枚镜头或当前格式不能用闪光灯。",
+                    onSelect: { mode in
+                        camera.setFlash(mode)
+                        flashMenu = false
+                    }
                 )
+                .padding(.leading, 18)
+                .padding(.top, 48)
+                .zIndex(2)
             }
         }
-        .frame(height: 44)
+        .frame(height: 56)
+    }
+
+    private var flashGlyph: PhiGlyph {
+        switch camera.flashMode {
+        case .on: .flashOn
+        case .auto: .flashAuto
+        default: .flashOff
+        }
     }
 
     private var viewfinder: some View {
@@ -199,11 +201,16 @@ struct QuietFinderView: View {
 
     private var livePreview: some View {
         let onTap: (CGPoint, CGPoint) -> Void = { viewPoint, devicePoint in
+            openRuler = nil
+            flashMenu = false
             focusPoint = viewPoint
             camera.focus(at: devicePoint)
         }
         let onDrag: (PreviewDrag) -> Void = { event in
             handleDrag(event)
+        }
+        let onLongPress: () -> Void = {
+            camera.setFocusLocked(camera.focusLocked == false)
         }
         let preview = StableCameraPreview(
             session: camera.session,
@@ -211,7 +218,8 @@ struct QuietFinderView: View {
             epoch: camera.previewEpoch,
             anchor: camera.previewAnchor,
             onTap: onTap,
-            onDrag: onDrag
+            onDrag: onDrag,
+            onLongPress: onLongPress
         ).equatable()
         return preview.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -258,86 +266,6 @@ struct QuietFinderView: View {
         }
     }
 
-    private var shutterScale: some View {
-        let onSelect: (Int) -> Void = { index in
-            guard camera.shutterChoices.indices.contains(index) else { return }
-            camera.setManualShutter(camera.shutterChoices[index])
-        }
-        return Group {
-            if camera.autoExposure == false, camera.shutterChoices.isEmpty == false {
-                QuietTickScale(
-                    label: shutterBadge,
-                    index: shutterIndex,
-                    count: camera.shutterChoices.count,
-                    horizontal: true,
-                    onSelect: onSelect
-                )
-                .frame(height: 48)
-                .padding(.leading, 16)
-                .padding(.trailing, 72)
-                .padding(.top, 8)
-            }
-        }
-    }
-
-    private var isoScale: some View {
-        let onSelect: (Int) -> Void = { index in
-            guard camera.isoChoices.indices.contains(index) else { return }
-            camera.setManualISO(camera.isoChoices[index])
-        }
-        return Group {
-            if camera.autoExposure == false, camera.isoChoices.isEmpty == false {
-                QuietTickScale(
-                    label: isoBadge,
-                    index: isoIndex,
-                    count: camera.isoChoices.count,
-                    horizontal: false,
-                    onSelect: onSelect
-                )
-                .frame(width: 64)
-                .padding(.top, 56)
-                .padding(.bottom, 78)
-                .padding(.trailing, 6)
-            }
-        }
-    }
-
-    private var focalStopBar: some View {
-        let onSelect: (FocalStop) -> Void = { stop in
-            camera.select(stop: stop)
-        }
-        return Group {
-            if camera.focalStops.isEmpty == false {
-                FocalLengthPicker(
-                    stops: camera.focalStops,
-                    selectedID: camera.selectedStopID,
-                    onSelect: onSelect
-                )
-                .padding(.bottom, 14)
-            }
-        }
-    }
-
-    private var exposureScale: some View {
-        Group {
-            if camera.autoExposure {
-                QuietTickScale(
-                    label: ExposureFormat.signedDecimal(camera.exposureEV),
-                    index: exposureIndex,
-                    count: exposureCount,
-                    horizontal: false,
-                    onSelect: nil
-                )
-                .frame(width: 64, height: 220)
-                .padding(.trailing, 8)
-                .padding(.bottom, 48)
-                .opacity(rulerOpacity)
-                .allowsHitTesting(false)
-                .accessibilityHidden(rulerOpacity < 0.2)
-            }
-        }
-    }
-
     private var stage: some View {
         let onStatus: (String?, String?) -> Void = { _, message in
             guard let message else { return }
@@ -361,12 +289,7 @@ struct QuietFinderView: View {
         .overlay { gridOverlay }
         .overlay { stageStatus }
         .overlay { flashOverlay }
-        .overlay(alignment: .topLeading) { captureCounter }
-        .overlay(alignment: .topTrailing) { exposureBadge }
-        .overlay(alignment: .top) { shutterScale }
-        .overlay(alignment: .trailing) { isoScale }
-        .overlay(alignment: .bottom) { focalStopBar }
-        .overlay(alignment: .trailing) { exposureScale }
+        .overlay(alignment: .top) { modePill.padding(.top, 4) }
         .overlay { focusOverlay }
         .onChange(of: camera.statusMessage, onStatus)
         .onChange(of: capture.shutterTick, onShutter)
@@ -388,55 +311,142 @@ struct QuietFinderView: View {
             .allowsHitTesting(false)
     }
 
-    private var captureCounter: some View {
-        Text(counterText)
-            .font(CameraFont.parameter(12, medium: true))
-            .foregroundStyle(CameraColor.textPrimary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .padding(12)
-            .accessibilityLabel("已拍摄 \(capture.captureCount) 张")
-            .allowsHitTesting(false)
-    }
-
-    private var exposureBadge: some View {
-        ExposureBadge(
-            automatic: camera.autoExposure,
-            iso: isoBadge,
-            shutter: shutterBadge
-        )
-        .padding(12)
-        .allowsHitTesting(false)
-    }
-
     private var focusOverlay: some View {
         GeometryReader { proxy in
             let point = focusPoint ?? CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
             if camera.isConfigured {
-                FocusReticle()
+                FocusBracket(locked: camera.focusLocked)
                     .position(point)
-                    .allowsHitTesting(false)
                     .animation(.easeOut(duration: 0.18), value: point.x)
                     .animation(.easeOut(duration: 0.18), value: point.y)
             }
         }
     }
 
-    private var metaRow: some View {
-        HStack(spacing: 8) {
-            Text("手动")
-                .font(CameraFont.interface(13, weight: .medium))
-                .foregroundStyle(camera.autoExposure ? CameraColor.textSecondary : CameraColor.accent)
-            Toggle("手动曝光", isOn: manualExposure)
-                .labelsHidden()
-                .tint(CameraColor.accent)
-            Spacer()
-            Text("\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
-                .font(CameraFont.parameter(13, medium: true))
-                .foregroundStyle(CameraColor.accent)
+    private var modePill: some View {
+        Button {
+            showSettings = true
+            openRuler = nil
+            flashMenu = false
+        } label: {
+            Text(finderLabel)
+                .font(CameraFont.parameter(13))
+                .foregroundStyle(CameraColor.textPrimary)
+                .lineLimit(1)
+                .frame(width: 150, height: 32)
+                .background(CameraColor.scrim, in: Capsule())
         }
-        .accessibilityLabel(camera.autoExposure ? "自动曝光，曝光补偿 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV" : "手动曝光")
+        .buttonStyle(.plain)
+        .accessibilityLabel("拍摄设置 \(finderLabel)")
+    }
+
+    private var parameterSlot: some View {
+        Group {
+            if let openRuler {
+                activeRuler(openRuler)
+                    .padding(.horizontal, 24)
+            } else {
+                lensBar
+            }
+        }
+    }
+
+    private var lensBar: some View {
+        HStack(spacing: 8) {
+            ForEach(camera.focalStops) { stop in
+                let selected = stop.id == camera.selectedStopID
+                Button {
+                    camera.select(stop: stop)
+                } label: {
+                    Text("\(stop.millimeters)")
+                        .font(CameraFont.interface(13, weight: .medium))
+                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
+                        .frame(width: 48, height: 32)
+                        .background(selected ? CameraColor.surface : CameraColor.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(stop.millimeters) 毫米")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 40)
+        .background(CameraColor.scrim, in: Capsule())
+    }
+
+    private func activeRuler(_ ruler: CaptureRuler) -> some View {
+        switch ruler {
+        case .ev:
+            SharedRuler(
+                labels: evLabels,
+                index: exposureIndex,
+                onChange: { index in
+                    let span = camera.exposureRange.upperBound - camera.exposureRange.lowerBound
+                    guard exposureCount > 1, span > 0 else { return }
+                    let value = camera.exposureRange.lowerBound + (Double(index) / Double(exposureCount - 1)) * span
+                    camera.setExposureEV(value)
+                },
+                onCommit: { camera.commitExposureEV() }
+            )
+        case .iso:
+            SharedRuler(
+                labels: camera.isoChoices.map { isoLabel($0) },
+                index: isoIndex,
+                onChange: { index in
+                    guard camera.isoChoices.indices.contains(index) else { return }
+                    camera.setManualISO(camera.isoChoices[index])
+                },
+                onCommit: {}
+            )
+        case .shutter:
+            SharedRuler(
+                labels: camera.shutterChoices.map { MeterFormat.shutterFraction($0) },
+                index: shutterIndex,
+                onChange: { index in
+                    guard camera.shutterChoices.indices.contains(index) else { return }
+                    camera.setManualShutter(camera.shutterChoices[index])
+                },
+                onCommit: {}
+            )
+        }
+    }
+
+    private var evLabels: [String] {
+        guard exposureCount > 0 else { return ["0"] }
+        let span = camera.exposureRange.upperBound - camera.exposureRange.lowerBound
+        return (0..<exposureCount).map { index in
+            let value = span > 0 && exposureCount > 1
+                ? camera.exposureRange.lowerBound + (Double(index) / Double(exposureCount - 1)) * span
+                : 0
+            return ExposureFormat.signedDecimal(value)
+        }
+    }
+
+    private var exposureRow: some View {
+        HStack(spacing: 8) {
+            SelectPill(title: camera.autoExposure ? "A 自动" : "M 手动", selected: true, width: 88) {
+                _ = camera.setAutoExposure(camera.autoExposure == false)
+                openRuler = nil
+            }
+            Spacer(minLength: 8)
+            if camera.autoExposure {
+                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: openRuler == .ev, width: 94) {
+                    toggleRuler(.ev)
+                }
+            } else {
+                SelectPill(title: "ISO \(isoBadge)", selected: openRuler == .iso, width: 108) {
+                    toggleRuler(.iso)
+                }
+                SelectPill(title: shutterBadge, selected: openRuler == .shutter, width: 108) {
+                    toggleRuler(.shutter)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func toggleRuler(_ ruler: CaptureRuler) {
+        flashMenu = false
+        openRuler = openRuler == ruler ? nil : ruler
     }
 
     private var controlRow: some View {
@@ -456,13 +466,11 @@ struct QuietFinderView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(capture.thumbnail == nil && capture.hasDevelopBase == false ? "打开样张" : "打开相册")
                 Spacer()
-                IconHitButton(
-                    symbol: .controls,
-                    label: "拍摄设置",
-                    action: { showSettings = true }
-                )
+                PhiGlyphButton(glyph: .settings, label: "拍摄设置") {
+                    showSettings = true
+                }
             }
-            ShutterButton(isReady: camera.isRunning, isCapturing: capture.isCapturing) {
+            WhiteShutterButton(isReady: camera.isRunning, isCapturing: capture.isCapturing) {
                 capture.capture()
             }
         }
@@ -488,27 +496,11 @@ struct QuietFinderView: View {
     }
 
     private var captionRow: some View {
-        HStack {
-            Text(camera.isoText)
-                .frame(width: 88, alignment: .leading)
-            Spacer()
-            Text(camera.shutterText)
-            Spacer()
-            Text(camera.whiteBalanceText)
-                .frame(width: 88, alignment: .trailing)
-        }
-        .font(CameraFont.parameter(12))
-        .foregroundStyle(CameraColor.textSecondary)
-        .padding(.horizontal, 8)
-    }
-
-    private var manualExposure: Binding<Bool> {
-        Binding(
-            get: { camera.autoExposure == false },
-            set: { enabled in
-                _ = camera.setAutoExposure(enabled == false)
-            }
-        )
+        Text("\(camera.isoText) · \(camera.shutterText) · \(camera.whiteBalanceText)")
+            .font(CameraFont.parameter(11))
+            .foregroundStyle(CameraColor.textSecondary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
     }
 
     private var exposureCount: Int {
@@ -561,6 +553,7 @@ struct QuietFinderView: View {
         switch event {
         case .began:
             dragBaseEV = camera.exposureEV
+            openRuler = .ev
             withAnimation(.easeOut(duration: 0.12)) {
                 rulerOpacity = 1
             }
@@ -573,10 +566,6 @@ struct QuietFinderView: View {
                 rulerOpacity = 0
             }
         }
-    }
-
-    private var counterText: String {
-        capture.captureCount > 999 ? "\(capture.captureCount)" : String(format: "%03d", capture.captureCount)
     }
 
     private var flashLabel: String {
@@ -601,6 +590,12 @@ struct QuietFinderView: View {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
     }
+}
+
+private enum CaptureRuler: Equatable {
+    case ev
+    case iso
+    case shutter
 }
 
 private enum PendingDevelop {

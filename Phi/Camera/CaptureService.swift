@@ -700,7 +700,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     self.camera.statusMessage = nil
                 }
                 if self.processSession?.isSample == false {
-                    self.processSession?.status = note
+                    self.processSession?.status = "已保存新照片，原片保留"
+                    self.processSession?.developInfo = note
                 }
             }
         } catch let error as PhotoSaveError {

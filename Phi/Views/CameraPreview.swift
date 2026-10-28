@@ -41,13 +41,14 @@ struct StableCameraPreview: View, Equatable {
     var anchor: PreviewAnchor
     var onTap: (CGPoint, CGPoint) -> Void
     var onDrag: (PreviewDrag) -> Void
+    var onLongPress: () -> Void = {}
 
     static func == (lhs: StableCameraPreview, rhs: StableCameraPreview) -> Bool {
         lhs.device?.uniqueID == rhs.device?.uniqueID && lhs.session === rhs.session && lhs.epoch == rhs.epoch
     }
 
     var body: some View {
-        CameraPreview(session: session, device: device, anchor: anchor, onTap: onTap, onDrag: onDrag)
+        CameraPreview(session: session, device: device, anchor: anchor, onTap: onTap, onDrag: onDrag, onLongPress: onLongPress)
     }
 }
 
@@ -57,6 +58,7 @@ struct CameraPreview: UIViewRepresentable {
     var anchor: PreviewAnchor
     var onTap: (CGPoint, CGPoint) -> Void
     var onDrag: (PreviewDrag) -> Void
+    var onLongPress: () -> Void = {}
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -65,6 +67,7 @@ struct CameraPreview: UIViewRepresentable {
         view.device = device
         view.onTap = onTap
         view.onDrag = onDrag
+        view.onLongPress = onLongPress
         return view
     }
 
@@ -80,6 +83,7 @@ struct CameraPreview: UIViewRepresentable {
         }
         view.onTap = onTap
         view.onDrag = onDrag
+        view.onLongPress = onLongPress
     }
 }
 
@@ -89,6 +93,7 @@ final class PreviewView: UIView {
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     var onTap: ((CGPoint, CGPoint) -> Void)?
     var onDrag: ((PreviewDrag) -> Void)?
+    var onLongPress: (() -> Void)?
 
     /// Device the preview coordinator was built for. Distinct from a mid-update assignment.
     private(set) var coordinatorDevice: AVCaptureDevice?
@@ -131,8 +136,11 @@ final class PreviewView: UIView {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.maximumNumberOfTouches = 1
         pan.cancelsTouchesInView = false
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
+        hold.minimumPressDuration = 0.4
         addGestureRecognizer(tap)
         addGestureRecognizer(pan)
+        addGestureRecognizer(hold)
     }
 
     @available(*, unavailable)
@@ -165,6 +173,11 @@ final class PreviewView: UIView {
         previewLayer.videoGravity = .resizeAspectFill
         guard let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(angle) else { return }
         connection.videoRotationAngle = angle
+    }
+
+    @objc private func handleHold(_ hold: UILongPressGestureRecognizer) {
+        guard hold.state == .began else { return }
+        onLongPress?()
     }
 
     @objc private func handleTap(_ tap: UITapGestureRecognizer) {
