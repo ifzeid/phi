@@ -12,11 +12,11 @@ enum ColorLooks {
         case .none:
             break
         case .positive:
-            current = positive(current)
+            current = grade(current, LookCubes.positive)
         case .negative:
-            current = negative(current)
+            current = grade(current, LookCubes.negative)
         case .mono:
-            current = mono(current)
+            current = grade(current, LookCubes.mono)
         case .ccd:
             current = ccd(current)
         }
@@ -51,88 +51,19 @@ enum ColorLooks {
         image.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
     }
 
-    private static func positive(_ image: CIImage) -> CIImage {
-        let curved = tone(image, points: [
-            (0, 0.015),
-            (0.22, 0.16),
-            (0.50, 0.52),
-            (0.78, 0.86),
-            (1, 0.98)
+    /// The cube is `LookRecipe.apply` in this same perceptual space. It is not a second grade.
+    private static func grade(_ image: CIImage, _ cube: Data) -> CIImage {
+        image.applyingFilter("CIColorCube", parameters: [
+            "inputCubeDimension": NSNumber(value: LookRecipe.cubeDimension),
+            "inputCubeData": cube
         ])
-        let colored = curved.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 1.28,
-            kCIInputBrightnessKey: -0.01,
-            kCIInputContrastKey: 1.08
-        ])
-        return colored.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1.08, y: 0.02, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 0.94, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0.02, z: 0.92, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0.012, y: 0, z: -0.01, w: 0)
-        ])
-    }
-
-    private static func negative(_ image: CIImage) -> CIImage {
-        let lifted = image.applyingFilter("CIHighlightShadowAdjust", parameters: [
-            "inputHighlightAmount": 0.72,
-            "inputShadowAmount": 0.42
-        ])
-        let curved = tone(lifted, points: [
-            (0, 0.07),
-            (0.25, 0.30),
-            (0.50, 0.52),
-            (0.75, 0.73),
-            (1, 0.93)
-        ])
-        let colored = curved.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0.78,
-            kCIInputBrightnessKey: 0.02,
-            kCIInputContrastKey: 0.92
-        ])
-        return colored.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.96, y: 0.04, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0.02, y: 0.98, z: 0.02, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0.04, z: 1.05, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0.01, y: 0.01, z: 0.015, w: 0)
-        ])
-    }
-
-    private static func mono(_ image: CIImage) -> CIImage {
-        let weights = CIVector(x: 0.45, y: 0.42, z: 0.13, w: 0)
-        let gray = image.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": weights,
-            "inputGVector": weights,
-            "inputBVector": weights,
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-        ])
-        let curved = tone(gray, points: [
-            (0, 0.035),
-            (0.20, 0.11),
-            (0.48, 0.46),
-            (0.76, 0.84),
-            (1, 1)
-        ])
-        return curved
     }
 
     /// Fixed CCD still. Color, shoulder, and texture live here. `CIRAWFilter` noise reduction,
     /// sharpness, detail, and moiré stay at 0. The small sharpen below belongs only to this look.
     private static func ccd(_ image: CIImage) -> CIImage {
-        let colored = image.applyingFilter("CIColorCube", parameters: [
-            "inputCubeDimension": NSNumber(value: CCDCube.dimension),
-            "inputCubeData": CCDCube.data
-        ])
-        let curved = tone(colored, points: [
-            (0.00, 0.042),
-            (0.22, 0.18),
-            (0.58, 0.62),
-            (0.86, 0.915),
-            (1.00, 0.94)
-        ])
-        let crisp = sharpenedDownsample(curved)
+        let colored = grade(image, LookCubes.ccd)
+        let crisp = sharpenedDownsample(colored)
         return shadowTexture(crisp)
     }
 
@@ -172,8 +103,8 @@ enum ColorLooks {
         let mask = shadowMask(image)
         let chroma = CCDTexture.chroma.applyingFilter("CIAffineTile").cropped(to: extent)
         let bands = CCDTexture.bands.applyingFilter("CIAffineTile").cropped(to: extent)
-        let withChroma = maskedMix(image, overlay: chroma, mask: mask, amount: 0.20)
-        return maskedMix(withChroma, overlay: bands, mask: mask, amount: 0.12)
+        let withChroma = maskedMix(image, overlay: chroma, mask: mask, amount: 0.08)
+        return maskedMix(withChroma, overlay: bands, mask: mask, amount: 0.05)
     }
 
     private static func shadowMask(_ image: CIImage) -> CIImage {
@@ -281,79 +212,11 @@ enum ColorLook: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-/// 16³ color cube. Cooler neutrals, denser reds and blues, warmer skin, a faint magenta/green shadow.
-private enum CCDCube {
-    static let dimension = 16
-    static let data: Data = {
-        let size = dimension
-        var samples = [Float](repeating: 0, count: size * size * size * 4)
-        var offset = 0
-        let last = Float(size - 1)
-        for blue in 0..<size {
-            for green in 0..<size {
-                for red in 0..<size {
-                    let mapped = map(
-                        CGFloat(Float(red) / last),
-                        CGFloat(Float(green) / last),
-                        CGFloat(Float(blue) / last)
-                    )
-                    samples[offset] = Float(mapped.0)
-                    samples[offset + 1] = Float(mapped.1)
-                    samples[offset + 2] = Float(mapped.2)
-                    samples[offset + 3] = 1
-                    offset += 4
-                }
-            }
-        }
-        return samples.withUnsafeBytes { Data($0) }
-    }()
-
-    private static func map(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
-        var r = red * 0.968
-        var g = green * 0.998
-        var b = blue * 1.032
-        let rr = clamp(1.08 * r - 0.045 * g - 0.025 * b)
-        let gg = clamp(-0.03 * r + 1.015 * g - 0.012 * b)
-        let bb = clamp(-0.02 * r - 0.055 * g + 1.10 * b)
-        r = rr
-        g = gg
-        b = bb
-
-        let spread = max(r, g, b) - min(r, g, b)
-        let skin = smooth(0.05, 0.16, spread)
-            * smooth(0.12, 0.28, r)
-            * (1 - smooth(0.22, 0.55, r - g))
-            * (r >= g && g + 0.02 >= b ? 1 : 0)
-        r = clamp(r + 0.034 * skin)
-        g = clamp(g + 0.014 * skin)
-        b = clamp(b - 0.026 * skin)
-
-        let redPure = (r > g && r > b) ? smooth(0.06, 0.24, r - max(g, b)) * (1 - skin) : 0
-        r = clamp(r + 0.018 * redPure)
-        g = clamp(g - 0.016 * redPure)
-        let bluePure = (b > r && b > g) ? smooth(0.05, 0.22, b - max(r, g)) : 0
-        b = clamp(b + 0.02 * bluePure)
-        g = clamp(g - 0.022 * bluePure)
-
-        let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
-        let shadow = 1 - smooth(0.02, 0.28, luma)
-        let deep = 1 - smooth(0.0, 0.07, luma)
-        r = clamp(r + 0.015 * shadow)
-        g = clamp(g - 0.006 * shadow + 0.012 * deep)
-        b = clamp(b + 0.011 * shadow)
-        return (r, g, b)
-    }
-
-    private static func smooth(_ edge0: CGFloat, _ edge1: CGFloat, _ value: CGFloat) -> CGFloat {
-        let span = edge1 - edge0
-        guard span != 0 else { return value < edge0 ? 0 : 1 }
-        let t = min(1, max(0, (value - edge0) / span))
-        return t * t * (3 - 2 * t)
-    }
-
-    private static func clamp(_ value: CGFloat) -> CGFloat {
-        min(1, max(0, value))
-    }
+private enum LookCubes {
+    static let positive = LookRecipe.positive.cubeData()
+    static let negative = LookRecipe.negative.cubeData()
+    static let mono = LookRecipe.mono.cubeData()
+    static let ccd = LookRecipe.ccd.cubeData()
 }
 
 /// Baked once. Chroma is a weak color speckle. Bands are a few levels of horizontal magenta and green.

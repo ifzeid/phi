@@ -25,6 +25,25 @@ private struct CompositionGrid: View {
     }
 }
 
+/// Dims everything outside the chosen crop. The 3:4 frame itself does not move.
+private struct CropWindow: View {
+    var crop: CGRect
+
+    var body: some View {
+        Canvas { context, size in
+            let bounds = CGRect(origin: .zero, size: size)
+            guard crop.width > 1, crop.height > 1 else { return }
+            let fillsFrame = abs(crop.width - bounds.width) < 1 && abs(crop.height - bounds.height) < 1
+            guard fillsFrame == false else { return }
+            var dim = Path()
+            dim.addRect(bounds)
+            dim.addRect(crop)
+            context.fill(dim, with: .color(Color.black.opacity(0.55)), style: FillStyle(eoFill: true))
+            context.stroke(Path(crop), with: .color(CameraColor.textPrimary.opacity(0.9)), lineWidth: 1)
+        }
+    }
+}
+
 struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
@@ -39,6 +58,7 @@ struct QuietFinderView: View {
     @State private var statusTicket = 0
     @State private var openRuler: CaptureRuler?
     @State private var flashMenu = false
+    @State private var viewfinderSize = CGSize(width: 402, height: 536)
 
     private var camera: CameraSession { capture.camera }
 
@@ -65,6 +85,15 @@ struct QuietFinderView: View {
         .modifier(HiddenSystemChrome())
         .onAppear {
             #if DEBUG
+            if let aspect = PHIUITest.aspect {
+                capture.setPhotoAspect(aspect)
+            }
+            if PHIUITest.showGrid {
+                showGrid = true
+            }
+            if PHIUITest.showEVRuler {
+                openRuler = .ev
+            }
             if PHIUITest.screen == .flash {
                 flashMenu = true
             }
@@ -147,11 +176,14 @@ struct QuietFinderView: View {
             let photoTop = pillTop + 32 + 6
             let cluster = CGFloat(40 + 6 + 44 + 3 + 80 + 3 + 22)
             let clusterTop = height - home - cluster
-            let ratio = max(capture.photoAspect.widthOverHeight, 0.01)
-            let photoHeight = width / ratio
+            let photoHeight = width / PhotoAspect.finderWidthOverHeight
             ZStack(alignment: .topLeading) {
                 viewfinder
                     .frame(width: width, height: photoHeight)
+                    .onAppear { viewfinderSize = CGSize(width: width, height: photoHeight) }
+                    .onChange(of: photoHeight) { _, _ in
+                        viewfinderSize = CGSize(width: width, height: photoHeight)
+                    }
                     .overlay(alignment: .bottom) {
                         if let openRuler {
                             activeRuler(openRuler)
@@ -240,17 +272,28 @@ struct QuietFinderView: View {
     }
 
     private var viewfinder: some View {
-        PhotoCanvas(widthOverHeight: capture.photoAspect.widthOverHeight) {
+        PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
             stage
         }
     }
 
     private var livePreview: some View {
-        let onTap: (CGPoint, CGPoint) -> Void = { viewPoint, devicePoint in
+        let onTap: (CGPoint, CGPoint) -> Void = { viewPoint, _ in
             openRuler = nil
             flashMenu = false
-            focusPoint = viewPoint
-            camera.focus(at: devicePoint)
+            let size = viewfinderSize
+            let crop = activeAspect.cropWindow(in: size)
+            let limit = crop.insetBy(dx: 38, dy: 38)
+            let clamped = CGPoint(
+                x: min(max(viewPoint.x, limit.minX), max(limit.minX, limit.maxX)),
+                y: min(max(viewPoint.y, limit.minY), max(limit.minY, limit.maxY))
+            )
+            focusPoint = clamped
+            let device = CGPoint(
+                x: size.width > 1 ? clamped.x / size.width : 0.5,
+                y: size.height > 1 ? clamped.y / size.height : 0.5
+            )
+            camera.focus(at: device)
         }
         let onDrag: (PreviewDrag) -> Void = { event in
             handleDrag(event)
@@ -364,22 +407,39 @@ struct QuietFinderView: View {
             #endif
         }
         .clipped()
-        .overlay { gridOverlay }
+        .overlay { cropOverlay }
         .overlay { stageStatus }
         .overlay { flashOverlay }
         .overlay { focusOverlay }
         .onChange(of: camera.statusMessage, onStatus)
         .onChange(of: capture.shutterTick, onShutter)
+        .onChange(of: capture.photoAspect) { _, _ in
+            focusPoint = nil
+        }
     }
 
-    private var gridOverlay: some View {
-        Group {
+    private var activeAspect: PhotoAspect {
+        #if DEBUG
+        if let aspect = PHIUITest.aspect { return aspect }
+        #endif
+        return capture.photoAspect
+    }
+
+    private var cropOverlay: some View {
+        GeometryReader { proxy in
+            let crop = activeAspect.cropWindow(in: proxy.size)
+            CropWindow(crop: crop)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .allowsHitTesting(false)
             if showGrid {
                 CompositionGrid()
+                    .frame(width: crop.width, height: crop.height)
+                    .position(x: crop.midX, y: crop.midY)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
+        .allowsHitTesting(false)
     }
 
     private var flashOverlay: some View {
@@ -390,8 +450,15 @@ struct QuietFinderView: View {
 
     private var focusOverlay: some View {
         GeometryReader { proxy in
-            let point = focusPoint ?? CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
-            if camera.isConfigured {
+            let crop = activeAspect.cropWindow(in: proxy.size)
+            let limit = crop.insetBy(dx: 38, dy: 38)
+            let center = CGPoint(x: crop.midX, y: crop.midY)
+            let raw = focusPoint ?? center
+            let point = CGPoint(
+                x: min(max(raw.x, limit.minX), limit.maxX),
+                y: min(max(raw.y, limit.minY), limit.maxY)
+            )
+            if camera.isConfigured || uiTestCapture {
                 FocusBracket(locked: camera.focusLocked)
                     .position(point)
                     .animation(.easeOut(duration: 0.18), value: point.x)

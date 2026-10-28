@@ -31,7 +31,7 @@ struct ProcessStillView: View {
         GeometryReader { geo in
             let home = max(geo.safeAreaInsets.bottom, ScreenEdge.windowBottom, 21)
             let chrome = 52 + 48 + toolHeight + 44 + 44 + home + 12
-            let ratio = max(session.framedAspect.widthOverHeight, 0.01)
+            let ratio = PhotoAspect.finderWidthOverHeight
             let ideal = geo.size.width / ratio
             let photoHeight = min(ideal, max(160, geo.size.height - chrome))
             ZStack {
@@ -61,7 +61,17 @@ struct ProcessStillView: View {
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())
-        .onAppear(perform: captureBaseline)
+        .onAppear {
+            #if DEBUG
+            switch PHIUITest.editorTab {
+            case .exposure: tab = .exposure
+            case .style: tab = .style
+            case .effects: tab = .effects
+            case nil: break
+            }
+            #endif
+            captureBaseline()
+        }
     }
 
     private var titleBar: some View {
@@ -83,7 +93,7 @@ struct ProcessStillView: View {
 
     @ViewBuilder
     private var editorImage: some View {
-        PhotoCanvas(widthOverHeight: session.framedAspect.widthOverHeight) {
+        PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
             ZStack {
                 CameraColor.background
                 if holdingOriginal {

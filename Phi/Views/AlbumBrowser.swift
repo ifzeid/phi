@@ -453,10 +453,15 @@ private struct AlbumShot: Identifiable {
 }
 
 extension AlbumBrowser {
+    fileprivate static func sampleStill(framed: PhotoAspect, missing: Bool) -> UIImage? {
+        guard missing == false, let sample = UIImage(named: "SampleStill"), let cg = sample.cgImage else { return nil }
+        return UIImage(cgImage: framed.cropped(cg), scale: sample.scale, orientation: sample.imageOrientation)
+    }
+
     fileprivate static func sampleShots() -> [AlbumShot] {
         let today = Date()
         let older = Calendar.current.date(byAdding: .day, value: -40, to: today) ?? today
-        func shot(id: String, date: Date, missing: Bool, raw: Bool) -> AlbumShot {
+        func shot(id: String, date: Date, missing: Bool, raw: Bool, framed: PhotoAspect = .threeByFour) -> AlbumShot {
             let local = PhiLocalShots.Shot(
                 id: id,
                 files: [],
@@ -464,7 +469,7 @@ extension AlbumBrowser {
                 savedToPhotos: false,
                 photosIdentifier: nil,
                 saveFailed: false,
-                aspect: PhotoAspect.threeByFour.rawValue,
+                aspect: framed.rawValue,
                 lensZoom: 1
             )
             return AlbumShot(
@@ -475,11 +480,17 @@ extension AlbumBrowser {
                 needsRetry: false,
                 missing: missing,
                 lensZoom: 1,
-                framed: .threeByFour
+                framed: framed
             )
         }
         return [
-            shot(id: "sample-1", date: today, missing: false, raw: true),
+            shot(id: "sample-1", date: today, missing: false, raw: true, framed: {
+                #if DEBUG
+                PHIUITest.aspect ?? .threeByFour
+                #else
+                .threeByFour
+                #endif
+            }()),
             shot(id: "sample-2", date: today, missing: false, raw: false),
             shot(id: "sample-missing", date: today, missing: true, raw: false),
             shot(id: "sample-3", date: older, missing: false, raw: true)
@@ -555,7 +566,7 @@ private struct AlbumThumb: View {
 
     private func load() async {
         if shot.id.hasPrefix("sample-") {
-            image = shot.missing ? nil : UIImage(named: "SampleStill")
+            image = AlbumBrowser.sampleStill(framed: shot.framed, missing: shot.missing)
             return
         }
         switch shot.source {
@@ -661,7 +672,7 @@ private struct AlbumPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PhotoCanvas(widthOverHeight: shot.framed.widthOverHeight) {
+            PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
                 ZStack {
                     CameraColor.background
                     if shot.missing {
@@ -675,7 +686,7 @@ private struct AlbumPage: View {
                     } else if let image {
                         Image(uiImage: image)
                             .resizable()
-                            .scaledToFill()
+                            .scaledToFit()
                     } else {
                         ProgressView().tint(CameraColor.accent)
                     }
@@ -728,6 +739,10 @@ private struct AlbumPage: View {
     }
 
     private func load() async {
+        if shot.id.hasPrefix("sample-") {
+            image = AlbumBrowser.sampleStill(framed: shot.framed, missing: shot.missing)
+            return
+        }
         switch shot.source {
         case .library(let asset):
             if image == nil {

@@ -1,7 +1,12 @@
 import SwiftUI
 
 #if DEBUG
-/// Simulator screenshots. Launch with `-PHIUITestScreen capture|album|editor|settings|flash`.
+/// Simulator screenshots.
+/// `-PHIUITestScreen capture|album|editor|settings|flash`
+/// `-PHIUITestAspect 1:1|3:4|2:3|9:16` (also `4:3`, `3:2`, `16:9`)
+/// `-PHIUITestEVRuler` opens the exposure ruler on the capture screen
+/// `-PHIUITestGrid` turns the crop grid on
+/// `-PHIUITestEditorTab exposure|style|effects`
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -16,6 +21,45 @@ enum PHIUITest {
         guard let flag = arguments.firstIndex(of: "-PHIUITestScreen"),
               arguments.indices.contains(flag + 1) else { return nil }
         return Screen(rawValue: arguments[flag + 1])
+    }
+
+    static var aspect: PhotoAspect? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-PHIUITestAspect"),
+              arguments.indices.contains(flag + 1) else { return nil }
+        switch arguments[flag + 1] {
+        case "1:1", "1x1": return .square
+        case "3:4", "4:3": return .threeByFour
+        case "2:3", "3:2": return .twoByThree
+        case "9:16", "16:9": return .nineBySixteen
+        default: return PhotoAspect(rawValue: arguments[flag + 1])
+        }
+    }
+
+    static var showEVRuler: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEVRuler")
+    }
+
+    static var showGrid: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestGrid")
+    }
+
+    static var editorTab: EditorTabName? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-PHIUITestEditorTab"),
+              arguments.indices.contains(flag + 1) else { return nil }
+        switch arguments[flag + 1] {
+        case "exposure", "曝光": return .exposure
+        case "style", "风格": return .style
+        case "effects", "效果": return .effects
+        default: return nil
+        }
+    }
+
+    enum EditorTabName {
+        case exposure
+        case style
+        case effects
     }
 
     static var sample: UIImage? { UIImage(named: "SampleStill") }
@@ -62,7 +106,7 @@ struct PHIUITestHost: View {
                 onSaveHEIF: { _ in },
                 codec: .heic,
                 onCodec: { _ in },
-                aspect: .threeByFour,
+                aspect: PHIUITest.aspect ?? .threeByFour,
                 onAspect: { _ in },
                 onClose: {}
             )
@@ -79,7 +123,7 @@ struct PHIUITestHost: View {
             isSample: true,
             originalWasRaw: true,
             sourceDNG: nil,
-            framedAspect: .threeByFour
+            framedAspect: PHIUITest.aspect ?? .threeByFour
         )
         session.preview = PHIUITest.sample
         return session

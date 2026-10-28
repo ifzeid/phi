@@ -140,6 +140,25 @@ enum PhotoAspect: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The viewfinder frame is always 3:4. The chosen ratio is a window inside it.
+    static let finderWidthOverHeight: CGFloat = 3.0 / 4.0
+
+    /// Centered crop inside a 3:4 frame. 3:4 fills the frame.
+    func cropWindow(in frame: CGSize) -> CGRect {
+        guard frame.width > 1, frame.height > 1 else { return CGRect(origin: .zero, size: frame) }
+        let crop = widthOverHeight
+        let frameRatio = frame.width / frame.height
+        if abs(crop - frameRatio) < 0.01 {
+            return CGRect(origin: .zero, size: frame)
+        }
+        if crop > frameRatio {
+            let height = frame.width / crop
+            return CGRect(x: 0, y: (frame.height - height) / 2, width: frame.width, height: height)
+        }
+        let width = frame.height * crop
+        return CGRect(x: (frame.width - width) / 2, y: 0, width: width, height: frame.height)
+    }
+
     /// Width ÷ height while the phone is held in portrait.
     var widthOverHeight: CGFloat {
         switch self {
