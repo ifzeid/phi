@@ -52,13 +52,13 @@ final class CameraSession: ObservableObject {
     private var supportedFlashModes: [AVCaptureDevice.FlashMode] = []
     /// Session-queue copy of the auto/manual choice. The published flag is for SwiftUI.
     private var exposureIsAuto = true
-    private var cachedAspect = "—"
     private var lensStops: [FocalStop] = []
     private var wideMillimeters = 0
     /// Crop stops and non-1× virtual zooms must not request Bayer RAW. `capturePhoto` throws if they do.
     private var rawSuppressed = false
     private var activeStopOptical = true
     private var captureFormat: CaptureFormat = .jpegAndRaw
+    private var photoAspect: PhotoAspect = .threeByFour
     /// The preview's rotation coordinator is created on the main thread. Suspend it before swapping inputs.
     let previewAnchor = PreviewAnchor()
 
@@ -385,6 +385,15 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    func setPhotoAspect(_ aspect: PhotoAspect) {
+        photoAspect = aspect
+        sessionQueue.async {
+            self.photoAspect = aspect
+            guard self.didConfigure else { return }
+            self.publishDeliveryLabel()
+        }
+    }
+
     func capturePhoto(
         format: CaptureFormat,
         delegate: AVCapturePhotoCaptureDelegate,
@@ -486,7 +495,6 @@ final class CameraSession: ObservableObject {
         applyCaptureRotation()
         observeMeter(active)
         let discovery = discover(active)
-        cachedAspect = discovery.aspect
         didConfigure = true
         if !exposureIsAuto {
             applyExposureMode(enabled: false, ev: 0)
@@ -518,7 +526,6 @@ final class CameraSession: ObservableObject {
 
     private struct Discovery {
         var label: String
-        var aspect: String
         var raw: Bool
         var range: ClosedRange<Double>
         var manual: Bool
@@ -529,18 +536,14 @@ final class CameraSession: ObservableObject {
     private func discover(_ device: AVCaptureDevice) -> Discovery {
         let raw = photoOutput.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
         let codec = processedPhotoCodec().name
-        let dimensions = device.activeFormat.supportedMaxPhotoDimensions
-        let largest = dimensions.max { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }
-        let aspect = largest.map { AspectLabel.photo(width: Int($0.width), height: Int($0.height)) } ?? "—"
         let lower = max(-2, Double(device.minExposureTargetBias))
         let upper = min(2, Double(device.maxExposureTargetBias))
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
         let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
-        let hardwareRaw = raw && rawSuppressed == false && activeStopOptical && captureFormat.wantsRaw
+        let hardwareRaw = raw && rawSuppressed == false && activeStopOptical && captureFormat.wantsRaw && photoAspect.allowsRaw
         return Discovery(
-            label: CaptureFormat.label(preference: captureFormat, rawDelivered: hardwareRaw, codec: codec, aspect: aspect),
-            aspect: aspect,
+            label: CaptureFormat.label(preference: captureFormat, rawDelivered: hardwareRaw, codec: codec, aspect: photoAspect.title),
             raw: raw,
             range: range,
             manual: manual,
@@ -623,7 +626,7 @@ final class CameraSession: ObservableObject {
 
     private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String) {
         alignPhotoDimensions()
-        let bayer = captureFormat.wantsRaw ? bayerFormatIfDeliverable() : nil
+        let bayer = (captureFormat.wantsRaw && photoAspect.allowsRaw) ? bayerFormatIfDeliverable() : nil
         let processedCodec = processedPhotoCodec()
         let processed: [String: Any] = [AVVideoCodecKey: processedCodec.codec]
         let settings: AVCapturePhotoSettings
@@ -650,7 +653,7 @@ final class CameraSession: ObservableObject {
             preference: captureFormat,
             rawDelivered: usingRaw,
             codec: codecName,
-            aspect: cachedAspect
+            aspect: photoAspect.title
         )
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
@@ -901,13 +904,13 @@ final class CameraSession: ObservableObject {
         let outputHasBayer = photoOutput.availableRawPhotoPixelFormatTypes.contains {
             AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
         }
-        let usingRaw = captureFormat.wantsRaw && rawSuppressed == false && activeStopOptical && outputHasBayer
+        let usingRaw = captureFormat.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false && activeStopOptical && outputHasBayer
         let name = processedPhotoCodec().name
         let label = CaptureFormat.label(
             preference: captureFormat,
             rawDelivered: usingRaw,
             codec: name,
-            aspect: cachedAspect
+            aspect: photoAspect.title
         )
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }

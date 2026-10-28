@@ -64,6 +64,8 @@ struct QuietFinderView: View {
             FinderSettingsSheet(
                 format: capture.captureFormat,
                 onFormat: { capture.setCaptureFormat($0) },
+                aspect: capture.photoAspect,
+                onAspect: { capture.setPhotoAspect($0) },
                 grain: capture.grainStyle,
                 onGrain: { capture.setGrainStyle($0) },
                 iso: camera.manualISOValue,
@@ -362,11 +364,13 @@ struct QuietFinderView: View {
 
     private func fittedSize(in bounds: CGSize) -> CGSize {
         guard bounds.width > 0, bounds.height > 0 else { return bounds }
-        let heightFromWidth = bounds.width * 4 / 3
+        let ratio = capture.photoAspect.widthOverHeight
+        guard ratio > 0 else { return bounds }
+        let heightFromWidth = bounds.width / ratio
         if heightFromWidth <= bounds.height {
             return CGSize(width: bounds.width, height: heightFromWidth)
         }
-        return CGSize(width: bounds.height * 3 / 4, height: bounds.height)
+        return CGSize(width: bounds.height * ratio, height: bounds.height)
     }
 
     private func openSettings() {

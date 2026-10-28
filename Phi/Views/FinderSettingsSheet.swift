@@ -4,6 +4,8 @@ import SwiftUI
 struct FinderSettingsSheet: View {
     var format: CaptureFormat
     var onFormat: (CaptureFormat) -> Void
+    var aspect: PhotoAspect
+    var onAspect: (PhotoAspect) -> Void
     var grain: GrainStyle
     var onGrain: (GrainStyle) -> Void
     var iso: Float
@@ -21,6 +23,9 @@ struct FinderSettingsSheet: View {
                 header
                 section("FORMAT", caption: formatCaption) {
                     CaptureFormatPicker(selection: format, onSelect: onFormat)
+                }
+                section("ASPECT", caption: "默认 3:4，即整幅传感器。其他画幅从中心裁切，取景和成片一致。这些画幅不写 RAW。") {
+                    PhotoAspectPicker(selection: aspect, onSelect: onAspect)
                 }
                 section("GRAIN", caption: "拍摄后的颗粒，不改变取景") {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -132,6 +137,38 @@ struct FinderSettingsSheet: View {
         }
         let index = min(max(shutterIndex + delta, 0), shutterChoices.count - 1)
         onShutter(shutterChoices[index])
+    }
+}
+
+private struct PhotoAspectPicker: View {
+    var selection: PhotoAspect
+    var onSelect: (PhotoAspect) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(PhotoAspect.allCases) { aspect in
+                let selected = aspect == selection
+                Button {
+                    onSelect(aspect)
+                } label: {
+                    VStack(spacing: 5) {
+                        Text(aspect.title)
+                            .font(CameraFont.parameter(12, medium: selected))
+                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                            .lineLimit(1)
+                        Rectangle()
+                            .fill(selected ? CameraColor.accent : Color.clear)
+                            .frame(width: 14, height: 1.5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(aspect.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
     }
 }
 

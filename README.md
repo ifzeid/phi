@@ -23,7 +23,8 @@ Requires a Mac with Xcode 16 or newer and the iOS 18 SDK. iPhone only. No storyb
 
 - `AVCaptureSession` 后置预览，`.photo` preset。
 - 拍照使用 `photoQualityPrioritization = .speed`（输出上的上限也是 `.speed`）。
-- 拍摄格式在设置里，不常驻在取景器上。默认 **JPEG+RAW**：相册里是同一张照片的处理图（HEIC，没有 HEVC 时用 JPEG）加 Bayer DNG。也可以只存 RAW，或只存 JPEG/HEIC。不启用 Apple ProRAW。顶栏是这次会写入的格式，例如 `RAW+HEIC · 4:3`。裁切档不能出 RAW 时只存处理图，并短提示，不崩溃。
+- 拍摄格式在设置里，不常驻在取景器上。默认 **JPEG+RAW**：相册里是同一张照片的处理图（HEIC，没有 HEVC 时用 JPEG）加 Bayer DNG。也可以只存 RAW，或只存 JPEG/HEIC。不启用 Apple ProRAW。顶栏是这次会写入的格式，例如 `RAW+HEIC · 3:4`。裁切档不能出 RAW 时只存处理图，并短提示，不崩溃。
+- 画幅也在设置里。默认 **3:4**（整幅传感器）。另有 **1:1**、**2:3**、**9:16**，取景和成片都从中心裁切成同一比例。这三档不写 RAW，只存裁切后的 HEIC 或 JPEG。
 - 快门旁的缩略图是 App 内最近一张。保存走「仅添加照片」权限。失败时文件留在 App 内，可以重试。
 - 焦段来自后置实体镜头的水平视角（超广角、主摄、长焦），不是探索稿里的 24 / 35 / 50。主摄若能做 2× 裁切，会多一档，约为主摄毫米数的两倍。默认停在主摄 1×。
 - 在取景画面上上下拖动只改曝光补偿。刻度出现在画面右侧，松手后淡出，不常驻。往上更亮。没有 PHOTO / MANUAL 模式开关。
@@ -42,6 +43,7 @@ Requires a Mac with Xcode 16 or newer and the iOS 18 SDK. iPhone only. No storyb
 2. 拖曝光条。数字和指示线一起动，预览跟着变亮或变暗，步进 0.1 EV。
 3. 点 `FINE`、`SILVER`、`PUSH`、再回到 `NATURAL`。只能看到这四个名字，没有颗粒强度、大小或数量滑杆。`NATURAL` 应看不出颗粒。
 4. 保存处理图。相册里多一张 HEIC 或 JPEG。若这张是 RAW，原来的 DNG 还在，内容不应被这次导出改掉。
+4b. 设置里把画幅改成 1:1、2:3 或 9:16。取景框应马上变成这个比例。拍出来的处理图和取景是同一裁切。顶栏比例跟着变。这三档不进 RAW。改回 3:4 后，1× 又能写 RAW。
 5. 关掉处理页，再点快门旁的缩略图。曝光和风格应还是刚才那组。
 6. 在取景页先选一个风格再拍。下一张处理页默认就是这个风格。实时取景本身不加颗粒。
 7. 模拟器没有相机时，取景失败后可以点「处理样张」，或点空缩略图。处理页应标明这是样张。

@@ -15,6 +15,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var canRetryPhotoSave = false
     @Published private(set) var grainStyle: GrainStyle
     @Published private(set) var captureFormat: CaptureFormat = .jpegAndRaw
+    @Published private(set) var photoAspect: PhotoAspect = .threeByFour
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
 
@@ -26,7 +27,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         grainStyle = GrainStyle.stored(UserDefaults.standard.string(forKey: StillArchive.grainStyleKey))
         super.init()
         captureFormat = CaptureFormat.stored(UserDefaults.standard.string(forKey: CaptureFormat.storageKey))
+        photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
         camera.setCaptureFormat(captureFormat)
+        camera.setPhotoAspect(photoAspect)
         captureCount = UserDefaults.standard.integer(forKey: StillArchive.countKey)
         let unfinished = UserDefaults.standard.bool(forKey: StillArchive.lastSavedKey) == false
         canRetryPhotoSave = unfinished && (StillArchive.loadLastRecord()?.files.isEmpty == false
@@ -56,6 +59,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         captureFormat = format
         UserDefaults.standard.set(format.rawValue, forKey: CaptureFormat.storageKey)
         camera.setCaptureFormat(format)
+    }
+
+    func setPhotoAspect(_ aspect: PhotoAspect) {
+        photoAspect = aspect
+        UserDefaults.standard.set(aspect.rawValue, forKey: PhotoAspect.storageKey)
+        camera.setPhotoAspect(aspect)
     }
 
     /// Opens the last developed still, or the bundled sample when nothing has been captured.
@@ -174,7 +183,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             canRetryPhotoSave = false
             return
         }
-        Task { await self.saveToPhotos(payloads, skippedRaw: false) }
+        Task { await self.saveToPhotos(payloads, skippedRaw: false, croppedAspect: false) }
     }
 
     private static func legacyRecord() -> LibraryRecord? {
@@ -230,19 +239,32 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
 
+        let aspect = photoAspect
         let codec = snapshot.codec
-        let processedExt = codec == "HEIC" ? "heic" : "jpg"
-        let processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
         let rawUTI = UTType(filenameExtension: "dng")?.identifier ?? "com.adobe.raw-image"
-        let saveRaw = format.wantsRaw && hasRaw
+        let saveRaw = format.wantsRaw && hasRaw && aspect.allowsRaw
         let saveProcessed = format != .raw || saveRaw == false
         let skippedRaw = format.wantsRaw && saveRaw == false && hasProcessed
         let preview = snapshot.preview
         let style = grainStyle
         let rawData = snapshot.raw
-        let processedData = snapshot.processed
+        let originalProcessed = snapshot.processed
 
         DispatchQueue.global(qos: .userInitiated).async {
+            var spokenCodec = codec
+            var processedExt = codec == "HEIC" ? "heic" : "jpg"
+            var processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
+            var bytes = originalProcessed
+            let upright = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+                ?? originalProcessed.flatMap { UIImage(data: $0) }.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+            let framed = upright.map { aspect.cropped($0) }
+            if aspect != .threeByFour, let framed, let encoded = StillPipeline.encodeDeveloped(framed) {
+                bytes = encoded.data
+                processedExt = encoded.ext
+                processedUTI = encoded.uti
+                spokenCodec = encoded.ext == "heic" ? "HEIC" : "JPEG"
+            }
+            let processedData = bytes
             let stamp = StillArchive.stamp()
             var files: [LibraryRecord.File] = []
             var payloads: [LibraryPayload] = []
@@ -279,7 +301,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     alternate: alternate
                 ))
             }
-            let base = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+            let base = framed
             if let base {
                 try? StillArchive.writeBasePreview(base)
             }
@@ -291,7 +313,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: style, maxSide: 900) }
             let thumb = thumbSource.map { StillArchive.thumbnail(from: UIImage(cgImage: $0)) } ?? preview.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
-            let captureStatus = Self.captureStatus(codec: codec, savedRaw: keptRaw, savedProcessed: files.contains { $0.alternate == false && $0.filename.lowercased().hasSuffix(".dng") == false }, skippedRaw: skippedRaw)
+            let captureStatus = Self.captureStatus(
+                codec: spokenCodec,
+                savedRaw: keptRaw,
+                savedProcessed: files.contains { $0.alternate == false && $0.filename.lowercased().hasSuffix(".dng") == false },
+                skippedRaw: skippedRaw,
+                croppedAspect: aspect != .threeByFour
+            )
             DispatchQueue.main.async {
                 self.isCapturing = false
                 if let thumb {
@@ -303,7 +331,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.captureCount += 1
                 UserDefaults.standard.set(self.captureCount, forKey: StillArchive.countKey)
                 if skippedRaw {
-                    let toast = "这一档不能保存 RAW，已改存 \(codec)。"
+                    let toast = aspect.allowsRaw
+                        ? "这一档不能保存 RAW，已改存 \(spokenCodec)。"
+                        : "这一画幅按取景裁切，已改存 \(spokenCodec)。"
                     self.camera.statusMessage = toast
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
                         if self.camera.statusMessage == toast {
@@ -328,14 +358,17 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 UserDefaults.standard.set(false, forKey: StillArchive.lastSavedKey)
                 self.canRetryPhotoSave = true
                 Task {
-                    await self.saveToPhotos(payloads, skippedRaw: skippedRaw)
+                    await self.saveToPhotos(payloads, skippedRaw: skippedRaw, croppedAspect: aspect != .threeByFour)
                 }
             }
         }
     }
 
-    private static func captureStatus(codec: String, savedRaw: Bool, savedProcessed: Bool, skippedRaw: Bool) -> String? {
+    private static func captureStatus(codec: String, savedRaw: Bool, savedProcessed: Bool, skippedRaw: Bool, croppedAspect: Bool) -> String? {
         if skippedRaw {
+            if croppedAspect {
+                return "这一画幅按取景裁切，已改存 \(codec)。Saved the cropped \(codec)."
+            }
             return "这一档不能保存 RAW，已改存 \(codec)。Saved \(codec) instead."
         }
         if savedRaw && savedProcessed {
@@ -347,10 +380,10 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         return nil
     }
 
-    private func saveToPhotos(_ payloads: [LibraryPayload], skippedRaw: Bool) async {
+    private func saveToPhotos(_ payloads: [LibraryPayload], skippedRaw: Bool, croppedAspect: Bool) async {
         do {
             try await PhotoLibrary.save(payloads: payloads)
-            let note = Self.savedNote(payloads: payloads, skippedRaw: skippedRaw)
+            let note = Self.savedNote(payloads: payloads, skippedRaw: skippedRaw, croppedAspect: croppedAspect)
             await MainActor.run {
                 self.lastSavedNote = note
                 self.canRetryPhotoSave = false
@@ -378,11 +411,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         }
     }
 
-    private static func savedNote(payloads: [LibraryPayload], skippedRaw: Bool) -> String {
+    private static func savedNote(payloads: [LibraryPayload], skippedRaw: Bool, croppedAspect: Bool) -> String {
         let rawFile = payloads.first { $0.filename.lowercased().hasSuffix(".dng") }
         let processed = payloads.first { $0.filename.lowercased().hasSuffix(".dng") == false }
         let processedName = processed?.filename.lowercased().hasSuffix(".heic") == true ? "HEIC" : "JPEG"
         if skippedRaw {
+            if croppedAspect {
+                return "这一画幅按取景裁切，已改存 \(processedName)。Saved the cropped \(processedName)."
+            }
             return "这一档不能保存 RAW，已改存 \(processedName)。Saved \(processedName) instead."
         }
         if rawFile != nil, processed != nil {
