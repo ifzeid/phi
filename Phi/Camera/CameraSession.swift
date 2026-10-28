@@ -26,6 +26,11 @@ final class CameraSession: ObservableObject {
     @Published private(set) var exposureRange: ClosedRange<Double> = -2...2
     @Published private(set) var autoExposure = true
     @Published private(set) var manualExposureSupported = false
+    @Published private(set) var manualISOValue: Float = 100
+    @Published private(set) var manualShutterSeconds: Double = 1.0 / 125
+    @Published private(set) var isoChoices: [Float] = []
+    @Published private(set) var shutterChoices: [Double] = []
+    @Published private(set) var activeDeviceID = ""
     @Published private(set) var isoText = "ISO —"
     @Published private(set) var shutterText = "— S"
     @Published private(set) var whiteBalanceText = "WB —"
@@ -43,12 +48,14 @@ final class CameraSession: ObservableObject {
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var notificationTokens: [NSObjectProtocol] = []
     private var restartAttempts = 0
+    private var currentInput: AVCaptureDeviceInput?
     private var manualISO: Float?
     private var manualDuration: CMTime?
     private var supportedFlashModes: [AVCaptureDevice.FlashMode] = []
     /// Session-queue copy of the auto/manual choice. The published flag is for SwiftUI.
     private var exposureIsAuto = true
     private var cachedAspect = "—"
+    private var lensStops: [FocalStop] = []
 
     var videoDevice: AVCaptureDevice? { device }
 
@@ -111,12 +118,21 @@ final class CameraSession: ObservableObject {
         sessionQueue.async {
             do {
                 try self.configureIfNeeded()
+                let deviceID = self.device?.uniqueID ?? ""
+                // Let the preview layer attach before startRunning blocks this queue.
+                DispatchQueue.main.async {
+                    self.activeDeviceID = deviceID
+                    self.isConfigured = true
+                    if self.statusMessage == "正在打开相机" {
+                        self.statusMessage = nil
+                    }
+                }
                 if !self.session.isRunning {
                     self.session.startRunning()
                 }
+                self.publishLensesAndManualSupport()
                 let running = self.session.isRunning
                 DispatchQueue.main.async {
-                    self.isConfigured = true
                     self.isRunning = running
                     if running {
                         self.restartAttempts = 0
@@ -164,12 +180,39 @@ final class CameraSession: ObservableObject {
         selectedStopID = stop.id
         sessionQueue.async {
             do {
-                try self.applyZoom(stop, ramp: self.session.isRunning)
+                if let target = AVCaptureDevice(uniqueID: stop.deviceID) {
+                    try self.switchInput(to: target)
+                }
+                try self.applyZoom(stop.zoomFactor, ramp: false)
+                if !self.exposureIsAuto {
+                    try self.lockCustomExposure()
+                }
+                self.publishManualRanges()
             } catch {
                 DispatchQueue.main.async {
                     self.statusMessage = "焦段没有切过去。Couldn't change zoom."
                 }
             }
+        }
+    }
+
+    func setManualISO(_ iso: Float) {
+        manualISOValue = iso
+        autoExposure = false
+        sessionQueue.async {
+            self.exposureIsAuto = false
+            self.manualISO = iso
+            self.applyCustomOrExplain()
+        }
+    }
+
+    func setManualShutter(_ seconds: Double) {
+        manualShutterSeconds = seconds
+        autoExposure = false
+        sessionQueue.async {
+            self.exposureIsAuto = false
+            self.manualDuration = CMTime(seconds: seconds, preferredTimescale: 1_000_000_000)
+            self.applyCustomOrExplain()
         }
     }
 
@@ -221,14 +264,10 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    /// `enabled == false` locks the current meter and treats the ruler as an EV offset on ISO and shutter.
-    /// Returns false when this device cannot leave auto exposure.
+    /// `enabled == false` locks exposure so ISO and shutter can be set directly.
+    /// If no physical camera supports `.custom`, this flips back to auto and explains why.
     @discardableResult
     func setAutoExposure(_ enabled: Bool) -> Bool {
-        if !enabled && !manualExposureSupported && isConfigured {
-            statusMessage = "这台设备不能关闭自动曝光。Manual exposure isn't available."
-            return false
-        }
         autoExposure = enabled
         if !enabled {
             exposureEV = 0
@@ -244,44 +283,61 @@ final class CameraSession: ObservableObject {
     private func applyExposureMode(enabled: Bool, ev: Double) {
         guard didConfigure else { return }
         do {
-            try lockDevice { device in
-                if enabled {
+            if enabled {
+                try lockDevice { device in
                     if device.isExposureModeSupported(.continuousAutoExposure) {
                         device.exposureMode = .continuousAutoExposure
                     }
                     let bias = self.clampedBias(Float(ev), device: device)
                     device.setExposureTargetBias(bias, completionHandler: nil)
-                } else if device.isExposureModeSupported(.custom) {
-                    self.manualISO = device.iso
-                    self.manualDuration = device.exposureDuration
-                    device.setExposureModeCustom(duration: device.exposureDuration, iso: device.iso, completionHandler: nil)
-                } else if !enabled {
-                    self.exposureIsAuto = true
-                    DispatchQueue.main.async {
-                        self.autoExposure = true
-                        self.statusMessage = "这台设备不能关闭自动曝光。Manual exposure isn't available."
-                    }
                 }
+                return
             }
+            try ensureCustomExposureDevice()
+            guard let device, device.isExposureModeSupported(.custom) else {
+                failCustomLock()
+                return
+            }
+            try lockCustomExposure(seedFromMeter: manualISO == nil)
+            publishManualRanges()
         } catch {
-            exposureIsAuto = true
-            DispatchQueue.main.async {
-                self.autoExposure = true
-                self.statusMessage = "自动曝光切不过去。Couldn't change exposure mode."
+            failCustomLock()
+        }
+    }
+
+    private func applyCustomOrExplain() {
+        do {
+            try ensureCustomExposureDevice()
+            guard device?.isExposureModeSupported(.custom) == true else {
+                failCustomLock()
+                return
             }
+            try lockCustomExposure()
+            publishManualRanges()
+        } catch {
+            failCustomLock()
+        }
+    }
+
+    private func failCustomLock() {
+        exposureIsAuto = true
+        DispatchQueue.main.async {
+            self.autoExposure = true
+            self.statusMessage = "这枚镜头不能单独锁定 ISO 或快门。"
         }
     }
 
     func setExposureEV(_ value: Double) {
         let stepped = (min(max(value, exposureRange.lowerBound), exposureRange.upperBound) * 10).rounded() / 10
         exposureEV = stepped
+        autoExposure = true
         sessionQueue.async {
+            self.exposureIsAuto = true
             try? self.lockDevice { device in
-                if self.exposureIsAuto {
-                    device.setExposureTargetBias(self.clampedBias(Float(stepped), device: device), completionHandler: nil)
-                } else {
-                    self.applyManual(ev: stepped, device: device)
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
                 }
+                device.setExposureTargetBias(self.clampedBias(Float(stepped), device: device), completionHandler: nil)
             }
         }
     }
@@ -327,19 +383,21 @@ final class CameraSession: ObservableObject {
         case cannotAdd
     }
 
+    /// The main wide camera starts fastest and supports custom exposure.
+    /// Virtual multi-cameras (`builtInTripleCamera` and friends) report `.custom` as unsupported.
     private static func bestDevice() -> AVCaptureDevice? {
-        let types: [AVCaptureDevice.DeviceType] = [
-            .builtInTripleCamera,
-            .builtInDualWideCamera,
-            .builtInDualCamera,
-            .builtInWideAngleCamera
-        ]
-        for type in types {
-            if let device = AVCaptureDevice.default(type, for: .video, position: .back) {
-                return device
-            }
+        if let wide = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
+            return wide
         }
-        return nil
+        return backCameras().first
+    }
+
+    private static func backCameras() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInUltraWideCamera, .builtInWideAngleCamera, .builtInTelephotoCamera],
+            mediaType: .video,
+            position: .back
+        ).devices
     }
 
     private func configureIfNeeded() throws {
@@ -362,6 +420,7 @@ final class CameraSession: ObservableObject {
             throw SetupError.cannotAdd
         }
         session.addInput(input)
+        currentInput = input
         session.addOutput(photoOutput)
         // Speed is set before any AVCapturePhotoSettings is created. A higher value throws.
         photoOutput.maxPhotoQualityPrioritization = .speed
@@ -390,9 +449,6 @@ final class CameraSession: ObservableObject {
         observeMeter(device)
         let discovery = discover(device)
         cachedAspect = discovery.aspect
-        if let stop = discovery.preferred {
-            try? applyZoom(stop, ramp: false)
-        }
         didConfigure = true
         if !exposureIsAuto {
             applyExposureMode(enabled: false, ev: 0)
@@ -426,8 +482,6 @@ final class CameraSession: ObservableObject {
         var label: String
         var aspect: String
         var raw: Bool
-        var stops: [FocalStop]
-        var preferred: FocalStop?
         var range: ClosedRange<Double>
         var manual: Bool
         var flashModes: [AVCaptureDevice.FlashMode]
@@ -440,25 +494,17 @@ final class CameraSession: ObservableObject {
         let dimensions = device.activeFormat.supportedMaxPhotoDimensions
         let largest = dimensions.max { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }
         let aspect = largest.map { AspectLabel.photo(width: Int($0.width), height: Int($0.height)) } ?? "—"
-        let probe = FocalLengthProbe(
-            horizontalFOVDegrees: Double(device.activeFormat.videoFieldOfView),
-            minZoom: Double(device.minAvailableVideoZoomFactor),
-            maxZoom: Double(device.maxAvailableVideoZoomFactor),
-            switchOverZooms: device.virtualDeviceSwitchOverVideoZoomFactors.map { Double(truncating: $0) }
-        )
-        let stops = FocalLengthMath.stops(for: probe)
         let lower = max(-2, Double(device.minExposureTargetBias))
         let upper = min(2, Double(device.maxExposureTargetBias))
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
+        let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
         return Discovery(
             label: "\(raw ? "RAW" : codec) · \(aspect)",
             aspect: aspect,
             raw: raw,
-            stops: stops,
-            preferred: FocalLengthMath.preferred(stops),
             range: range,
-            manual: device.isExposureModeSupported(.custom),
+            manual: manual,
             flashModes: ordered,
             flashAvailable: ordered.contains(.on) || ordered.contains(.auto)
         )
@@ -467,8 +513,6 @@ final class CameraSession: ObservableObject {
     private func publish(_ discovery: Discovery) {
         DispatchQueue.main.async {
             self.formatLabel = discovery.label
-            self.focalStops = discovery.stops
-            self.selectedStopID = discovery.preferred?.id
             self.exposureRange = discovery.range
             self.manualExposureSupported = discovery.manual
             self.supportedFlashModes = discovery.flashModes
@@ -508,13 +552,21 @@ final class CameraSession: ObservableObject {
     }
 
     private func publishMeter(_ device: AVCaptureDevice) {
-        let iso = MeterFormat.iso(device.iso)
-        let shutter = MeterFormat.shutter(seconds: CMTimeGetSeconds(device.exposureDuration))
+        let isoValue = device.iso
+        let shutterSeconds = CMTimeGetSeconds(device.exposureDuration)
+        let iso = MeterFormat.iso(isoValue)
+        let shutter = MeterFormat.shutter(seconds: shutterSeconds)
         let whiteBalance = Self.whiteBalanceLabel(device)
         DispatchQueue.main.async {
             if self.isoText != iso { self.isoText = iso }
             if self.shutterText != shutter { self.shutterText = shutter }
             if self.whiteBalanceText != whiteBalance { self.whiteBalanceText = whiteBalance }
+            if self.autoExposure {
+                self.manualISOValue = isoValue
+                if shutterSeconds.isFinite, shutterSeconds > 0 {
+                    self.manualShutterSeconds = shutterSeconds
+                }
+            }
         }
     }
 
@@ -572,9 +624,9 @@ final class CameraSession: ObservableObject {
         return (.jpeg, "JPEG")
     }
 
-    private func applyZoom(_ stop: FocalStop, ramp: Bool) throws {
+    private func applyZoom(_ factor: Double, ramp: Bool) throws {
         try lockDevice { device in
-            let zoom = min(max(CGFloat(stop.zoomFactor), device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+            let zoom = min(max(CGFloat(factor), device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
             guard zoom.isFinite else { return }
             if abs(device.videoZoomFactor - zoom) < 0.01 { return }
             if ramp, device.isRampingVideoZoom == false {
@@ -585,21 +637,131 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    private func applyManual(ev: Double, device: AVCaptureDevice) {
-        guard device.isExposureModeSupported(.custom), let baseISO = manualISO, let baseDuration = manualDuration else { return }
-        let format = device.activeFormat
-        var iso = baseISO * Float(pow(2.0, ev))
-        var duration = baseDuration
-        if iso > format.maxISO {
-            duration = CMTimeMultiplyByFloat64(duration, multiplier: Double(iso / format.maxISO))
-            iso = format.maxISO
-        } else if iso < format.minISO {
-            duration = CMTimeMultiplyByFloat64(duration, multiplier: Double(iso / format.minISO))
-            iso = format.minISO
+    private func switchInput(to newDevice: AVCaptureDevice) throws {
+        if device?.uniqueID == newDevice.uniqueID { return }
+        session.beginConfiguration()
+        if let currentInput {
+            session.removeInput(currentInput)
         }
-        if CMTimeCompare(duration, format.minExposureDuration) < 0 { duration = format.minExposureDuration }
-        if CMTimeCompare(duration, format.maxExposureDuration) > 0 { duration = format.maxExposureDuration }
-        device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: nil)
+        let input = try AVCaptureDeviceInput(device: newDevice)
+        guard session.canAddInput(input) else {
+            if let currentInput, session.canAddInput(currentInput) {
+                session.addInput(currentInput)
+            }
+            session.commitConfiguration()
+            throw SetupError.cannotAdd
+        }
+        session.addInput(input)
+        currentInput = input
+        device = newDevice
+        session.commitConfiguration()
+        installRotation(for: newDevice)
+        observeMeter(newDevice)
+        let deviceID = newDevice.uniqueID
+        DispatchQueue.main.async {
+            self.activeDeviceID = deviceID
+        }
+    }
+
+    /// Virtual multi-cam devices report custom exposure as unsupported. Physical cameras on the same phone do not.
+    private func supportsCustomExposure(_ device: AVCaptureDevice) -> Bool {
+        if device.isExposureModeSupported(.custom) { return true }
+        return device.constituentDevices.contains { $0.isExposureModeSupported(.custom) }
+    }
+
+    private func ensureCustomExposureDevice() throws {
+        guard let device else { return }
+        if device.isExposureModeSupported(.custom) { return }
+        let constituent = device.constituentDevices.first { $0.deviceType == .builtInWideAngleCamera && $0.isExposureModeSupported(.custom) }
+            ?? device.constituentDevices.first { $0.isExposureModeSupported(.custom) }
+        let fallback = Self.backCameras().first { $0.deviceType == .builtInWideAngleCamera && $0.isExposureModeSupported(.custom) }
+            ?? Self.backCameras().first { $0.isExposureModeSupported(.custom) }
+        guard let target = constituent ?? fallback else { return }
+        try switchInput(to: target)
+        if let native = lensStops.first(where: { $0.deviceID == target.uniqueID && abs($0.zoomFactor - 1) < 0.01 }) {
+            DispatchQueue.main.async { self.selectedStopID = native.id }
+        }
+    }
+
+    private func lockCustomExposure(seedFromMeter: Bool = false) throws {
+        try lockDevice { device in
+            guard device.isExposureModeSupported(.custom) else { return }
+            if seedFromMeter || self.manualISO == nil || self.manualDuration == nil {
+                self.manualISO = device.iso
+                self.manualDuration = device.exposureDuration
+            }
+            let format = device.activeFormat
+            let iso = min(max(self.manualISO ?? device.iso, format.minISO), format.maxISO)
+            var duration = self.manualDuration ?? device.exposureDuration
+            if CMTimeCompare(duration, format.minExposureDuration) < 0 { duration = format.minExposureDuration }
+            if CMTimeCompare(duration, format.maxExposureDuration) > 0 { duration = format.maxExposureDuration }
+            self.manualISO = iso
+            self.manualDuration = duration
+            device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: nil)
+            let seconds = CMTimeGetSeconds(duration)
+            DispatchQueue.main.async {
+                self.manualISOValue = iso
+                self.manualShutterSeconds = seconds
+            }
+        }
+    }
+
+    private func publishManualRanges() {
+        guard let device else { return }
+        let format = device.activeFormat
+        let isos = ExposureStops.isos(min: format.minISO, max: format.maxISO)
+        let shutters = ExposureStops.shutters(
+            min: CMTimeGetSeconds(format.minExposureDuration),
+            max: CMTimeGetSeconds(format.maxExposureDuration)
+        )
+        DispatchQueue.main.async {
+            self.isoChoices = isos
+            self.shutterChoices = shutters
+        }
+    }
+
+    private func publishLensesAndManualSupport() {
+        let samples: [LensSample] = Self.backCameras().compactMap { camera in
+            guard let millimeters = Self.millimeters(for: camera) else { return nil }
+            let allowsCrop = camera.deviceType == .builtInWideAngleCamera && camera.maxAvailableVideoZoomFactor >= 2
+            return LensSample(
+                id: camera.uniqueID,
+                millimeters: millimeters,
+                isWide: camera.deviceType == .builtInWideAngleCamera,
+                allowsTwoXCrop: allowsCrop
+            )
+        }
+        let stops = FocalLengthMath.stops(from: samples)
+        lensStops = stops
+        let wideID = samples.first { $0.isWide }?.id ?? device?.uniqueID
+        let selected = FocalLengthMath.defaultStop(stops, wideDeviceID: wideID)
+        let manual = (device.map(supportsCustomExposure) ?? false) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
+        let lensList = stops.map { String($0.millimeters) }.joined(separator: "/")
+        log.info("Lenses \(lensList, privacy: .public), manual \(manual, privacy: .public)")
+        publishManualRanges()
+        DispatchQueue.main.async {
+            self.focalStops = stops
+            if self.selectedStopID == nil {
+                self.selectedStopID = selected?.id
+            }
+            self.manualExposureSupported = manual
+        }
+    }
+
+    private static func millimeters(for device: AVCaptureDevice) -> Int? {
+        let format = device.formats.max { lhs, rhs in
+            photoArea(lhs) < photoArea(rhs)
+        } ?? device.activeFormat
+        guard let mm = FocalLengthMath.equivalentMillimeters(horizontalFOVDegrees: Double(format.videoFieldOfView)) else {
+            return nil
+        }
+        return Int(mm.rounded())
+    }
+
+    private static func photoArea(_ format: AVCaptureDevice.Format) -> Int {
+        format.supportedMaxPhotoDimensions.reduce(0) { partial, dimensions in
+            partial + Int(dimensions.width) * Int(dimensions.height)
+        }
     }
 
     private func clampedBias(_ value: Float, device: AVCaptureDevice) -> Float {

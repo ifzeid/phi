@@ -29,7 +29,7 @@ struct FocalLengthPicker: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(stop.millimeters) 毫米")
-                .accessibilityHint(stop.isOpticalStep ? "落在镜头切换点上" : "由变焦得到的等效视角")
+                .accessibilityHint(stop.isOpticalStep ? "这枚镜头的原生视角" : "主摄 2× 裁切")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
