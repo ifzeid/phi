@@ -3,14 +3,16 @@ import UIKit
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Develops a still: exposure in stops, then an optional fixed grain look.
-/// Preview and export both call `render` so they share one recipe.
+/// Develops a still in 16-bit linear Display P3, then emits one 8-bit Display P3 image.
+/// Preview and export both call `render` so they share one recipe. Grain is FINE or off.
 enum StillPipeline {
     private static let renderLock = NSLock()
-    private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+    static let linearP3 = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) ?? CGColorSpaceCreateDeviceRGB()
+    static let displayP3 = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
     private static let context = CIContext(options: [
-        CIContextOption.workingColorSpace: colorSpace,
-        CIContextOption.outputColorSpace: colorSpace,
+        CIContextOption.workingColorSpace: linearP3,
+        CIContextOption.outputColorSpace: displayP3,
+        CIContextOption.workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
         CIContextOption.cacheIntermediates: false
     ])
 
@@ -27,9 +29,6 @@ enum StillPipeline {
     }
 
     static func render(_ image: CGImage, exposureEV: Double, style: GrainStyle, maxSide: CGFloat?) -> CGImage? {
-        renderLock.lock()
-        defer { renderLock.unlock() }
-
         var input = CIImage(cgImage: image)
         let longest = max(input.extent.width, input.extent.height)
         if let maxSide, longest > maxSide, longest > 0 {
@@ -37,19 +36,29 @@ enum StillPipeline {
             input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
 
-        let ev = min(2, max(-2, exposureEV))
-        let exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": ev])
-        let developed = applyGrain(to: exposed, style: style)
-        let extent = developed.extent.integral
-        guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return nil }
-        return context.createCGImage(developed, from: extent, format: .RGBA8, colorSpace: colorSpace)
+        let bounded = Swift.min(2, Swift.max(-2, exposureEV))
+        let exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
+        let developed = grained(exposed, style: style)
+        return displayImage(developed)
     }
 
-    static func encodeDeveloped(_ image: CGImage) -> (data: Data, ext: String, uti: String)? {
-        if let heic = encode(image, type: UTType.heic, quality: 0.9) {
+    static func grained(_ image: CIImage, style: GrainStyle) -> CIImage {
+        applyGrain(to: image, style: style)
+    }
+
+    static func displayImage(_ image: CIImage) -> CGImage? {
+        renderLock.lock()
+        defer { renderLock.unlock() }
+        let extent = image.extent.integral
+        guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return nil }
+        return context.createCGImage(image, from: extent, format: .RGBA8, colorSpace: displayP3)
+    }
+
+    static func encodeDeveloped(_ image: CGImage, metadata: [String: Any]? = nil) -> (data: Data, ext: String, uti: String)? {
+        if let heic = encode(image, type: UTType.heic, quality: 0.93, metadata: metadata) {
             return (heic, "heic", UTType.heic.identifier)
         }
-        if let jpeg = encode(image, type: UTType.jpeg, quality: 0.92) {
+        if let jpeg = encode(image, type: UTType.jpeg, quality: 0.93, metadata: metadata) {
             return (jpeg, "jpg", UTType.jpeg.identifier)
         }
         return nil
@@ -81,12 +90,12 @@ enum StillPipeline {
         return (dissolve.outputImage ?? image).cropped(to: image.extent)
     }
 
-    private static func encode(_ image: CGImage, type: UTType, quality: CGFloat) -> Data? {
+    private static func encode(_ image: CGImage, type: UTType, quality: CGFloat, metadata: [String: Any]?) -> Data? {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else {
             return nil
         }
-        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+        let options = PhotoMetadata.exportProperties(from: metadata, quality: quality)
         CGImageDestinationAddImage(destination, image, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data

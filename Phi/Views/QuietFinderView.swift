@@ -65,12 +65,12 @@ struct QuietFinderView: View {
         .fullScreenCover(isPresented: $showAlbum, onDismiss: {
             guard let pending = pendingDevelop else { return }
             pendingDevelop = nil
-            capture.openDevelop(image: pending.image, originalWasRaw: pending.raw)
+            capture.openLibraryShot(localIdentifier: pending.localIdentifier)
         }) {
             AlbumBrowser(
                 onClose: { showAlbum = false },
-                onProcess: { image, raw in
-                    pendingDevelop = PendingDevelop(image: image, raw: raw)
+                onProcess: { asset in
+                    pendingDevelop = PendingDevelop(localIdentifier: asset.localIdentifier)
                     showAlbum = false
                 }
             )
@@ -393,8 +393,7 @@ struct QuietFinderView: View {
 }
 
 private struct PendingDevelop {
-    var image: UIImage
-    var raw: Bool
+    var localIdentifier: String
 }
 
 /// Vertical exposure scale. Drawn only while a viewfinder drag is in progress.
