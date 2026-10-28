@@ -37,12 +37,13 @@ final class PreviewAnchor {
 struct StableCameraPreview: View, Equatable {
     var session: AVCaptureSession
     var device: AVCaptureDevice?
+    var epoch: Int
     var anchor: PreviewAnchor
     var onTap: (CGPoint, CGPoint) -> Void
     var onDrag: (PreviewDrag) -> Void
 
     static func == (lhs: StableCameraPreview, rhs: StableCameraPreview) -> Bool {
-        lhs.device?.uniqueID == rhs.device?.uniqueID && lhs.session === rhs.session
+        lhs.device?.uniqueID == rhs.device?.uniqueID && lhs.session === rhs.session && lhs.epoch == rhs.epoch
     }
 
     var body: some View {
@@ -69,6 +70,7 @@ struct CameraPreview: UIViewRepresentable {
 
     func updateUIView(_ view: PreviewView, context: Context) {
         anchor.attach(view)
+        view.previewLayer.videoGravity = .resizeAspectFill
         if view.previewLayer.session !== session {
             view.previewLayer.session = session
         }
@@ -109,10 +111,9 @@ final class PreviewView: UIView {
 
     func resumeCoordinator(device: AVCaptureDevice?) {
         isCoordinatorPaused = false
+        previewLayer.videoGravity = .resizeAspectFill
         self.device = device
-        if coordinatorDevice !== device {
-            installCoordinator()
-        }
+        installCoordinator()
     }
 
     private func clearCoordinator() {
@@ -141,6 +142,8 @@ final class PreviewView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        previewLayer.frame = bounds
+        previewLayer.videoGravity = .resizeAspectFill
         guard let coordinator else { return }
         apply(coordinator.videoRotationAngleForHorizonLevelPreview)
     }
@@ -159,6 +162,7 @@ final class PreviewView: UIView {
     }
 
     private func apply(_ angle: CGFloat) {
+        previewLayer.videoGravity = .resizeAspectFill
         guard let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(angle) else { return }
         connection.videoRotationAngle = angle
     }

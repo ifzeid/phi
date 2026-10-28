@@ -35,6 +35,10 @@ final class CameraSession: ObservableObject {
     @Published private(set) var isoChoices: [Float] = []
     @Published private(set) var shutterChoices: [Double] = []
     @Published private(set) var activeDeviceID = ""
+    /// Millimeters of the camera that is actually in the session, from its field of view and zoom.
+    @Published private(set) var activeLensMillimeters = 0
+    /// Bumps when the preview connection should be attached again.
+    @Published private(set) var previewEpoch = 0
     @Published private(set) var isoText = "ISO —"
     @Published private(set) var shutterText = "— S"
     @Published private(set) var whiteBalanceText = "WB —"
@@ -57,6 +61,8 @@ final class CameraSession: ObservableObject {
     private var customExposureQueued = false
     private var evApplyQueued = false
     private var pendingEV: Double?
+    private let lensLock = NSLock()
+    private var lensGeneration = 0
     private var focusReturnObservation: NSKeyValueObservation?
     private var focusGeneration = 0
     private var didHintTooClose = false
@@ -66,7 +72,6 @@ final class CameraSession: ObservableObject {
     /// Session-queue copy of the auto/manual choice. The published flag is for SwiftUI.
     private var exposureIsAuto = true
     private var lensStops: [FocalStop] = []
-    private var wideMillimeters = 0
     /// Crop stops and non-1× virtual zooms must not request Bayer RAW. `capturePhoto` throws if they do.
     private var rawSuppressed = false
     private var activeStopOptical = true
@@ -139,9 +144,11 @@ final class CameraSession: ObservableObject {
             do {
                 try self.configureIfNeeded()
                 let deviceID = self.device?.uniqueID ?? ""
+                let millimeters = self.device.map(Self.framedMillimeters) ?? 0
                 // Let the preview layer attach before startRunning blocks this queue.
                 DispatchQueue.main.async {
                     self.activeDeviceID = deviceID
+                    self.activeLensMillimeters = millimeters
                     self.isConfigured = true
                     if self.statusMessage == "正在打开相机" {
                         self.statusMessage = nil
@@ -198,33 +205,63 @@ final class CameraSession: ObservableObject {
     }
 
     func select(stop: FocalStop) {
+        let generation = bumpLensGeneration()
         selectedStopID = stop.id
-        sessionQueue.async {
-            let switching = self.needsDeviceSwitch(for: stop)
-            let work = {
-                do {
-                    try self.performSelect(stop)
-                    if switching {
-                        self.previewAnchor.resume(device: self.device)
-                    }
-                } catch {
-                    if switching {
-                        self.previewAnchor.resume(device: self.device)
-                    }
-                    DispatchQueue.main.async {
-                        self.statusMessage = "焦段没有切过去。Couldn't change zoom."
-                    }
-                }
+        let queued = {
+            self.sessionQueue.async {
+                guard self.lensIsCurrent(generation) else { return }
+                self.commitLens(stop, generation: generation)
             }
-            if switching {
-                // Drop the preview coordinator on the main thread before beginConfiguration.
-                // Creating or destroying it on the session queue deadlocks the telephoto switch.
-                DispatchQueue.main.async {
-                    self.previewAnchor.suspend()
-                    self.sessionQueue.async(execute: work)
-                }
-            } else {
-                work()
+        }
+        // Detach the rotation coordinator on the main thread, then swap on the session queue.
+        // Doing that swap behind another main-queue turn is what dropped telephoto changes.
+        if Thread.isMainThread {
+            previewAnchor.suspend()
+            queued()
+        } else {
+            DispatchQueue.main.async {
+                guard self.lensIsCurrent(generation) else { return }
+                self.previewAnchor.suspend()
+                queued()
+            }
+        }
+    }
+
+    /// Latest tap wins. Older queued swaps return without touching the camera. This is not a time debounce.
+    private func bumpLensGeneration() -> Int {
+        lensLock.lock()
+        lensGeneration += 1
+        let value = lensGeneration
+        lensLock.unlock()
+        return value
+    }
+
+    private func lensIsCurrent(_ generation: Int) -> Bool {
+        lensLock.lock()
+        let current = lensGeneration == generation
+        lensLock.unlock()
+        return current
+    }
+
+    private func commitLens(_ stop: FocalStop, generation: Int) {
+        guard lensIsCurrent(generation) else { return }
+        do {
+            try performSelect(stop)
+            logActiveCamera("lens")
+        } catch {
+            DispatchQueue.main.async {
+                guard self.lensIsCurrent(generation) else { return }
+                self.statusMessage = "焦段没有切过去。Couldn't change zoom."
+            }
+        }
+        let active = device
+        DispatchQueue.main.async {
+            guard self.lensIsCurrent(generation) else { return }
+            self.previewAnchor.resume(device: active)
+            self.previewEpoch += 1
+            if let active {
+                self.activeDeviceID = active.uniqueID
+                self.activeLensMillimeters = Self.framedMillimeters(active)
             }
         }
     }
@@ -566,6 +603,7 @@ final class CameraSession: ObservableObject {
             let switching = self.needsPhysicalRawSwitch() || self.needsStillFormatWork()
             let shoot = {
                 self.settleRawCamera()
+                self.logActiveCamera("capture")
                 let prepared = self.makeSettings(flash: flash)
                 if prepared.usingRaw == false, self.processMode.wantsRaw, self.photoAspect.allowsRaw {
                     DispatchQueue.main.async {
@@ -662,8 +700,7 @@ final class CameraSession: ObservableObject {
         if photoOutput.isAutoDeferredPhotoDeliverySupported {
             photoOutput.isAutoDeferredPhotoDeliveryEnabled = false
         }
-        // Upgrade before the preview exists, so the later 108mm stop only ramps zoom.
-        adoptVirtualCameraIfPossible()
+        // Stay on the physical wide camera. The virtual multi-cam's zoom ramp left 108mm on a wide field of view.
         prebuildInputs()
         let active = self.device ?? device
         try? prepare(active)
@@ -854,10 +891,11 @@ final class CameraSession: ObservableObject {
     }
 
     /// One configuration block. The photo output stays attached. Inputs are built once and reused.
-    private func switchInput(to newDevice: AVCaptureDevice, matchStillFormat: Bool = false) throws {
+    /// Zoom is applied before `commitConfiguration`, so the preview and the RAW list see the same camera.
+    private func switchInput(to newDevice: AVCaptureDevice, matchStillFormat: Bool = false, zoom: CGFloat? = nil) throws {
         let sameDevice = device?.uniqueID == newDevice.uniqueID
-        if sameDevice, matchStillFormat == false { return }
-        if sameDevice, matchStillFormat, stillFormatDeviceID == newDevice.uniqueID { return }
+        if sameDevice, matchStillFormat == false, zoom == nil { return }
+        if sameDevice, matchStillFormat, zoom == nil, stillFormatDeviceID == newDevice.uniqueID { return }
         let input = try cachedInput(for: newDevice)
         session.beginConfiguration()
         if sameDevice == false {
@@ -875,26 +913,38 @@ final class CameraSession: ObservableObject {
             currentInput = input
             device = newDevice
         }
-        if matchStillFormat, let active = device {
+        if let active = device, matchStillFormat || zoom != nil {
             do {
                 try active.lockForConfiguration()
             } catch {
                 session.commitConfiguration()
                 throw error
             }
-            if let format = Self.matchedStillFormat(for: active), active.activeFormat != format {
+            if matchStillFormat, let format = Self.matchedStillFormat(for: active), active.activeFormat != format {
                 active.activeFormat = format
             }
+            if let zoom {
+                let lower = active.minAvailableVideoZoomFactor
+                let upper = active.maxAvailableVideoZoomFactor
+                let clamped = Swift.min(upper, Swift.max(lower, zoom))
+                if clamped.isFinite {
+                    active.videoZoomFactor = clamped
+                }
+            }
             active.unlockForConfiguration()
-            stillFormatDeviceID = active.uniqueID
+            if matchStillFormat {
+                stillFormatDeviceID = active.uniqueID
+            }
         }
         session.commitConfiguration()
         engageContinuousAutofocus()
         if sameDevice == false {
             observeMeter(newDevice)
             let deviceID = newDevice.uniqueID
+            let millimeters = Self.framedMillimeters(newDevice)
             DispatchQueue.main.async {
                 self.activeDeviceID = deviceID
+                self.activeLensMillimeters = millimeters
             }
         }
     }
@@ -1018,69 +1068,13 @@ final class CameraSession: ObservableObject {
         return nil
     }
 
-    /// Swap the wide camera for the virtual multi-cam once, at 1×, before the preview exists.
-    private func adoptVirtualCameraIfPossible() {
-        guard let current = device, isVirtual(current) == false else { return }
-        guard let virtual = Self.virtualBackCamera(), virtual.uniqueID != current.uniqueID else { return }
-        do {
-            try switchInput(to: virtual)
-            try applyZoom(1, ramp: false)
-            log.info("Using virtual camera for focal changes")
-        } catch {
-            log.error("Virtual camera upgrade failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func virtualDeviceSnapshot() -> VirtualZoomDevice? {
-        let source = device.flatMap { isVirtual($0) ? $0 : nil } ?? Self.virtualBackCamera()
-        guard let source, isVirtual(source) else { return nil }
-        return VirtualZoomDevice(
-            minimum: Double(source.minAvailableVideoZoomFactor),
-            maximum: Double(source.maxAvailableVideoZoomFactor),
-            switchOvers: source.virtualDeviceSwitchOverVideoZoomFactors.map { Double($0) },
-            constituentIDs: source.constituentDevices.map(\.uniqueID)
-        )
-    }
-
-    private func virtualZoom(for stop: FocalStop) -> Double? {
-        guard let snapshot = virtualDeviceSnapshot() else { return nil }
-        return VirtualZoomMath.factor(
-            deviceID: stop.deviceID,
-            millimeters: stop.millimeters,
-            optical: stop.isOpticalStep,
-            wideMillimeters: wideMillimeters,
-            device: snapshot
-        )
-    }
-
-    private func needsDeviceSwitch(for stop: FocalStop) -> Bool {
-        guard let device else { return false }
-        if exposureIsAuto, virtualZoom(for: stop) != nil {
-            return isVirtual(device) == false && Self.virtualBackCamera() != nil
-        }
-        return device.uniqueID != stop.deviceID
-    }
-
     private func performSelect(_ stop: FocalStop) throws {
         activeStopOptical = stop.isOpticalStep
-        let zoom: Double
-        let ramp: Bool
-        if exposureIsAuto, let virtualZoom = virtualZoom(for: stop) {
-            if let device, isVirtual(device) == false, let virtual = Self.virtualBackCamera() {
-                try switchInput(to: virtual)
-            }
-            zoom = virtualZoom
-            ramp = true
-        } else if let target = AVCaptureDevice(uniqueID: stop.deviceID) {
-            try switchInput(to: target)
-            zoom = stop.zoomFactor
-            ramp = zoom > 1.05
-        } else {
-            zoom = stop.zoomFactor
-            ramp = true
-        }
+        let physical = try physicalDevice(for: stop)
+        // Optical stops, including 108mm, are that physical camera at zoom 1. No virtual-camera ramp.
+        let zoom: CGFloat = stop.isOpticalStep ? 1 : CGFloat(stop.zoomFactor)
+        try switchInput(to: physical, zoom: zoom)
         rawSuppressed = false
-        // Lock exposure before the zoom ramp. Locking again afterwards cancels the ramp.
         if !exposureIsAuto {
             try lockCustomExposure()
         } else {
@@ -1092,11 +1086,27 @@ final class CameraSession: ObservableObject {
                 device.setExposureTargetBias(self.clampedBias(Float(bias), device: device), completionHandler: nil)
             }
         }
-        try applyZoom(zoom, ramp: ramp)
         alignPhotoDimensions()
         engageContinuousAutofocus()
         publishManualRanges()
         publishDeliveryLabel()
+    }
+
+    /// The stop's own camera. A long optical stop is always `builtInTelephotoCamera`, never the virtual multi-cam.
+    private func physicalDevice(for stop: FocalStop) throws -> AVCaptureDevice {
+        let cameras = Self.backCameras()
+        if stop.isOpticalStep, stop.millimeters >= 80,
+           let tele = cameras.first(where: { $0.deviceType == .builtInTelephotoCamera }) {
+            return tele
+        }
+        if let match = cameras.first(where: { $0.uniqueID == stop.deviceID }) ?? AVCaptureDevice(uniqueID: stop.deviceID),
+           isVirtual(match) == false {
+            return match
+        }
+        if let fallback = cameras.first(where: { $0.uniqueID == stop.deviceID }) {
+            return fallback
+        }
+        throw SetupError.noCamera
     }
 
     /// Optical and crop stops both need the physical camera at zoom 1 before Bayer is requested.
@@ -1105,7 +1115,9 @@ final class CameraSession: ObservableObject {
         guard processMode.wantsRaw, photoAspect.allowsRaw else { return false }
         guard let stop = lensStops.first(where: { $0.id == selectedStopID }) else { return false }
         guard let device else { return false }
-        let onNative = device.uniqueID == stop.deviceID && abs(Double(device.videoZoomFactor) - 1) < 0.05
+        if isVirtual(device) { return true }
+        let expected = (try? physicalDevice(for: stop))?.uniqueID ?? stop.deviceID
+        let onNative = device.uniqueID == expected && abs(Double(device.videoZoomFactor) - 1) < 0.05
         if onNative == false { return true }
         return bayerTypes().isEmpty
     }
@@ -1118,17 +1130,19 @@ final class CameraSession: ObservableObject {
             return
         }
         activeStopOptical = stop.isOpticalStep
-        let onNative = device?.uniqueID == physical.uniqueID && abs(Double(device?.videoZoomFactor ?? 0) - 1) < 0.05
-        if onNative == false {
+        let resolved = (try? physicalDevice(for: stop)) ?? physical
+        let onNative = device?.uniqueID == resolved.uniqueID && abs(Double(device?.videoZoomFactor ?? 0) - 1) < 0.05
+        if onNative == false || isVirtual(resolved) {
             do {
-                try switchInput(to: physical, matchStillFormat: false)
-                try applyZoom(1, ramp: false)
+                try switchInput(to: resolved, zoom: 1)
             } catch {
                 rawSuppressed = true
+                logActiveCamera("capture-switch-failed")
                 log.info("stop \(stop.millimeters)mm could not reach the physical camera")
                 return
             }
         }
+        logActiveCamera("capture-before-format")
         if let device, isVirtual(device) {
             rawSuppressed = true
             log.info("stop \(stop.millimeters)mm still on the virtual camera, Bayer not requested")
@@ -1170,29 +1184,28 @@ final class CameraSession: ObservableObject {
     ) -> Bool {
         guard let device else { return false }
         let ordered = Self.formatsForRaw(on: device, preferFullSensor: preferFullSensor)
+        // Read only after the device swap has committed. A list from the previous camera is not this stop.
+        logRawTypes(millimeters: millimeters, note: "after-commit")
         if preferFullSensor == false, rawTypes(matching: match).isEmpty == false {
-            logRawTypes(millimeters: millimeters, note: "current")
             alignPhotoDimensions()
             if rawTypes(matching: match).isEmpty == false {
                 stillFormatDeviceID = device.uniqueID
+                logActiveCamera("capture-format")
                 return true
             }
         }
-        for format in ordered.prefix(5) {
+        for format in ordered.prefix(8) {
             do {
                 try applyActiveFormat(format, on: device)
             } catch {
                 continue
             }
+            // Formats are valid only after commitConfiguration returns.
             logRawTypes(millimeters: millimeters, note: "tried")
             if rawTypes(matching: match).isEmpty == false {
-                alignPhotoDimensions()
-                logRawTypes(millimeters: millimeters, note: "chosen")
-                if rawTypes(matching: match).isEmpty {
-                    log.info("stop \(millimeters)mm raw list emptied after maxPhotoDimensions")
-                }
                 stillFormatDeviceID = device.uniqueID
-                return rawTypes(matching: match).isEmpty == false
+                logActiveCamera("capture-format")
+                return true
             }
         }
         logRawTypes(millimeters: millimeters, note: "none")
@@ -1208,9 +1221,35 @@ final class CameraSession: ObservableObject {
             throw error
         }
         device.activeFormat = format
+        let lower = device.minAvailableVideoZoomFactor
+        let upper = device.maxAvailableVideoZoomFactor
+        let native = Swift.min(upper, Swift.max(lower, CGFloat(1)))
+        if native.isFinite {
+            device.videoZoomFactor = native
+        }
         device.unlockForConfiguration()
+        if let dimensions = Self.largestPhotoDimensions(format) {
+            photoOutput.maxPhotoDimensions = dimensions
+        }
         session.commitConfiguration()
         engageContinuousAutofocus()
+    }
+
+    /// Device type, zoom, and RAW formats. Call only after `commitConfiguration` has returned.
+    private func logActiveCamera(_ context: String) {
+        guard let device else { return }
+        let types = photoOutput.availableRawPhotoPixelFormatTypes
+        let listed = types.map { String($0) }.joined(separator: ",")
+        let bayer = types.filter(AVCapturePhotoOutput.isBayerRAWPixelFormat).map { String($0) }.joined(separator: ",")
+        let zoom = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), Double(device.videoZoomFactor))
+        log.info("\(context, privacy: .public) type \(device.deviceType.rawValue, privacy: .public) zoom \(zoom, privacy: .public) raw [\(listed, privacy: .public)] bayer [\(bayer, privacy: .public)]")
+    }
+
+    private static func framedMillimeters(_ device: AVCaptureDevice) -> Int {
+        let fov = Double(device.activeFormat.videoFieldOfView)
+        let zoom = Double(device.videoZoomFactor)
+        guard let mm = FocalLengthMath.equivalentMillimeters(horizontalFOVDegrees: fov, zoom: zoom) else { return 0 }
+        return Int(mm.rounded())
     }
 
     private func bayerTypes() -> [OSType] {
@@ -1292,7 +1331,8 @@ final class CameraSession: ObservableObject {
     private func needsStillFormatWork() -> Bool {
         guard processMode.wantsRaw, photoAspect.allowsRaw else { return false }
         guard let stop = lensStops.first(where: { $0.id == selectedStopID }), let device else { return false }
-        if isVirtual(device) || device.uniqueID != stop.deviceID { return true }
+        let expected = (try? physicalDevice(for: stop))?.uniqueID ?? stop.deviceID
+        if isVirtual(device) || device.uniqueID != expected { return true }
         if abs(Double(device.videoZoomFactor) - 1) > 0.05 { return true }
         if processMode.wantsProRaw, rawTypes(matching: { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }).isEmpty {
             return true
@@ -1315,9 +1355,14 @@ final class CameraSession: ObservableObject {
         let near = ranked
             .filter { abs($0.1 - 12_000_000) <= 4_000_000 }
             .sorted { abs($0.1 - 12_000_000) < abs($1.1 - 12_000_000) }
-        let nearIDs = Set(near.map { ObjectIdentifier($0.0) })
-        let others = ranked.sorted { $0.1 > $1.1 }.map(\.0).filter { nearIDs.contains(ObjectIdentifier($0)) == false }
-        return near.map(\.0) + others
+        let largest = ranked.max { $0.1 < $1.1 }?.0
+        var front = near.map(\.0)
+        if let largest, front.contains(where: { ObjectIdentifier($0) == ObjectIdentifier(largest) }) == false {
+            front.insert(largest, at: min(1, front.count))
+        }
+        let frontIDs = Set(front.map { ObjectIdentifier($0) })
+        let others = ranked.sorted { $0.1 > $1.1 }.map(\.0).filter { frontIDs.contains(ObjectIdentifier($0)) == false }
+        return front + others
     }
 
     /// Used when a caller asks for a still format without a Bayer search. Prefer ~12MP.
@@ -1353,7 +1398,6 @@ final class CameraSession: ObservableObject {
         }
         let stops = FocalLengthMath.stops(from: samples)
         lensStops = stops
-        wideMillimeters = samples.first { $0.isWide }?.millimeters ?? 0
         let wideID = samples.first { $0.isWide }?.id ?? device?.uniqueID
         let selected = FocalLengthMath.defaultStop(stops, wideDeviceID: wideID)
         let manual = (device.map(supportsCustomExposure) ?? false) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }

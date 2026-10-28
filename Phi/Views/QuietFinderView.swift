@@ -150,14 +150,20 @@ struct QuietFinderView: View {
         .padding(.bottom, bottomPad)
     }
 
+    /// Mode and aspect, plus the millimeters of the camera that is actually running.
+    private var finderLabel: String {
+        guard camera.activeLensMillimeters > 0, camera.formatLabel != "—" else { return camera.formatLabel }
+        return "\(camera.formatLabel) · \(camera.activeLensMillimeters)"
+    }
+
     private var topBar: some View {
         ZStack {
-            Text(camera.formatLabel)
+            Text(finderLabel)
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(camera.formatLabel == "—" ? CameraColor.textSecondary : CameraColor.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-                .accessibilityLabel("拍摄格式 \(camera.formatLabel)")
+                .accessibilityLabel("拍摄格式 \(finderLabel)")
             HStack {
                 IconHitButton(
                     symbol: .flash,
@@ -198,6 +204,7 @@ struct QuietFinderView: View {
                 StableCameraPreview(
                     session: camera.session,
                     device: camera.videoDevice,
+                    epoch: camera.previewEpoch,
                     anchor: camera.previewAnchor,
                     onTap: { viewPoint, devicePoint in
                         focusPoint = viewPoint
@@ -207,6 +214,7 @@ struct QuietFinderView: View {
                         handleDrag(event)
                     }
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .equatable()
             } else {
                 VStack(spacing: 18) {
