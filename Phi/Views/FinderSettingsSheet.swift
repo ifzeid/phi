@@ -27,20 +27,10 @@ struct FinderSettingsSheet: View {
                 header
                 section("处理", caption: modeCaption) {
                     ProcessModePicker(selection: mode, onSelect: onMode)
-                    if mode.wantsRaw {
-                        Toggle(isOn: Binding(get: { saveHEIF }, set: onSaveHEIF)) {
-                            Text("同时保存 HEIF")
-                                .font(CameraFont.interface(15, weight: .medium))
-                                .foregroundStyle(CameraColor.textPrimary)
-                        }
-                        .tint(CameraColor.accent)
-                    }
+                    companionRow
                 }
                 section("画幅", caption: "取景框、缩略图和显影按这个比例中心裁切。DNG 仍是整幅，裁切记在这张照片上。") {
                     PhotoAspectPicker(selection: aspect, onSelect: onAspect)
-                }
-                section("成片", caption: "苹果处理后的那张。设备没有 HEVC 时，HEIC 会改存 JPEG。") {
-                    ProcessedCodecPicker(selection: codec, onSelect: onCodec)
                 }
                 section("ISO / SHUTTER", caption: exposureCaption) {
                     HStack(spacing: 12) {
@@ -130,16 +120,38 @@ struct FinderSettingsSheet: View {
         return "默认关闭。取景框下方仍是自动曝光。打开后，快门和感光度出现在取景框里。"
     }
 
+    private var companionRow: some View {
+        HStack(spacing: 10) {
+            Text(mode.wantsRaw ? "同时保存成片" : "成片")
+                .font(CameraFont.interface(15, weight: .medium))
+                .foregroundStyle(CameraColor.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 8)
+            if mode.wantsRaw == false || saveHEIF {
+                ProcessedCodecSwitch(selection: codec, onSelect: onCodec)
+            }
+            if mode.wantsRaw {
+                Toggle("同时保存成片", isOn: Binding(get: { saveHEIF }, set: onSaveHEIF))
+                    .labelsHidden()
+                    .tint(CameraColor.accent)
+            }
+        }
+        .frame(minHeight: 44)
+    }
+
     private var modeCaption: String {
         switch mode {
         case .bayer:
             saveHEIF
-                ? "单帧 Bayer。苹果的 HEIF 是主图，DNG 是副档。关掉「同时保存 HEIF」时系统仍需要这张主图，否则会拒收单独的 DNG。"
-                : "单帧 Bayer。系统相册不能只有 DNG，所以仍会带上苹果的 HEIF 作为主图。"
+                ? "单帧 Bayer。苹果的成片是主图，DNG 是副档。成片可选 HEIC 或 JPEG。关掉「同时保存成片」时系统仍需要这张主图，否则会拒收单独的 DNG。"
+                : "单帧 Bayer。系统相册不能只有 DNG，所以仍会带上苹果的成片作为主图。"
         case .proRaw:
-            "Apple ProRAW。这一档如果没有，会改用 Bayer RAW。ProRAW 在写入前已经过多帧和降噪。"
+            saveHEIF
+                ? "Apple ProRAW。这一档如果没有，会改用 Bayer RAW。ProRAW 在写入前已经过多帧和降噪。成片可选 HEIC 或 JPEG。设备没有 HEVC 时，HEIC 会改存 JPEG。"
+                : "Apple ProRAW。这一档如果没有，会改用 Bayer RAW。ProRAW 在写入前已经过多帧和降噪。关掉「同时保存成片」时系统仍会带上成片作为主图。"
         case .standard:
-            "只存苹果处理好的 HEIF 或 JPEG，不请求 RAW。"
+            "只存苹果处理好的成片，不请求 RAW。在上面选 HEIC 或 JPEG。设备没有 HEVC 时，HEIC 会改存 JPEG。"
         }
     }
 
@@ -248,34 +260,42 @@ private struct ProcessModePicker: View {
     }
 }
 
-private struct ProcessedCodecPicker: View {
+private struct ProcessedCodecSwitch: View {
     var selection: ProcessedCodec
     var onSelect: (ProcessedCodec) -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(ProcessedCodec.allCases) { codec in
+        HStack(spacing: 0) {
+            ForEach(Array(ProcessedCodec.allCases.enumerated()), id: \.element.id) { index, codec in
+                if index > 0 {
+                    Rectangle()
+                        .fill(CameraColor.border)
+                        .frame(width: 1, height: 14)
+                }
                 let selected = codec == selection
                 Button {
                     onSelect(codec)
                 } label: {
-                    VStack(spacing: 5) {
-                        Text(codec.title)
-                            .font(CameraFont.parameter(12, medium: selected))
-                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
-                        Rectangle()
-                            .fill(selected ? CameraColor.accent : Color.clear)
-                            .frame(width: 14, height: 1.5)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                    Text(codec.title)
+                        .font(CameraFont.parameter(11, medium: selected))
+                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 28)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(codec.title)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
+        .padding(.horizontal, 2)
+        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(CameraColor.border, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("成片格式")
     }
 }
 

@@ -36,7 +36,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let preference = ProcessMode.load()
         processMode = preference.mode
         saveHEIF = preference.saveHEIF
-        processedCodec = ProcessedCodec.stored(UserDefaults.standard.string(forKey: ProcessedCodec.storageKey))
+        processedCodec = ProcessedCodec.loadStored()
         photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
         camera.setProcessMode(processMode)
         camera.setProcessedCodec(processedCodec)
@@ -78,6 +78,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     func setSaveHEIF(_ enabled: Bool) {
         SettingsTiming.measure("setSaveHEIF", label: enabled ? "on" : "off") {
             saveHEIF = enabled
+            UserDefaults.standard.set(enabled, forKey: ProcessMode.saveProcessedKey)
             UserDefaults.standard.set(enabled, forKey: ProcessMode.saveHEIFKey)
         }
     }

@@ -35,6 +35,8 @@ enum ProcessMode: String, CaseIterable, Identifiable {
 
     static let storageKey = "phi.processMode"
     static let legacyFormatKey = "phi.captureFormat"
+    /// Current toggle. Copied once from `saveHEIFKey`.
+    static let saveProcessedKey = "phi.saveProcessed"
     static let saveHEIFKey = "phi.saveHEIF"
 
     struct Preference {
@@ -46,7 +48,7 @@ enum ProcessMode: String, CaseIterable, Identifiable {
     static func load() -> Preference {
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: storageKey), let mode = mode(fromStored: raw) {
-            let save = defaults.object(forKey: saveHEIFKey) as? Bool ?? true
+            let save = storedSaveProcessed(defaults)
             return Preference(mode: mode, saveHEIF: mode == .standard ? true : save)
         }
         let old = defaults.string(forKey: legacyFormatKey)
@@ -60,8 +62,19 @@ enum ProcessMode: String, CaseIterable, Identifiable {
             preference = Preference(mode: .bayer, saveHEIF: true)
         }
         defaults.set(preference.mode.rawValue, forKey: storageKey)
+        defaults.set(preference.saveHEIF, forKey: saveProcessedKey)
         defaults.set(preference.saveHEIF, forKey: saveHEIFKey)
         return preference
+    }
+
+    /// `phi.saveProcessed` wins. An older install only has `phi.saveHEIF`, which is copied across once.
+    private static func storedSaveProcessed(_ defaults: UserDefaults) -> Bool {
+        if defaults.object(forKey: saveProcessedKey) != nil {
+            return defaults.bool(forKey: saveProcessedKey)
+        }
+        let save = defaults.object(forKey: saveHEIFKey) as? Bool ?? true
+        defaults.set(save, forKey: saveProcessedKey)
+        return save
     }
 
     /// Stored value stays `standard`. The old on-screen word `标准` still loads as mode 1.
@@ -86,9 +99,26 @@ enum ProcessedCodec: String, CaseIterable, Identifiable {
 
     static let storageKey = "phi.processedCodec"
 
-    static func stored(_ raw: String?) -> ProcessedCodec {
-        guard let raw, let codec = ProcessedCodec(rawValue: raw) else { return .heic }
+    /// Reads `phi.processedCodec`. Missing or unknown values become HEIC and are written back.
+    static func loadStored() -> ProcessedCodec {
+        let defaults = UserDefaults.standard
+        let raw = defaults.string(forKey: storageKey)
+        let codec = stored(raw)
+        if raw != codec.rawValue {
+            defaults.set(codec.rawValue, forKey: storageKey)
+        }
         return codec
+    }
+
+    static func stored(_ raw: String?) -> ProcessedCodec {
+        switch raw?.lowercased() {
+        case "jpeg", "jpg":
+            return .jpeg
+        case "heic", "heif":
+            return .heic
+        default:
+            return .heic
+        }
     }
 }
 

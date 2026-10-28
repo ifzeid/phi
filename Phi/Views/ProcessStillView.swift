@@ -91,7 +91,7 @@ struct ProcessStillView: View {
                 .tracking(1.2)
                 .foregroundStyle(CameraColor.textSecondary)
             HaloToggle(enabled: session.halo) { session.setHalo($0) }
-            Text("只在编辑时。正片、负片、黑白互斥。光晕可叠在任何一档上，包括无。没有强度。")
+            Text("只在编辑时。正片、负片、黑白、CCD 互斥。光晕可叠在任何一档上，包括无。没有强度。")
                 .font(CameraFont.interface(12))
                 .foregroundStyle(CameraColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -156,6 +156,7 @@ struct ColorLookPicker: View {
                             .font(CameraFont.parameter(12, medium: selected))
                             .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                         Rectangle()
                             .fill(selected ? CameraColor.accent : Color.clear)
                             .frame(width: 14, height: 1.5)
