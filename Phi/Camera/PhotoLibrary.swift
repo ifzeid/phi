@@ -81,12 +81,35 @@ enum PhiLocalShots {
 
     static func load() -> [Shot] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        return (try? JSONDecoder().decode([Shot].self, from: data)) ?? []
+        var shots = (try? JSONDecoder().decode([Shot].self, from: data)) ?? []
+        var changed = false
+        for index in shots.indices {
+            for fileIndex in shots[index].files.indices {
+                let stored = shots[index].files[fileIndex].path
+                guard let url = StillArchive.resolve(stored) else { continue }
+                let name = url.lastPathComponent
+                let inSupport = url.path.hasPrefix(StillArchive.directory.path)
+                if inSupport, stored != name {
+                    shots[index].files[fileIndex].path = name
+                    changed = true
+                }
+            }
+        }
+        if changed { write(shots) }
+        return shots
+    }
+
+    static func forget(id: String) {
+        write(load().filter { $0.id != id })
     }
 
     static func remember(_ shot: Shot) {
         var shots = load().filter { $0.id != shot.id }
         shots.append(shot)
+        write(shots)
+    }
+
+    private static func write(_ shots: [Shot]) {
         guard let data = try? JSONEncoder().encode(shots) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
@@ -97,16 +120,14 @@ enum PhiLocalShots {
         shots[index].savedToPhotos = true
         shots[index].photosIdentifier = photosIdentifier
         shots[index].saveFailed = false
-        guard let data = try? JSONEncoder().encode(shots) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        write(shots)
     }
 
     static func markFailed(id: String) {
         var shots = load()
         guard let index = shots.firstIndex(where: { $0.id == id }) else { return }
         shots[index].saveFailed = true
-        guard let data = try? JSONEncoder().encode(shots) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        write(shots)
     }
 
     /// Display file for the in-app album. Prefer Apple's HEIF/JPEG over the DNG.
@@ -121,8 +142,10 @@ enum PhiLocalShots {
         load().filter { $0.savedToPhotos == false }.reversed()
     }
 
-    static func unsavedPaths() -> Set<String> {
-        Set(unsaved().flatMap { $0.files.map(\.path) })
+    static func unsavedNames() -> Set<String> {
+        Set(unsaved().flatMap { shot in
+            shot.files.map { ($0.path as NSString).lastPathComponent }
+        })
     }
 
     static func shot(id: String) -> Shot? {
@@ -151,11 +174,12 @@ struct LibraryRecord: Codable, Equatable {
     func payloads() -> [LibraryPayload]? {
         var items: [LibraryPayload] = []
         for file in files {
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: file.path)) else { return nil }
+            guard let url = StillArchive.resolve(file.path),
+                  let data = try? Data(contentsOf: url) else { return nil }
             items.append(LibraryPayload(
                 data: data,
                 typeIdentifier: file.typeIdentifier,
-                filename: file.filename,
+                filename: file.filename.isEmpty ? url.lastPathComponent : file.filename,
                 alternate: file.alternate
             ))
         }
@@ -458,6 +482,22 @@ enum StillArchive {
         return base
     }
 
+    /// Index entries store a file name. Older builds stored an absolute container path, which breaks when the UUID changes.
+    static func resolve(_ stored: String) -> URL? {
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+        let name = (trimmed as NSString).lastPathComponent
+        guard name.isEmpty == false, name != "/" else { return nil }
+        let local = directory.appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: local.path) { return local }
+        guard trimmed != name, FileManager.default.fileExists(atPath: trimmed) else { return nil }
+        if FileManager.default.fileExists(atPath: local.path) == false {
+            try? FileManager.default.copyItem(at: URL(fileURLWithPath: trimmed), to: local)
+        }
+        if FileManager.default.fileExists(atPath: local.path) { return local }
+        return URL(fileURLWithPath: trimmed)
+    }
+
     static var thumbnailURL: URL {
         directory.appendingPathComponent("last-thumb.jpg")
     }
@@ -554,7 +594,7 @@ enum StillArchive {
         }
         for stem in ordered.dropFirst(12) {
             for url in stems[stem] ?? [] {
-                if PhiLocalShots.unsavedPaths().contains(url.path) { continue }
+                if PhiLocalShots.unsavedNames().contains(url.lastPathComponent) { continue }
                 try? FileManager.default.removeItem(at: url)
             }
         }

@@ -65,14 +65,18 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     func openLocalShot(id: String) {
-        guard let shot = PhiLocalShots.shot(id: id) else { return }
-        let dngPath = shot.files.first { $0.filename.lowercased().hasSuffix(".dng") }?.path
-        let displayPath = (shot.files.first { $0.alternate == false } ?? shot.files.first)?.path
+        guard let shot = PhiLocalShots.shot(id: id) else {
+            camera.statusMessage = "这张照片不在相册里。"
+            return
+        }
+        let dngStored = shot.files.first { $0.filename.lowercased().hasSuffix(".dng") }?.path
+        let displayStored = PhiLocalShots.displayFile(of: shot)?.path
         let hasRaw = shot.hasRaw
         let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? photoAspect
         Task {
-            let dng = dngPath.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
-            if let dng, let preview = RawDevelop.image(
+            if let stored = dngStored, let url = StillArchive.resolve(stored),
+               let dng = try? Data(contentsOf: url),
+               let preview = RawDevelop.image(
                 dng: dng,
                 exposureEV: 0,
                 style: .off,
@@ -81,7 +85,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 aspect: aspect,
                 maxSide: 1600,
                 draft: false
-            ) {
+               ) {
                 let metadata = PhotoMetadata.properties(of: dng)
                 await MainActor.run {
                     self.present(
@@ -96,17 +100,22 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 return
             }
-            if let displayPath, let data = try? Data(contentsOf: URL(fileURLWithPath: displayPath)), let image = UIImage(data: data) {
+            if let stored = displayStored, let url = StillArchive.resolve(stored),
+               let image = AlbumImage.fileImage(url: url, maxSide: nil) {
                 await MainActor.run {
                     self.openDevelop(image: image, originalWasRaw: hasRaw)
                 }
+                return
+            }
+            await MainActor.run {
+                self.camera.statusMessage = "文件丢失"
             }
         }
     }
 
     func retryLocalShot(id: String) {
         guard let shot = PhiLocalShots.shot(id: id), let payloads = LibraryRecord(files: shot.files).payloads() else {
-            camera.statusMessage = "App 内的照片文件不在了。"
+            camera.statusMessage = "文件丢失"
             return
         }
         canRetryPhotoSave = true
@@ -151,10 +160,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 return
             }
-            if let image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false) {
+            if let image = await AlbumImage.loadOriginal(asset) {
                 await MainActor.run {
                     self.openDevelop(image: image, originalWasRaw: rawShot)
                 }
+                return
+            }
+            await MainActor.run {
+                self.camera.statusMessage = "这张照片打不开。Couldn't open that still."
             }
         }
     }
@@ -341,9 +354,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let defaults = UserDefaults.standard
         guard let path = defaults.string(forKey: StillArchive.lastPathKey),
               let uti = defaults.string(forKey: StillArchive.lastUTIKey) else { return nil }
-        let url = URL(fileURLWithPath: path)
+        let name = (path as NSString).lastPathComponent
         return LibraryRecord(files: [
-            LibraryRecord.File(path: path, typeIdentifier: uti, filename: url.lastPathComponent, alternate: false)
+            LibraryRecord.File(path: name, typeIdentifier: uti, filename: name, alternate: false)
         ])
     }
 
@@ -428,7 +441,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             if let processedBox, processedBox.isDecodableImage, processedBox.isRawContainer == false,
                let url = try? StillArchive.write(data: processedBox.data, stamp: stamp, ext: processedBox.filenameExtension) {
                 let file = LibraryRecord.File(
-                    path: url.path,
+                    path: url.lastPathComponent,
                     typeIdentifier: processedBox.typeIdentifier,
                     filename: url.lastPathComponent,
                     alternate: false
@@ -445,7 +458,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                let url = try? StillArchive.write(data: rawBox.data, stamp: stamp, ext: "dng") {
                 let alternate = files.isEmpty == false
                 let file = LibraryRecord.File(
-                    path: url.path,
+                    path: url.lastPathComponent,
                     typeIdentifier: rawUTI,
                     filename: url.lastPathComponent,
                     alternate: alternate
