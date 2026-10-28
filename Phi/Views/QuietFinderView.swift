@@ -188,7 +188,6 @@ struct QuietFinderView: View {
                     .frame(width: fitted.width, height: fitted.height)
             }
             .frame(width: geo.size.width, height: geo.size.height)
-            .id(capture.photoAspect)
         }
     }
 

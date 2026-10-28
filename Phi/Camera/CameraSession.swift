@@ -494,21 +494,16 @@ final class CameraSession: ObservableObject {
 
     func setProcessMode(_ mode: ProcessMode) {
         processMode = mode
-        sessionQueue.async {
-            self.processMode = mode
-            self.applyProRAWSwitch()
-            guard self.didConfigure else { return }
-            self.publishDeliveryLabel()
+        let label = ProcessMode.label(mode: mode, aspect: photoAspect.title)
+        if Thread.isMainThread {
+            formatLabel = label
+        } else {
+            DispatchQueue.main.async { self.formatLabel = label }
         }
     }
 
     func setProcessedCodec(_ codec: ProcessedCodec) {
         processedCodec = codec
-        sessionQueue.async {
-            self.processedCodec = codec
-            guard self.didConfigure else { return }
-            self.publishDeliveryLabel()
-        }
     }
 
     /// Zoom of the selected crop stop. Optical stops are 1. Safe to call on the main thread.
@@ -532,12 +527,14 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    /// UI crop only. The session, device, and RAW list stay as they are. Shutter reads `photoAspect`.
     func setPhotoAspect(_ aspect: PhotoAspect) {
         photoAspect = aspect
-        sessionQueue.async {
-            self.photoAspect = aspect
-            guard self.didConfigure else { return }
-            self.publishDeliveryLabel()
+        let label = ProcessMode.label(mode: processMode, aspect: aspect.title)
+        if Thread.isMainThread {
+            formatLabel = label
+        } else {
+            DispatchQueue.main.async { self.formatLabel = label }
         }
     }
 
