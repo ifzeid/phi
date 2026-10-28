@@ -195,16 +195,19 @@ struct QuietFinderView: View {
         ZStack {
             CameraColor.surface
             if camera.isConfigured {
-                CameraPreview(
+                StableCameraPreview(
                     session: camera.session,
                     device: camera.videoDevice,
-                    anchor: camera.previewAnchor
-                ) { viewPoint, devicePoint in
-                    focusPoint = viewPoint
-                    camera.focus(at: devicePoint)
-                } onDrag: { event in
-                    handleDrag(event)
-                }
+                    anchor: camera.previewAnchor,
+                    onTap: { viewPoint, devicePoint in
+                        focusPoint = viewPoint
+                        camera.focus(at: devicePoint)
+                    },
+                    onDrag: { event in
+                        handleDrag(event)
+                    }
+                )
+                .equatable()
             } else {
                 VStack(spacing: 18) {
                     Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
@@ -275,9 +278,10 @@ struct QuietFinderView: View {
         }
         .overlay(alignment: .top) {
             if camera.autoExposure == false, camera.shutterChoices.isEmpty == false {
-                ManualTickScale(
-                    labels: camera.shutterChoices.map { MeterFormat.shutterFraction($0) },
+                QuietTickScale(
+                    label: shutterBadge,
                     index: shutterIndex,
+                    count: camera.shutterChoices.count,
                     horizontal: true,
                     onSelect: { camera.setManualShutter(camera.shutterChoices[$0]) }
                 )
@@ -289,9 +293,10 @@ struct QuietFinderView: View {
         }
         .overlay(alignment: .trailing) {
             if camera.autoExposure == false, camera.isoChoices.isEmpty == false {
-                ManualTickScale(
-                    labels: camera.isoChoices.map { isoLabel($0) },
+                QuietTickScale(
+                    label: isoBadge,
                     index: isoIndex,
+                    count: camera.isoChoices.count,
                     horizontal: false,
                     onSelect: { camera.setManualISO(camera.isoChoices[$0]) }
                 )
@@ -311,12 +316,19 @@ struct QuietFinderView: View {
         }
         .overlay(alignment: .trailing) {
             if camera.autoExposure {
-                ExposureDragScale(value: camera.exposureEV, range: camera.exposureRange)
-                    .padding(.trailing, 10)
-                    .padding(.bottom, 56)
-                    .opacity(rulerOpacity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(rulerOpacity < 0.2)
+                QuietTickScale(
+                    label: ExposureFormat.signedDecimal(camera.exposureEV),
+                    index: exposureIndex,
+                    count: exposureCount,
+                    horizontal: false,
+                    onSelect: nil
+                )
+                .frame(width: 64, height: 220)
+                .padding(.trailing, 8)
+                .padding(.bottom, 48)
+                .opacity(rulerOpacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(rulerOpacity < 0.2)
             }
         }
         .overlay {
@@ -431,6 +443,18 @@ struct QuietFinderView: View {
         )
     }
 
+    private var exposureCount: Int {
+        let span = camera.exposureRange.upperBound - camera.exposureRange.lowerBound
+        return max(Int((span / 0.1).rounded()) + 1, 1)
+    }
+
+    private var exposureIndex: Int {
+        let span = camera.exposureRange.upperBound - camera.exposureRange.lowerBound
+        guard span > 0 else { return 0 }
+        let fraction = (camera.exposureEV - camera.exposureRange.lowerBound) / span
+        return min(max(Int((fraction * Double(exposureCount - 1)).rounded()), 0), exposureCount - 1)
+    }
+
     private var isoIndex: Int {
         ExposureStops.nearestIndex(to: camera.manualISOValue, in: camera.isoChoices)
     }
@@ -514,58 +538,4 @@ struct QuietFinderView: View {
 private enum PendingDevelop {
     case library(String)
     case local(String)
-}
-
-/// Vertical exposure scale. Drawn only while a viewfinder drag is in progress.
-private struct ExposureDragScale: View {
-    var value: Double
-    var range: ClosedRange<Double>
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text(ExposureFormat.signedDecimal(value))
-                .font(CameraFont.parameter(13, medium: true))
-                .foregroundStyle(CameraColor.accent)
-                .frame(width: 44, alignment: .trailing)
-            Canvas { context, size in
-                let span = range.upperBound - range.lowerBound
-                let inset: CGFloat = 8
-                let usable = max(size.height - inset * 2, 1)
-                func yPosition(_ sample: Double) -> CGFloat {
-                    guard span > 0 else { return size.height / 2 }
-                    let fraction = (range.upperBound - sample) / span
-                    return inset + CGFloat(fraction) * usable
-                }
-                var spine = Path()
-                spine.move(to: CGPoint(x: 18, y: inset))
-                spine.addLine(to: CGPoint(x: 18, y: size.height - inset))
-                context.stroke(spine, with: .color(CameraColor.textPrimary.opacity(0.45)), lineWidth: 1)
-
-                let steps = max(Int((span / 0.5).rounded()), 1)
-                for index in 0...steps {
-                    let sample = range.lowerBound + (span * Double(index) / Double(steps))
-                    let y = yPosition(sample)
-                    let major = abs(sample.rounded() - sample) < 0.05
-                    var tick = Path()
-                    let length: CGFloat = major ? 10 : 5
-                    tick.move(to: CGPoint(x: 18, y: y))
-                    tick.addLine(to: CGPoint(x: 18 - length, y: y))
-                    context.stroke(
-                        tick,
-                        with: .color(major ? CameraColor.textPrimary.opacity(0.8) : CameraColor.border),
-                        lineWidth: 1
-                    )
-                }
-
-                let needleY = yPosition(value)
-                var needle = Path()
-                needle.addEllipse(in: CGRect(x: 14, y: needleY - 4, width: 8, height: 8))
-                context.fill(needle, with: .color(CameraColor.accent))
-            }
-            .frame(width: 28, height: 168)
-        }
-        .shadow(color: .black.opacity(0.55), radius: 2, y: 0)
-        .accessibilityLabel("曝光补偿")
-        .accessibilityValue("\(ExposureFormat.signedDecimal(value)) EV")
-    }
 }

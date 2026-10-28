@@ -33,6 +33,23 @@ final class PreviewAnchor {
     }
 }
 
+/// Skips preview updates when only the meter or exposure label changed.
+struct StableCameraPreview: View, Equatable {
+    var session: AVCaptureSession
+    var device: AVCaptureDevice?
+    var anchor: PreviewAnchor
+    var onTap: (CGPoint, CGPoint) -> Void
+    var onDrag: (PreviewDrag) -> Void
+
+    static func == (lhs: StableCameraPreview, rhs: StableCameraPreview) -> Bool {
+        lhs.device?.uniqueID == rhs.device?.uniqueID && lhs.session === rhs.session
+    }
+
+    var body: some View {
+        CameraPreview(session: session, device: device, anchor: anchor, onTap: onTap, onDrag: onDrag)
+    }
+}
+
 struct CameraPreview: UIViewRepresentable {
     var session: AVCaptureSession
     var device: AVCaptureDevice?

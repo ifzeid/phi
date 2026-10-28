@@ -72,7 +72,7 @@ enum RawDevelop {
 
     /// Applied after draft mode and scaleFactor so those changes cannot put noise reduction back.
     private static func silenceProcessing(_ filter: CIRAWFilter, exposureEV: Double) {
-        let bounded = Swift.min(2, Swift.max(-2, exposureEV))
+        let bounded = Swift.min(5, Swift.max(-5, exposureEV))
         filter.exposure = Float(bounded)
         filter.localToneMapAmount = 0
         filter.luminanceNoiseReductionAmount = 0
