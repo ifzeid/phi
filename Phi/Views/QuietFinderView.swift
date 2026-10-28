@@ -30,6 +30,8 @@ struct QuietFinderView: View {
     @StateObject private var capture = CaptureService()
     @AppStorage("phi.showGrid") private var showGrid = false
     @State private var showSettings = false
+    @State private var showAlbum = false
+    @State private var pendingDevelop: PendingDevelop?
     @State private var dragBaseEV: Double = 0
     @State private var rulerOpacity: Double = 0
     @State private var focusPoint: CGPoint?
@@ -59,6 +61,19 @@ struct QuietFinderView: View {
             } else {
                 camera.stop()
             }
+        }
+        .fullScreenCover(isPresented: $showAlbum, onDismiss: {
+            guard let pending = pendingDevelop else { return }
+            pendingDevelop = nil
+            capture.openDevelop(image: pending.image, originalWasRaw: pending.raw)
+        }) {
+            AlbumBrowser(
+                onClose: { showAlbum = false },
+                onProcess: { image, raw in
+                    pendingDevelop = PendingDevelop(image: image, raw: raw)
+                    showAlbum = false
+                }
+            )
         }
         .sheet(isPresented: $showSettings) {
             FinderSettingsSheet(
@@ -277,14 +292,18 @@ struct QuietFinderView: View {
         ZStack {
             HStack {
                 Button {
-                    capture.openProcess()
+                    if capture.thumbnail == nil && capture.hasDevelopBase == false {
+                        capture.openSample()
+                    } else {
+                        showAlbum = true
+                    }
                 } label: {
                     thumbnail
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(capture.hasDevelopBase ? "最近一张，进入处理" : "打开样张")
+                .accessibilityLabel(capture.thumbnail == nil && capture.hasDevelopBase == false ? "打开样张" : "打开相册")
                 Spacer()
                 IconHitButton(
                     symbol: .controls,
@@ -377,6 +396,11 @@ struct QuietFinderView: View {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
     }
+}
+
+private struct PendingDevelop {
+    var image: UIImage
+    var raw: Bool
 }
 
 /// Vertical exposure scale. Drawn only while a viewfinder drag is in progress.

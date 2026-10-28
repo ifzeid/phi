@@ -8,6 +8,31 @@ enum PhotoSaveError: Error {
     case notAuthorized
 }
 
+/// Local identifiers of assets PHI has written. The album browser reads these back after the user allows library access.
+enum PhiShotIndex {
+    private static var fileURL: URL {
+        StillArchive.directory.appendingPathComponent("phi-assets.json")
+    }
+
+    struct Entry: Codable, Equatable {
+        var localIdentifier: String
+        var hasRaw: Bool
+    }
+
+    static func load() -> [Entry] {
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
+    }
+
+    static func append(localIdentifier: String, hasRaw: Bool) {
+        var entries = load()
+        entries.removeAll { $0.localIdentifier == localIdentifier }
+        entries.append(Entry(localIdentifier: localIdentifier, hasRaw: hasRaw))
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+}
+
 /// One file inside a Photos asset. A JPEG+RAW pair uses `.photo` for the processed still and `.alternatePhoto` for the DNG.
 struct LibraryPayload {
     var data: Data
@@ -42,6 +67,8 @@ struct LibraryRecord: Codable, Equatable {
 }
 
 enum PhotoLibrary {
+    static let albumTitle = "PHI"
+
     static func addOnlyStatus() -> PHAuthorizationStatus {
         PHPhotoLibrary.authorizationStatus(for: .addOnly)
     }
@@ -50,24 +77,43 @@ enum PhotoLibrary {
         await PHPhotoLibrary.requestAuthorization(for: .addOnly)
     }
 
-    static func save(data: Data, typeIdentifier: String, filename: String) async throws {
-        try await save(payloads: [
-            LibraryPayload(data: data, typeIdentifier: typeIdentifier, filename: filename, alternate: false)
-        ])
+    static func readWriteStatus() -> PHAuthorizationStatus {
+        PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
 
-    /// One library asset. Pass the processed still first (`alternate == false`) and the DNG as `alternate` so Photos pairs them the way a RAW+JPEG capture does.
-    static func save(payloads: [LibraryPayload]) async throws {
-        guard payloads.isEmpty == false else { return }
-        let status = addOnlyStatus()
-        let granted: PHAuthorizationStatus
-        if status == .notDetermined {
-            granted = await requestAddOnly()
-        } else {
-            granted = status
+    static func requestReadWrite() async -> PHAuthorizationStatus {
+        let current = readWriteStatus()
+        if current == .notDetermined {
+            return await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         }
-        guard granted == .authorized || granted == .limited else { throw PhotoSaveError.notAuthorized }
+        return current
+    }
 
+    static func canReadLibrary(_ status: PHAuthorizationStatus) -> Bool {
+        status == .authorized || status == .limited
+    }
+
+    @discardableResult
+    static func save(data: Data, typeIdentifier: String, filename: String) async throws -> String? {
+        try await save(payloads: [
+            LibraryPayload(data: data, typeIdentifier: typeIdentifier, filename: filename, alternate: false)
+        ], fileInAlbum: false)
+    }
+
+    /// One library asset. Pass the processed still first (`alternate == false`) and the DNG as `alternate`.
+    /// Returns the new asset's local identifier. Album filing happens only when read access was already granted, so a shutter press does not raise a second permission prompt.
+    @discardableResult
+    static func save(payloads: [LibraryPayload], fileInAlbum: Bool = false) async throws -> String? {
+        guard payloads.isEmpty == false else { return nil }
+        guard await canAddPhotos() else { throw PhotoSaveError.notAuthorized }
+
+        let album: PHAssetCollection?
+        if fileInAlbum, canReadLibrary(readWriteStatus()) {
+            album = try? await ensureAlbum()
+        } else {
+            album = nil
+        }
+        let box = IdentifierBox()
         let items = payloads
         try await PHPhotoLibrary.shared().performChanges {
             let request = PHAssetCreationRequest.forAsset()
@@ -78,8 +124,93 @@ enum PhotoLibrary {
                 let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
                 request.addResource(with: kind, data: item.data, options: options)
             }
+            if let placeholder = request.placeholderForCreatedAsset {
+                box.localIdentifier = placeholder.localIdentifier
+                if let album, let change = PHAssetCollectionChangeRequest(for: album) {
+                    change.addAssets([placeholder] as NSArray)
+                }
+            }
+        }
+        return box.localIdentifier
+    }
+
+    /// Creates the PHI album when missing. Requires read/write or limited access.
+    static func ensureAlbum() async throws -> PHAssetCollection? {
+        if let existing = phiAlbum() { return existing }
+        let box = IdentifierBox()
+        try await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: albumTitle)
+            box.localIdentifier = request.placeholderForCreatedAssetCollection.localIdentifier
+        }
+        if let localIdentifier = box.localIdentifier,
+           let created = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [localIdentifier], options: nil).firstObject {
+            return created
+        }
+        return phiAlbum()
+    }
+
+    static func phiAlbum() -> PHAssetCollection? {
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "title = %@", albumTitle)
+        return PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: options).firstObject
+    }
+
+    /// Puts previously saved identifiers into the PHI album. Assets already in the album are left alone.
+    static func fileIntoAlbum(_ identifiers: [String], album: PHAssetCollection) async {
+        guard identifiers.isEmpty == false else { return }
+        let incoming = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        let already = PHAsset.fetchAssets(in: album, options: nil)
+        var present = Set<String>()
+        already.enumerateObjects { asset, _, _ in
+            present.insert(asset.localIdentifier)
+        }
+        var missing: [PHAsset] = []
+        incoming.enumerateObjects { asset, _, _ in
+            if present.contains(asset.localIdentifier) == false {
+                missing.append(asset)
+            }
+        }
+        guard missing.isEmpty == false else { return }
+        try? await PHPhotoLibrary.shared().performChanges {
+            PHAssetCollectionChangeRequest(for: album)?.addAssets(missing as NSArray)
         }
     }
+
+    /// Newest first. Indexed captures, plus anything already sitting in the PHI album.
+    static func loadShots() -> [PHAsset] {
+        let indexed = PhiShotIndex.load()
+        let fetched = PHAsset.fetchAssets(withLocalIdentifiers: indexed.map(\.localIdentifier), options: nil)
+        var byID: [String: PHAsset] = [:]
+        fetched.enumerateObjects { asset, _, _ in
+            byID[asset.localIdentifier] = asset
+        }
+        var shots = indexed.reversed().compactMap { byID[$0.localIdentifier] }
+        guard let album = phiAlbum() else { return shots }
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        PHAsset.fetchAssets(in: album, options: options).enumerateObjects { asset, _, _ in
+            if byID[asset.localIdentifier] == nil {
+                shots.append(asset)
+                byID[asset.localIdentifier] = asset
+            }
+        }
+        return shots
+    }
+
+    private static func canAddPhotos() async -> Bool {
+        if canReadLibrary(readWriteStatus()) { return true }
+        let add = addOnlyStatus()
+        if add == .authorized || add == .limited { return true }
+        if add == .notDetermined {
+            let granted = await requestAddOnly()
+            return granted == .authorized || granted == .limited
+        }
+        return false
+    }
+}
+
+private final class IdentifierBox: @unchecked Sendable {
+    var localIdentifier: String?
 }
 
 enum StillArchive {

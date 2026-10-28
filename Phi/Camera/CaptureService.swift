@@ -67,6 +67,23 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         camera.setPhotoAspect(aspect)
     }
 
+    /// Opens Process for a still chosen in the PHI album. The library original is not overwritten.
+    func openDevelop(image: UIImage, originalWasRaw: Bool) {
+        guard let base = StillPipeline.normalizedCGImage(from: image) else {
+            camera.statusMessage = "这张照片打不开。Couldn't open that still."
+            return
+        }
+        let status = originalWasRaw
+            ? "RAW 原片留在相册里，这里只改处理图。"
+            : "导出时另存处理图，不覆盖相册里的原片。"
+        present(
+            base: base,
+            recipe: StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: originalWasRaw),
+            isSample: false,
+            status: status
+        )
+    }
+
     /// Opens the last developed still, or the bundled sample when nothing has been captured.
     func openProcess() {
         if let base = StillArchive.loadBasePreview() {
@@ -382,7 +399,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
 
     private func saveToPhotos(_ payloads: [LibraryPayload], skippedRaw: Bool, croppedAspect: Bool) async {
         do {
-            try await PhotoLibrary.save(payloads: payloads)
+            let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true)
+            if let identifier {
+                let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
+                PhiShotIndex.append(localIdentifier: identifier, hasRaw: hasRaw)
+            }
             let note = Self.savedNote(payloads: payloads, skippedRaw: skippedRaw, croppedAspect: croppedAspect)
             await MainActor.run {
                 self.lastSavedNote = note
