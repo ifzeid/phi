@@ -12,18 +12,12 @@ enum PhiVersion {
 }
 
 enum PhotoMetadata {
-    /// Apple's container bytes, with GPS and Software merged in.
-    /// Swift `fileDataRepresentation()` takes no metadata argument on this SDK. ImageIO copies the source and merges properties, which does not decode and recompress the image.
+    /// Apple's container bytes, unchanged.
+    /// Rewriting a HEIF (gain map and all) with ImageIO makes Photos reject the RAW pair as invalidResource (3300).
+    /// GPS is stored on the Photos asset. The dictionary is kept for a later PHI develop.
     static func fileData(from photo: AVCapturePhoto, location: CLLocation?) -> (data: Data?, metadata: [String: Any]) {
         let metadata = merged(photo.metadata, location: location)
-        guard let original = photo.fileDataRepresentation() else {
-            return (nil, metadata)
-        }
-        if photo.isRawPhoto {
-            // ImageIO cannot reliably copy a DNG container. Keep Apple's bytes and put GPS on the Photos asset.
-            return (original, metadata)
-        }
-        return (injecting(metadata, into: original) ?? original, metadata)
+        return (photo.fileDataRepresentation(), metadata)
     }
 
     static func properties(of data: Data) -> [String: Any]? {
@@ -52,25 +46,6 @@ enum PhotoMetadata {
             bridged[key as CFString] = value
         }
         return bridged
-    }
-
-    /// Copies the image container and merges `metadata`. Returns nil when ImageIO cannot copy, so the caller keeps the original bytes.
-    private static func injecting(_ metadata: [String: Any], into original: Data) -> Data? {
-        guard let source = CGImageSourceCreateWithData(original as CFData, nil) else { return nil }
-        let count = CGImageSourceGetCount(source)
-        guard count > 0 else { return nil }
-        let type = CGImageSourceGetType(source) ?? UTType.heic.identifier as CFString
-        let output = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(output, type, count, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageDestinationMetadata: metadata,
-            kCGImageDestinationMergeMetadata: true
-        ]
-        var copyError: Unmanaged<CFError>?
-        guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, &copyError) else {
-            return nil
-        }
-        return output as Data
     }
 
     private static func merged(_ metadata: [String: Any], location: CLLocation?) -> [String: Any] {
@@ -107,5 +82,88 @@ enum PhotoMetadata {
         formatter.dateFormat = "yyyy:MM:dd"
         gps[kCGImagePropertyGPSDateStamp as String] = formatter.string(from: location.timestamp)
         return gps
+    }
+}
+
+/// One captured container, described from its bytes. Photos uses this UTI and these pixel sizes.
+struct CapturedContainer {
+    var data: Data
+    var typeIdentifier: String
+    var filenameExtension: String
+    var pixelWidth: Int
+    var pixelHeight: Int
+    var orientation: Int
+
+    var isDecodableImage: Bool {
+        guard data.count > 64 else { return false }
+        if pixelWidth > 1, pixelHeight > 1 { return true }
+        return filenameExtension == "heic" || filenameExtension == "jpg"
+    }
+
+    var isRawContainer: Bool {
+        typeIdentifier == "com.adobe.raw-image" || filenameExtension == "dng"
+    }
+
+    /// 5...8 are the mirrored and rotated tags. They swap the stored axes.
+    var orientedWidth: Int { (5...8).contains(orientation) ? pixelHeight : pixelWidth }
+    var orientedHeight: Int { (5...8).contains(orientation) ? pixelWidth : pixelHeight }
+
+    var logLine: String {
+        "\(typeIdentifier) \(data.count) bytes \(pixelWidth)x\(pixelHeight) orient \(orientation)"
+    }
+
+    /// Same capture when the stored pixels match, or the oriented pixels match.
+    func matchesPixels(of other: CapturedContainer) -> Bool {
+        if pixelWidth == other.pixelWidth && pixelHeight == other.pixelHeight { return true }
+        return orientedWidth == other.orientedWidth && orientedHeight == other.orientedHeight && orientedWidth > 1
+    }
+
+    static func inspect(_ data: Data) -> CapturedContainer {
+        let kind = kind(of: data)
+        var width = 0
+        var height = 0
+        var orientation = 1
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+            width = props[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+            height = props[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+            orientation = props[kCGImagePropertyOrientation as String] as? Int ?? 1
+        }
+        return CapturedContainer(
+            data: data,
+            typeIdentifier: kind.uti,
+            filenameExtension: kind.ext,
+            pixelWidth: width,
+            pixelHeight: height,
+            orientation: orientation
+        )
+    }
+
+    private static func kind(of data: Data) -> (uti: String, ext: String) {
+        if data.count >= 3, data[0] == 0xFF, data[1] == 0xD8, data[2] == 0xFF {
+            return (UTType.jpeg.identifier, "jpg")
+        }
+        if let brand = ftypBrand(data), heifBrands.contains(brand) {
+            return (UTType.heic.identifier, "heic")
+        }
+        if data.count >= 4 {
+            let tiffLE = data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00
+            let tiffBE = data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A
+            if tiffLE || tiffBE {
+                return ("com.adobe.raw-image", "dng")
+            }
+        }
+        return ("public.data", "dat")
+    }
+
+    private static let heifBrands: Set<String> = ["heic", "heix", "hevc", "hevx", "mif1", "msf1", "heim", "heis", "avci"]
+
+    /// Major brand at byte 8 of an ISO BMFF file. `ftyp` sits at byte 4.
+    private static func ftypBrand(_ data: Data) -> String? {
+        guard data.count >= 12 else { return nil }
+        let ftyp = data.subdata(in: 4..<8)
+        guard String(data: ftyp, encoding: .ascii) == "ftyp" else { return nil }
+        let brand = data.subdata(in: 8..<12)
+        return String(data: brand, encoding: .ascii)?.trimmingCharacters(in: .controlCharacters)
     }
 }

@@ -36,6 +36,7 @@ struct QuietFinderView: View {
     @State private var rulerOpacity: Double = 0
     @State private var focusPoint: CGPoint?
     @State private var flashOpacity: Double = 0
+    @State private var statusTicket = 0
 
     private var camera: CameraSession { capture.camera }
 
@@ -97,6 +98,10 @@ struct QuietFinderView: View {
                 shutter: camera.manualShutterSeconds,
                 shutterChoices: camera.shutterChoices,
                 manualSupported: camera.manualExposureSupported,
+                manual: camera.autoExposure == false,
+                onManual: { enabled in
+                    _ = camera.setAutoExposure(enabled == false)
+                },
                 onISO: { camera.setManualISO($0) },
                 onShutter: { camera.setManualShutter($0) },
                 onClose: { showSettings = false }
@@ -218,17 +223,22 @@ struct QuietFinderView: View {
         }
         .overlay {
             if camera.isConfigured, let message = camera.statusMessage ?? (camera.isRunning ? nil : "正在打开相机") {
-                Text(message)
-                    .font(CameraFont.interface(13, weight: .medium))
-                    .foregroundStyle(CameraColor.textPrimary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .padding(.top, 12)
-                    .padding(.horizontal, 16)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
+                Button {
+                    camera.statusMessage = nil
+                } label: {
+                    Text(message)
+                        .font(CameraFont.interface(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .padding(.horizontal, 16)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .accessibilityHint("点一下关掉提示")
             }
         }
         .overlay {
@@ -236,7 +246,7 @@ struct QuietFinderView: View {
                 .opacity(flashOpacity)
                 .allowsHitTesting(false)
         }
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .topLeading) {
             Text(counterText)
                 .font(CameraFont.parameter(12, medium: true))
                 .foregroundStyle(CameraColor.textPrimary)
@@ -247,6 +257,43 @@ struct QuietFinderView: View {
                 .accessibilityLabel("已拍摄 \(capture.captureCount) 张")
                 .allowsHitTesting(false)
         }
+        .overlay(alignment: .topTrailing) {
+            ExposureBadge(
+                automatic: camera.autoExposure,
+                iso: isoBadge,
+                shutter: shutterBadge
+            )
+            .padding(12)
+            .allowsHitTesting(false)
+        }
+        .overlay(alignment: .top) {
+            if camera.autoExposure == false, camera.shutterChoices.isEmpty == false {
+                ManualTickScale(
+                    labels: camera.shutterChoices.map { MeterFormat.shutterFraction($0) },
+                    index: shutterIndex,
+                    horizontal: true,
+                    onSelect: { camera.setManualShutter(camera.shutterChoices[$0]) }
+                )
+                .frame(height: 48)
+                .padding(.leading, 16)
+                .padding(.trailing, 72)
+                .padding(.top, 8)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if camera.autoExposure == false, camera.isoChoices.isEmpty == false {
+                ManualTickScale(
+                    labels: camera.isoChoices.map { isoLabel($0) },
+                    index: isoIndex,
+                    horizontal: false,
+                    onSelect: { camera.setManualISO(camera.isoChoices[$0]) }
+                )
+                .frame(width: 64)
+                .padding(.top, 56)
+                .padding(.bottom, 78)
+                .padding(.trailing, 6)
+            }
+        }
         .overlay(alignment: .bottom) {
             if camera.focalStops.isEmpty == false {
                 FocalLengthPicker(stops: camera.focalStops, selectedID: camera.selectedStopID) { stop in
@@ -256,12 +303,14 @@ struct QuietFinderView: View {
             }
         }
         .overlay(alignment: .trailing) {
-            ExposureDragScale(value: camera.exposureEV, range: camera.exposureRange)
-                .padding(.trailing, 10)
-                .padding(.bottom, 56)
-                .opacity(rulerOpacity)
-                .allowsHitTesting(false)
-                .accessibilityHidden(rulerOpacity < 0.2)
+            if camera.autoExposure {
+                ExposureDragScale(value: camera.exposureEV, range: camera.exposureRange)
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 56)
+                    .opacity(rulerOpacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(rulerOpacity < 0.2)
+            }
         }
         .overlay {
             GeometryReader { proxy in
@@ -275,6 +324,10 @@ struct QuietFinderView: View {
                 }
             }
         }
+        .onChange(of: camera.statusMessage) { _, message in
+            guard let message else { return }
+            scheduleStatusDismiss(message)
+        }
         .onChange(of: capture.shutterTick) { _, _ in
             flashOpacity = 0.85
             withAnimation(.easeOut(duration: 0.28)) {
@@ -284,13 +337,19 @@ struct QuietFinderView: View {
     }
 
     private var metaRow: some View {
-        HStack {
+        HStack(spacing: 8) {
+            Text("手动")
+                .font(CameraFont.interface(13, weight: .medium))
+                .foregroundStyle(camera.autoExposure ? CameraColor.textSecondary : CameraColor.accent)
+            Toggle("手动曝光", isOn: manualExposure)
+                .labelsHidden()
+                .tint(CameraColor.accent)
             Spacer()
             Text("\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(CameraColor.accent)
         }
-        .accessibilityLabel("曝光 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
+        .accessibilityLabel(camera.autoExposure ? "自动曝光，曝光补偿 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV" : "手动曝光")
     }
 
     private var controlRow: some View {
@@ -356,7 +415,50 @@ struct QuietFinderView: View {
         .padding(.horizontal, 8)
     }
 
+    private var manualExposure: Binding<Bool> {
+        Binding(
+            get: { camera.autoExposure == false },
+            set: { enabled in
+                _ = camera.setAutoExposure(enabled == false)
+            }
+        )
+    }
+
+    private var isoIndex: Int {
+        ExposureStops.nearestIndex(to: camera.manualISOValue, in: camera.isoChoices)
+    }
+
+    private var shutterIndex: Int {
+        ExposureStops.nearestIndex(to: camera.manualShutterSeconds, in: camera.shutterChoices)
+    }
+
+    private var isoBadge: String {
+        guard camera.manualISOValue > 0 else { return "—" }
+        return isoLabel(camera.manualISOValue)
+    }
+
+    private var shutterBadge: String {
+        MeterFormat.shutterFraction(camera.manualShutterSeconds)
+    }
+
+    private func isoLabel(_ value: Float) -> String {
+        if value >= 100 { return "\(Int(value.rounded()))" }
+        return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    private func scheduleStatusDismiss(_ message: String) {
+        guard camera.isConfigured else { return }
+        if message.contains("正在打开") || message.contains("Opening") { return }
+        statusTicket += 1
+        let ticket = statusTicket
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            guard statusTicket == ticket, camera.statusMessage == message else { return }
+            camera.statusMessage = nil
+        }
+    }
+
     private func handleDrag(_ event: PreviewDrag) {
+        guard camera.autoExposure else { return }
         switch event {
         case .began:
             dragBaseEV = camera.exposureEV
