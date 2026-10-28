@@ -96,9 +96,7 @@ enum StillPipeline {
             return nil
         }
         let options = PhotoMetadata.exportProperties(from: metadata, quality: quality)
-        var depthOptions = options
-        depthOptions[kCGImagePropertyDepth] = 10
-        CGImageDestinationAddImage(destination, image, depthOptions as CFDictionary)
+        CGImageDestinationAddImage(destination, image, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
     }

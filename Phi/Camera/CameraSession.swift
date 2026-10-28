@@ -653,8 +653,8 @@ final class CameraSession: ObservableObject {
         let processedCodec = processedPhotoCodec()
         let processed: [String: Any] = [AVVideoCodecKey: processedCodec.codec]
         let settings: AVCapturePhotoSettings
-        // RAW-only still asks for a processed companion so the in-app preview exists.
-        // Photos receives only the DNG in that mode. JPEG mode never requests Bayer.
+        // RAW mode still asks for Apple's processed companion. Photos rejects a DNG with no primary photo,
+        // so the shutter stores that HEIF/JPEG beside the DNG. PHI develop waits until 编辑. JPEG mode never requests Bayer.
         if let bayer {
             settings = AVCapturePhotoSettings(rawPixelFormatType: bayer, processedFormat: processed)
         } else {

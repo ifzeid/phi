@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import CoreLocation
+import os
 import Photos
 import UIKit
 import UniformTypeIdentifiers
@@ -19,6 +20,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var photoAspect: PhotoAspect = .threeByFour
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
+    @Published private(set) var albumRevision = 0
 
     private var cancellables = Set<AnyCancellable>()
     private let pendingLock = NSLock()
@@ -60,6 +62,57 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         photoAspect = aspect
         UserDefaults.standard.set(aspect.rawValue, forKey: PhotoAspect.storageKey)
         camera.setPhotoAspect(aspect)
+    }
+
+    func openLocalShot(id: String) {
+        guard let shot = PhiLocalShots.shot(id: id) else { return }
+        let dngPath = shot.files.first { $0.filename.lowercased().hasSuffix(".dng") }?.path
+        let displayPath = (shot.files.first { $0.alternate == false } ?? shot.files.first)?.path
+        let hasRaw = shot.hasRaw
+        let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? photoAspect
+        Task {
+            let dng = dngPath.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
+            if let dng, let preview = RawDevelop.image(
+                dng: dng,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: false,
+                aspect: aspect,
+                maxSide: 1600,
+                draft: false
+            ) {
+                let metadata = PhotoMetadata.properties(of: dng)
+                await MainActor.run {
+                    self.present(
+                        base: preview,
+                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
+                        isSample: false,
+                        status: "从 App 内的 DNG 显影。",
+                        sourceDNG: dng,
+                        sourceMetadata: metadata,
+                        aspect: aspect
+                    )
+                }
+                return
+            }
+            if let displayPath, let data = try? Data(contentsOf: URL(fileURLWithPath: displayPath)), let image = UIImage(data: data) {
+                await MainActor.run {
+                    self.openDevelop(image: image, originalWasRaw: hasRaw)
+                }
+            }
+        }
+    }
+
+    func retryLocalShot(id: String) {
+        guard let shot = PhiLocalShots.shot(id: id), let payloads = LibraryRecord(files: shot.files).payloads() else {
+            camera.statusMessage = "App 内的照片文件不在了。"
+            return
+        }
+        canRetryPhotoSave = true
+        Task {
+            await self.saveToPhotos(payloads, skippedRaw: false, croppedAspect: false, localShotID: id)
+        }
     }
 
     /// Opens Process for a still chosen in the PHI album. The library original is not overwritten.
@@ -205,6 +258,10 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             }
             return
         }
+        let bytes = encoded.data.count
+        let info = "DNG · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("\(info, privacy: .public)")
+        await MainActor.run { session.developInfo = info }
         let stamp = Self.fileStamp()
         let filename = "PHI-\(style.title)-\(stamp).\(encoded.ext)"
         do {
@@ -233,10 +290,17 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 session.status = "没有相册权限，处理图还没写入。Allow Photos access to save it."
                 self.camera.statusMessage = "没有相册权限。Allow Photos access in Settings."
             }
-        } catch {
+        } catch let error as PhotoSaveError {
             await MainActor.run {
                 session.isExporting = false
-                session.status = "处理图没有写入相册。Couldn't save the develop."
+                session.status = "处理图没有写入相册（\(error.codeLine)）。"
+                session.developInfo = error.debugLine
+            }
+        } catch {
+            let ns = error as NSError
+            await MainActor.run {
+                session.isExporting = false
+                session.status = "处理图没有写入相册（\(ns.domain) \(ns.code)）。"
             }
         }
     }
@@ -338,40 +402,23 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let codec = snapshot.codec
         let rawUTI = UTType(filenameExtension: "dng")?.identifier ?? "com.adobe.raw-image"
         let saveRaw = format.wantsRaw && hasRaw && aspect.allowsRaw
-        let saveProcessed = format != .raw || saveRaw == false
         let skippedRaw = format.wantsRaw && saveRaw == false && hasProcessed
         let preview = snapshot.preview
         let rawData = snapshot.raw
         let originalProcessed = snapshot.processed
-        let metadata = snapshot.metadata
         let shotLocation = snapshot.location
 
         DispatchQueue.global(qos: .userInitiated).async {
             let spokenCodec = codec
             let processedExt = codec == "HEIC" ? "heic" : "jpg"
             let processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
-            // Apple's HEIF/JPEG stays the archived companion. Do not re-encode it.
-            let processedData = originalProcessed
-            let developed = rawData.flatMap {
-                RawDevelop.image(
-                    dng: $0,
-                    exposureEV: 0,
-                    style: .off,
-                    look: .none,
-                    halo: false,
-                    aspect: aspect,
-                    maxSide: 1600,
-                    draft: false
-                )
-            }
-            let upright = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
-                ?? originalProcessed.flatMap { UIImage(data: $0) }.flatMap { StillPipeline.normalizedCGImage(from: $0) }
-            let framed = developed ?? upright.map { aspect.cropped($0) }
+            // Keep Apple's HEIF/JPEG bytes. Develop runs later, from the stored DNG, when the user taps 编辑.
+            // Photos rejects a DNG that is the only resource, so RAW mode still pairs Apple's file as the primary.
             let stamp = StillArchive.stamp()
             var files: [LibraryRecord.File] = []
             var payloads: [LibraryPayload] = []
-            if saveProcessed, let processedData,
-               let url = try? StillArchive.write(data: processedData, stamp: stamp, ext: processedExt) {
+            if let originalProcessed,
+               let url = try? StillArchive.write(data: originalProcessed, stamp: stamp, ext: processedExt) {
                 let file = LibraryRecord.File(
                     path: url.path,
                     typeIdentifier: processedUTI,
@@ -380,7 +427,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 )
                 files.append(file)
                 payloads.append(LibraryPayload(
-                    data: processedData,
+                    data: originalProcessed,
                     typeIdentifier: processedUTI,
                     filename: file.filename,
                     alternate: false
@@ -403,28 +450,15 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     alternate: alternate
                 ))
             }
-            let base = framed
-            if let base {
-                try? StillArchive.writeBasePreview(base)
-            }
             let keptRaw = files.contains { $0.filename.lowercased().hasSuffix(".dng") }
-            let recipe = StillRecipe(exposureEV: 0, style: .off, originalWasRaw: keptRaw)
-            if base != nil {
-                StillArchive.writeRecipe(recipe)
+            let sourceThumb = preview ?? originalProcessed.flatMap { UIImage(data: $0) }
+            let thumbImage = sourceThumb.flatMap { image -> UIImage? in
+                guard let cg = StillPipeline.normalizedCGImage(from: image) else { return image }
+                return UIImage(cgImage: aspect.cropped(cg))
             }
-            let thumbImage = base.map { UIImage(cgImage: $0) } ?? preview
             let thumb = thumbImage.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
-            let noRawDevelop = format.wantsRaw && aspect.allowsRaw && rawData == nil
-            let captureStatus = noRawDevelop
-                ? "这一档没有 Bayer RAW。画面来自系统成片，不会另存为 PHI 显影。"
-                : Self.captureStatus(
-                    codec: spokenCodec,
-                    savedRaw: keptRaw,
-                    savedProcessed: files.contains { $0.alternate == false && $0.filename.lowercased().hasSuffix(".dng") == false },
-                    skippedRaw: skippedRaw,
-                    croppedAspect: aspect != .threeByFour
-                )
+            let noRaw = format.wantsRaw && aspect.allowsRaw && rawData == nil
             DispatchQueue.main.async {
                 self.isCapturing = false
                 if let thumb {
@@ -435,9 +469,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 self.captureCount += 1
                 UserDefaults.standard.set(self.captureCount, forKey: StillArchive.countKey)
-                if skippedRaw {
+                if noRaw {
                     let toast = aspect.allowsRaw
-                        ? "这一档不能保存 RAW，已改存 \(spokenCodec)。"
+                        ? "这一档没有 Bayer RAW。"
                         : "这一画幅按取景裁切，已改存 \(spokenCodec)。"
                     self.camera.statusMessage = toast
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
@@ -446,25 +480,23 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         }
                     }
                 }
-                if let base {
-                    self.hasDevelopBase = true
-                    self.present(
-                        base: base,
-                        recipe: recipe,
-                        isSample: false,
-                        status: captureStatus,
-                        sourceDNG: rawData,
-                        sourceMetadata: metadata,
-                        aspect: aspect,
-                        location: shotLocation
-                    )
-                }
                 guard files.isEmpty == false else {
                     self.camera.statusMessage = "照片没有留在 App 内。Couldn't keep the still in the app."
                     return
                 }
                 let record = LibraryRecord(files: files)
                 StillArchive.storeLastRecord(record)
+                let localShot = PhiLocalShots.Shot(
+                    id: stamp,
+                    files: files,
+                    hasRaw: keptRaw,
+                    savedToPhotos: false,
+                    photosIdentifier: nil,
+                    saveFailed: nil,
+                    aspect: aspect.rawValue
+                )
+                PhiLocalShots.remember(localShot)
+                self.albumRevision += 1
                 if let primary = files.first(where: { $0.alternate == false }) ?? files.first {
                     UserDefaults.standard.set(primary.path, forKey: StillArchive.lastPathKey)
                     UserDefaults.standard.set(primary.typeIdentifier, forKey: StillArchive.lastUTIKey)
@@ -478,27 +510,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         croppedAspect: aspect != .threeByFour,
                         location: shotLocation,
                         aspect: aspect,
-                        thumb: thumb
+                        thumb: thumb,
+                        localShotID: stamp
                     )
                 }
             }
         }
-    }
-
-    private static func captureStatus(codec: String, savedRaw: Bool, savedProcessed: Bool, skippedRaw: Bool, croppedAspect: Bool) -> String? {
-        if skippedRaw {
-            if croppedAspect {
-                return "这一画幅按取景裁切，已改存 \(codec)。Saved the cropped \(codec)."
-            }
-            return "这一档不能保存 RAW，已改存 \(codec)。Saved \(codec) instead."
-        }
-        if savedRaw && savedProcessed {
-            return "苹果的 HEIF 和 Bayer DNG 已写入相册。这里的画面从 DNG 显影，不是那张 HEIF。"
-        }
-        if savedRaw {
-            return "RAW 原片单独保存，这里只改处理图。The RAW file stays as captured."
-        }
-        return nil
     }
 
     private func saveToPhotos(
@@ -507,19 +524,22 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         croppedAspect: Bool,
         location: CLLocation? = nil,
         aspect: PhotoAspect = .threeByFour,
-        thumb: UIImage? = nil
+        thumb: UIImage? = nil,
+        localShotID: String = ""
     ) async {
         do {
             let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true, location: location)
             if let identifier {
                 let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
                 PhiShotIndex.append(localIdentifier: identifier, hasRaw: hasRaw, aspect: aspect.rawValue)
+                PhiLocalShots.markSaved(id: localShotID, photosIdentifier: identifier)
                 if let thumb {
                     DevelopCache.store(thumb, identifier: identifier)
                 }
             }
             let note = Self.savedNote(payloads: payloads, skippedRaw: skippedRaw, croppedAspect: croppedAspect)
             await MainActor.run {
+                self.albumRevision += 1
                 self.lastSavedNote = note
                 self.canRetryPhotoSave = false
                 UserDefaults.standard.set(true, forKey: StillArchive.lastSavedKey)
@@ -530,18 +550,36 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     self.processSession?.status = note
                 }
             }
-        } catch PhotoSaveError.notAuthorized {
+        } catch let error as PhotoSaveError {
+            let line = error.debugLine
+            let short = error.codeLine
+            Logger(subsystem: "com.zeid.phi", category: "photos").error("\(line, privacy: .public)")
+            if localShotID.isEmpty == false {
+                PhiLocalShots.markFailed(id: localShotID)
+            }
             await MainActor.run {
+                self.albumRevision += 1
                 self.canRetryPhotoSave = true
-                self.camera.statusMessage = "没有相册权限，照片留在 App 内。Allow Photos access to save it."
+                self.camera.statusMessage = "未能写入相册（\(short)）。照片留在 App 内。"
                 if self.processSession?.isSample == false {
-                    self.processSession?.status = "原片还没写入相册。Allow Photos access, then retry the original."
+                    self.processSession?.status = line
+                    self.processSession?.developInfo = line
                 }
             }
         } catch {
+            let ns = error as NSError
+            let line = "\(ns.domain) \(ns.code) \(ns.localizedDescription)"
+            Logger(subsystem: "com.zeid.phi", category: "photos").error("\(line, privacy: .public)")
+            if localShotID.isEmpty == false {
+                PhiLocalShots.markFailed(id: localShotID)
+            }
             await MainActor.run {
+                self.albumRevision += 1
                 self.canRetryPhotoSave = true
-                self.camera.statusMessage = "未能写入相册，照片留在 App 内。Couldn't save to Photos."
+                self.camera.statusMessage = "未能写入相册（\(ns.domain) \(ns.code)）。照片留在 App 内。"
+                if self.processSession?.isSample == false {
+                    self.processSession?.developInfo = line
+                }
             }
         }
     }

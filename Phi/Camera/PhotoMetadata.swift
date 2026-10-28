@@ -19,6 +19,10 @@ enum PhotoMetadata {
         guard let original = photo.fileDataRepresentation() else {
             return (nil, metadata)
         }
+        if photo.isRawPhoto {
+            // ImageIO cannot reliably copy a DNG container. Keep Apple's bytes and put GPS on the Photos asset.
+            return (original, metadata)
+        }
         return (injecting(metadata, into: original) ?? original, metadata)
     }
 
@@ -29,9 +33,17 @@ enum PhotoMetadata {
 
     /// Properties for one final HEIF/JPEG write. Orientation is upright because the pixels were already turned.
     static func exportProperties(from metadata: [String: Any]?, quality: CGFloat) -> [CFString: Any] {
-        var props: [String: Any] = metadata ?? [:]
+        var props: [String: Any] = [:]
+        if let metadata {
+            if let gps = metadata[kCGImagePropertyGPSDictionary as String] {
+                props[kCGImagePropertyGPSDictionary as String] = gps
+            }
+            if let exif = metadata[kCGImagePropertyExifDictionary as String] {
+                props[kCGImagePropertyExifDictionary as String] = exif
+            }
+        }
         props[kCGImagePropertyOrientation as String] = 1
-        var tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
+        var tiff = metadata?[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
         tiff[kCGImagePropertyTIFFSoftware as String] = PhiVersion.software
         props[kCGImagePropertyTIFFDictionary as String] = tiff
         props[kCGImageDestinationLossyCompressionQuality as String] = quality

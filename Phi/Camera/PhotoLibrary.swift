@@ -7,6 +7,26 @@ import UniformTypeIdentifiers
 
 enum PhotoSaveError: Error {
     case notAuthorized
+    case failed(domain: String, code: Int, message: String)
+
+    var debugLine: String {
+        switch self {
+        case .notAuthorized:
+            return "Photos not authorized"
+        case .failed(let domain, let code, let message):
+            return "\(domain) \(code) \(message)"
+        }
+    }
+
+    /// Domain and code only, for the viewfinder toast.
+    var codeLine: String {
+        switch self {
+        case .notAuthorized:
+            return "未授权"
+        case .failed(let domain, let code, _):
+            return "\(domain) \(code)"
+        }
+    }
 }
 
 /// Local identifiers of assets PHI has written. The album browser reads these back after the user allows library access.
@@ -37,6 +57,75 @@ enum PhiShotIndex {
     static func aspect(for localIdentifier: String) -> PhotoAspect? {
         guard let raw = load().first(where: { $0.localIdentifier == localIdentifier })?.aspect else { return nil }
         return PhotoAspect(rawValue: raw)
+    }
+}
+
+/// Shots kept in the app container. The in-app album shows these even when Photos rejects the asset.
+enum PhiLocalShots {
+    struct Shot: Codable, Identifiable, Equatable {
+        var id: String
+        var files: [LibraryRecord.File]
+        var hasRaw: Bool
+        var savedToPhotos: Bool
+        var photosIdentifier: String?
+        /// Set after Photos rejects the asset. Absent while the write is still in flight.
+        var saveFailed: Bool?
+        /// `PhotoAspect.rawValue` at capture. Older records omit it.
+        var aspect: String?
+    }
+
+    private static var fileURL: URL {
+        StillArchive.directory.appendingPathComponent("phi-local-shots.json")
+    }
+
+    static func load() -> [Shot] {
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        return (try? JSONDecoder().decode([Shot].self, from: data)) ?? []
+    }
+
+    static func remember(_ shot: Shot) {
+        var shots = load().filter { $0.id != shot.id }
+        shots.append(shot)
+        guard let data = try? JSONEncoder().encode(shots) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
+    static func markSaved(id: String, photosIdentifier: String) {
+        var shots = load()
+        guard let index = shots.firstIndex(where: { $0.id == id }) else { return }
+        shots[index].savedToPhotos = true
+        shots[index].photosIdentifier = photosIdentifier
+        shots[index].saveFailed = false
+        guard let data = try? JSONEncoder().encode(shots) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
+    static func markFailed(id: String) {
+        var shots = load()
+        guard let index = shots.firstIndex(where: { $0.id == id }) else { return }
+        shots[index].saveFailed = true
+        guard let data = try? JSONEncoder().encode(shots) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
+    /// Display file for the in-app album. Prefer Apple's HEIF/JPEG over the DNG.
+    static func displayFile(of shot: Shot) -> LibraryRecord.File? {
+        let notRaw: (LibraryRecord.File) -> Bool = { $0.filename.lowercased().hasSuffix(".dng") == false }
+        return shot.files.first { $0.alternate == false && notRaw($0) }
+            ?? shot.files.first(where: notRaw)
+            ?? shot.files.first
+    }
+
+    static func unsaved() -> [Shot] {
+        load().filter { $0.savedToPhotos == false }.reversed()
+    }
+
+    static func unsavedPaths() -> Set<String> {
+        Set(unsaved().flatMap { $0.files.map(\.path) })
+    }
+
+    static func shot(id: String) -> Shot? {
+        load().first { $0.id == id }
     }
 }
 
@@ -139,6 +228,8 @@ enum PhotoLibrary {
                     change.addAssets([placeholder] as NSArray)
                 }
             }
+        } catch let error as NSError {
+            throw PhotoSaveError.failed(domain: error.domain, code: error.code, message: error.localizedDescription)
         }
         return box.localIdentifier
     }
@@ -413,8 +504,9 @@ enum StillArchive {
             let right = stems[rhs]?.map(modified).max() ?? .distantPast
             return left > right
         }
-        for stem in ordered.dropFirst(3) {
+        for stem in ordered.dropFirst(12) {
             for url in stems[stem] ?? [] {
+                if PhiLocalShots.unsavedPaths().contains(url.path) { continue }
                 try? FileManager.default.removeItem(at: url)
             }
         }

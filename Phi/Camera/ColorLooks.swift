@@ -5,6 +5,7 @@ import CoreImage
 enum ColorLooks {
     static func apply(_ image: CIImage, look: ColorLook, halo: Bool) -> CIImage {
         var current = toPerceptual(image)
+        current = baseFilm(current)
         switch look {
         case .none:
             break
@@ -23,6 +24,27 @@ enum ColorLooks {
 
     private static func toPerceptual(_ image: CIImage) -> CIImage {
         image.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 0.4545])
+    }
+
+    /// Global film curve for the default look. Real blacks, a little midtone snap, soft highlight shoulder.
+    /// No local tone mapping. Fine sharpening only.
+    private static func baseFilm(_ image: CIImage) -> CIImage {
+        let curved = tone(image, points: [
+            (0.00, 0.00),
+            (0.16, 0.09),
+            (0.42, 0.40),
+            (0.70, 0.74),
+            (1.00, 0.97)
+        ])
+        let colored = curved.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 1.12,
+            kCIInputBrightnessKey: 0,
+            kCIInputContrastKey: 1.04
+        ])
+        return colored.applyingFilter("CIUnsharpMask", parameters: [
+            kCIInputRadiusKey: 0.6,
+            kCIInputIntensityKey: 0.4
+        ])
     }
 
     private static func toLinear(_ image: CIImage) -> CIImage {

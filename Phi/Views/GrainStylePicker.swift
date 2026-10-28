@@ -27,7 +27,7 @@ struct GrainStylePicker: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(style == .off ? "关闭颗粒" : "FINE 颗粒")
-                .accessibilityHint("只在处理页生效，配方已固定")
+                .accessibilityHint("只在编辑时生效，配方已固定")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }

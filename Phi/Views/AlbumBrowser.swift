@@ -3,14 +3,18 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// Grid and pager for stills PHI saved. Only the PHI album and assets this app recorded — not the rest of the library.
+/// Grid and pager for stills PHI saved. Photos assets in the PHI album, plus files kept in the app when Photos rejects the write.
 struct AlbumBrowser: View {
+    var revision: Int
     var onClose: () -> Void
-    var onProcess: (PHAsset) -> Void
+    var onEditLibrary: (PHAsset) -> Void
+    var onEditLocal: (String) -> Void
+    var onRetryLocal: (String) -> Void
 
-    @State private var assets: [PHAsset] = []
+    @State private var shots: [AlbumShot] = []
     @State private var phase: Phase = .checking
     @State private var limited = false
+    @State private var libraryDenied = false
     @State private var viewerIndex: Int?
 
     private enum Phase {
@@ -30,6 +34,14 @@ struct AlbumBrowser: View {
             CameraColor.background.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
+                if libraryDenied, phase == .ready {
+                    Text("系统相册还没授权。下面是留在 App 内的照片。")
+                        .font(CameraFont.interface(12))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                }
                 switch phase {
                 case .checking:
                     Spacer()
@@ -40,7 +52,7 @@ struct AlbumBrowser: View {
                 case .denied:
                     denied
                 case .ready:
-                    if assets.isEmpty {
+                    if shots.isEmpty {
                         empty
                     } else {
                         grid
@@ -48,14 +60,16 @@ struct AlbumBrowser: View {
                 }
             }
         }
-        .task { await reload() }
+        .task(id: revision) { await reload() }
         .overlay {
-            if let viewerIndex, assets.indices.contains(viewerIndex) {
+            if let viewerIndex, shots.indices.contains(viewerIndex) {
                 AlbumPager(
-                    assets: assets,
+                    shots: shots,
                     index: viewerIndex,
                     onClose: { self.viewerIndex = nil },
-                    onProcess: onProcess
+                    onEditLibrary: onEditLibrary,
+                    onEditLocal: onEditLocal,
+                    onRetryLocal: onRetryLocal
                 )
             }
         }
@@ -68,7 +82,7 @@ struct AlbumBrowser: View {
                     .font(CameraFont.parameter(13, medium: true))
                     .foregroundStyle(CameraColor.textPrimary)
                 if phase == .ready {
-                    Text("\(assets.count)")
+                    Text("\(shots.count)")
                         .font(CameraFont.parameter(11))
                         .foregroundStyle(CameraColor.textSecondary)
                 }
@@ -97,14 +111,14 @@ struct AlbumBrowser: View {
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { offset, asset in
+                ForEach(Array(shots.enumerated()), id: \.element.id) { offset, shot in
                     Button {
                         viewerIndex = offset
                     } label: {
-                        AlbumThumb(asset: asset)
+                        AlbumThumb(shot: shot)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(accessibilityName(asset, index: offset))
+                    .accessibilityLabel(accessibilityName(shot, index: offset))
                 }
             }
         }
@@ -118,7 +132,7 @@ struct AlbumBrowser: View {
                 .foregroundStyle(CameraColor.textPrimary)
             Text(limited
                  ? "如果只允许了部分照片，点右上角“管理照片”，把观止保存的照片加进来。"
-                 : "拍完并写入相册之后，会出现在这里。")
+                 : "拍完会留在这里，并同时写入系统相册。")
                 .font(CameraFont.interface(13))
                 .foregroundStyle(CameraColor.textSecondary)
                 .multilineTextAlignment(.center)
@@ -145,24 +159,35 @@ struct AlbumBrowser: View {
     }
 
     private func reload() async {
+        let locals = PhiLocalShots.load().reversed()
         let status = await PhotoLibrary.requestReadWrite()
         guard PhotoLibrary.canReadLibrary(status) else {
-            phase = .denied
             limited = false
-            assets = []
+            libraryDenied = true
+            shots = locals.map { AlbumShot.local($0) }
+            phase = shots.isEmpty ? .denied : .ready
             return
         }
+        libraryDenied = false
         limited = status == .limited
         if let album = try? await PhotoLibrary.ensureAlbum() {
             await PhotoLibrary.fileIntoAlbum(PhiShotIndex.load().map(\.localIdentifier), album: album)
         }
-        assets = PhotoLibrary.loadShots()
+        let assets = PhotoLibrary.loadShots()
+        let known = Set(assets.map(\.localIdentifier))
+        var items = assets.map { AlbumShot.library($0) }
+        for shot in locals {
+            if let identifier = shot.photosIdentifier, known.contains(identifier) { continue }
+            items.append(AlbumShot.local(shot))
+        }
+        shots = items.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         phase = .ready
     }
 
-    private func accessibilityName(_ asset: PHAsset, index: Int) -> String {
-        let raw = PhiRawAsset.contains(asset) ? "，含 RAW" : ""
-        return "第 \(index + 1) 张\(raw)"
+    private func accessibilityName(_ shot: AlbumShot, index: Int) -> String {
+        let raw = shot.hasRaw ? "，含 RAW" : ""
+        let pending = shot.needsRetry ? "，未写入系统相册" : ""
+        return "第 \(index + 1) 张\(raw)\(pending)"
     }
 
     private func presentLimitedPicker() {
@@ -176,8 +201,48 @@ struct AlbumBrowser: View {
     }
 }
 
+private struct AlbumShot: Identifiable {
+    enum Source {
+        case library(PHAsset)
+        case local(PhiLocalShots.Shot)
+    }
+
+    var id: String
+    var source: Source
+    var date: Date?
+    var hasRaw: Bool
+    var needsRetry: Bool
+
+    static func library(_ asset: PHAsset) -> AlbumShot {
+        AlbumShot(
+            id: "lib-\(asset.localIdentifier)",
+            source: .library(asset),
+            date: asset.creationDate,
+            hasRaw: PhiRawAsset.contains(asset),
+            needsRetry: false
+        )
+    }
+
+    static func local(_ shot: PhiLocalShots.Shot) -> AlbumShot {
+        AlbumShot(
+            id: "local-\(shot.id)",
+            source: .local(shot),
+            date: Self.date(fromStamp: shot.id),
+            hasRaw: shot.hasRaw,
+            needsRetry: shot.saveFailed == true && shot.savedToPhotos == false
+        )
+    }
+
+    private static func date(fromStamp id: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.date(from: id)
+    }
+}
+
 private struct AlbumThumb: View {
-    var asset: PHAsset
+    var shot: AlbumShot
     @State private var image: UIImage?
 
     var body: some View {
@@ -193,10 +258,18 @@ private struct AlbumThumb: View {
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if PhiRawAsset.contains(asset) {
+                if shot.hasRaw {
                     Text("RAW")
                         .font(CameraFont.parameter(9, medium: true))
                         .foregroundStyle(CameraColor.accent)
+                        .padding(5)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if shot.needsRetry {
+                    Text("未存入")
+                        .font(CameraFont.parameter(9, medium: true))
+                        .foregroundStyle(CameraColor.textPrimary)
                         .padding(5)
                 }
             }
@@ -205,20 +278,27 @@ private struct AlbumThumb: View {
     }
 
     private func load() async {
-        if let cached = DevelopCache.image(for: asset.localIdentifier) {
-            image = cached
-            return
+        switch shot.source {
+        case .library(let asset):
+            if let cached = DevelopCache.image(for: asset.localIdentifier) {
+                image = cached
+                return
+            }
+            let target = CGSize(width: 240, height: 240)
+            image = await AlbumImage.load(asset, target: target, fast: true)
+        case .local(let local):
+            image = AlbumImage.localPreview(local)
         }
-        let target = CGSize(width: 240, height: 240)
-        image = await AlbumImage.load(asset, target: target, fast: true)
     }
 }
 
 private struct AlbumPager: View {
-    var assets: [PHAsset]
+    var shots: [AlbumShot]
     @State var index: Int
     var onClose: () -> Void
-    var onProcess: (PHAsset) -> Void
+    var onEditLibrary: (PHAsset) -> Void
+    var onEditLocal: (String) -> Void
+    var onRetryLocal: (String) -> Void
 
     var body: some View {
         ZStack {
@@ -226,9 +306,14 @@ private struct AlbumPager: View {
             VStack(spacing: 0) {
                 pagerHeader
                 TabView(selection: $index) {
-                    ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { offset, asset in
-                        AlbumPage(asset: asset, onProcess: onProcess)
-                            .tag(offset)
+                    ForEach(Array(shots.enumerated()), id: \.element.id) { offset, shot in
+                        AlbumPage(
+                            shot: shot,
+                            onEditLibrary: onEditLibrary,
+                            onEditLocal: onEditLocal,
+                            onRetryLocal: onRetryLocal
+                        )
+                        .tag(offset)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -238,8 +323,8 @@ private struct AlbumPager: View {
 
     private var pagerHeader: some View {
         ZStack {
-            if assets.indices.contains(index) {
-                Text(Self.stamp(assets[index].creationDate))
+            if shots.indices.contains(index) {
+                Text(Self.stamp(shots[index].date))
                     .font(CameraFont.parameter(12))
                     .foregroundStyle(CameraColor.textSecondary)
             }
@@ -252,7 +337,7 @@ private struct AlbumPager: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("关闭")
                 Spacer()
-                Text("\(index + 1)/\(assets.count)")
+                Text("\(index + 1)/\(shots.count)")
                     .font(CameraFont.parameter(12, medium: true))
                     .foregroundStyle(CameraColor.textPrimary)
                     .padding(.trailing, 12)
@@ -272,8 +357,10 @@ private struct AlbumPager: View {
 }
 
 private struct AlbumPage: View {
-    var asset: PHAsset
-    var onProcess: (PHAsset) -> Void
+    var shot: AlbumShot
+    var onEditLibrary: (PHAsset) -> Void
+    var onEditLocal: (String) -> Void
+    var onRetryLocal: (String) -> Void
     @State private var image: UIImage?
     @State private var share = false
 
@@ -286,45 +373,76 @@ private struct AlbumPage: View {
                         .resizable()
                         .scaledToFit()
                 } else {
-                    Text("正在打开")
+                    Text(shot.hasRaw ? "RAW" : "正在打开")
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            HStack {
-                if PhiRawAsset.contains(asset) {
+            HStack(spacing: 16) {
+                if shot.hasRaw {
                     Text("RAW")
                         .font(CameraFont.parameter(12, medium: true))
                         .foregroundStyle(CameraColor.accent)
                 }
                 Spacer()
+                if shot.needsRetry, case .local(let local) = shot.source {
+                    Button("重试") { onRetryLocal(local.id) }
+                        .font(CameraFont.interface(15, weight: .medium))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .frame(minHeight: 44)
+                }
                 Button("导出") { share = true }
                     .font(CameraFont.interface(15, weight: .medium))
                     .foregroundStyle(image == nil ? CameraColor.border : CameraColor.textSecondary)
                     .disabled(image == nil)
-                Spacer()
-                Button("处理") {
-                    onProcess(asset)
+                    .frame(minHeight: 44)
+                Button(action: edit) {
+                    Text("编辑")
+                        .font(CameraFont.interface(15, weight: .medium))
+                        .foregroundStyle(CameraColor.accent)
+                        .padding(.horizontal, 16)
+                        .frame(height: 36)
+                        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(CameraColor.border, lineWidth: 1)
+                        }
                 }
-                .font(CameraFont.interface(15, weight: .medium))
-                .foregroundStyle(CameraColor.accent)
+                .buttonStyle(.plain)
+                .accessibilityLabel("编辑")
             }
             .padding(.horizontal, 24)
             .frame(height: 64)
         }
-        .task {
-            if let cached = DevelopCache.image(for: asset.localIdentifier) {
-                image = cached
-                return
-            }
-            image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false)
-        }
+        .task { await load() }
         .sheet(isPresented: $share) {
             if let image {
                 ActivityView(items: [image])
                     .presentationDetents([.medium, .large])
             }
+        }
+    }
+
+    private func edit() {
+        switch shot.source {
+        case .library(let asset):
+            onEditLibrary(asset)
+        case .local(let local):
+            onEditLocal(local.id)
+        }
+    }
+
+    private func load() async {
+        switch shot.source {
+        case .library(let asset):
+            if let cached = DevelopCache.image(for: asset.localIdentifier) {
+                image = cached
+                return
+            }
+            image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false)
+        case .local(let local):
+            image = AlbumImage.localPreview(local)
         }
     }
 }
@@ -354,6 +472,11 @@ enum AlbumImage {
                 }
             }
         }
+    }
+
+    static func localPreview(_ shot: PhiLocalShots.Shot) -> UIImage? {
+        guard let file = PhiLocalShots.displayFile(of: shot) else { return nil }
+        return UIImage(contentsOfFile: file.path)
     }
 }
 
