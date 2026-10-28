@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Grain, ISO, and shutter. Exposure compensation stays on the viewfinder drag.
+/// Format, grain, ISO, and shutter. Exposure compensation stays on the viewfinder drag.
 struct FinderSettingsSheet: View {
+    var format: CaptureFormat
+    var onFormat: (CaptureFormat) -> Void
     var grain: GrainStyle
     var onGrain: (GrainStyle) -> Void
     var iso: Float
@@ -14,35 +16,40 @@ struct FinderSettingsSheet: View {
     var onClose: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            header
-            section("GRAIN", caption: "拍摄后的颗粒，不改变取景") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    GrainStylePicker(selection: grain, onSelect: onGrain)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+                section("FORMAT", caption: formatCaption) {
+                    CaptureFormatPicker(selection: format, onSelect: onFormat)
+                }
+                section("GRAIN", caption: "拍摄后的颗粒，不改变取景") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        GrainStylePicker(selection: grain, onSelect: onGrain)
+                    }
+                }
+                section("ISO", caption: manualSupported ? "锁定这枚镜头的感光度" : "这枚镜头不能单独锁定 ISO 或快门。") {
+                    StepValue(
+                        text: isoText,
+                        canDecrease: isoIndex > 0,
+                        canIncrease: isoIndex < isoChoices.count - 1,
+                        onDecrease: { stepISO(-1) },
+                        onIncrease: { stepISO(1) }
+                    )
+                }
+                section("SHUTTER", caption: "锁定快门时间") {
+                    StepValue(
+                        text: MeterFormat.shutter(seconds: shutter),
+                        canDecrease: shutterIndex > 0,
+                        canIncrease: shutterIndex < shutterChoices.count - 1,
+                        onDecrease: { stepShutter(-1) },
+                        onIncrease: { stepShutter(1) }
+                    )
                 }
             }
-            section("ISO", caption: manualSupported ? "锁定这枚镜头的感光度" : "这枚镜头不能单独锁定 ISO 或快门。") {
-                StepValue(
-                    text: isoText,
-                    canDecrease: isoIndex > 0,
-                    canIncrease: isoIndex < isoChoices.count - 1,
-                    onDecrease: { stepISO(-1) },
-                    onIncrease: { stepISO(1) }
-                )
-            }
-            section("SHUTTER", caption: "锁定快门时间") {
-                StepValue(
-                    text: MeterFormat.shutter(seconds: shutter),
-                    canDecrease: shutterIndex > 0,
-                    canIncrease: shutterIndex < shutterChoices.count - 1,
-                    onDecrease: { stepShutter(-1) },
-                    onIncrease: { stepShutter(1) }
-                )
-            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(CameraColor.background)
         .presentationDetents([.medium, .large])
@@ -82,6 +89,17 @@ struct FinderSettingsSheet: View {
         }
     }
 
+    private var formatCaption: String {
+        switch format {
+        case .jpegAndRaw:
+            "默认。处理图和 RAW 作为同一张进相册。这一档如果不能出 RAW，就只存处理图。"
+        case .raw:
+            "只把 RAW 放进相册。这一档如果不能出 RAW，就改存处理图。"
+        case .jpeg:
+            "不请求 RAW。这台设备能写 HEIC 时存成 HEIC，否则 JPEG。"
+        }
+    }
+
     private var isoIndex: Int {
         guard isoChoices.isEmpty == false else { return 0 }
         return ExposureStops.nearestIndex(to: iso, in: isoChoices)
@@ -114,6 +132,39 @@ struct FinderSettingsSheet: View {
         }
         let index = min(max(shutterIndex + delta, 0), shutterChoices.count - 1)
         onShutter(shutterChoices[index])
+    }
+}
+
+private struct CaptureFormatPicker: View {
+    var selection: CaptureFormat
+    var onSelect: (CaptureFormat) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(CaptureFormat.allCases) { format in
+                let selected = format == selection
+                Button {
+                    onSelect(format)
+                } label: {
+                    VStack(spacing: 5) {
+                        Text(format.title)
+                            .font(CameraFont.parameter(12, medium: selected))
+                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Rectangle()
+                            .fill(selected ? CameraColor.accent : Color.clear)
+                            .frame(width: 14, height: 1.5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(format.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
     }
 }
 

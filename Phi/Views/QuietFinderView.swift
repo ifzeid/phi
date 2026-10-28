@@ -62,6 +62,8 @@ struct QuietFinderView: View {
         }
         .sheet(isPresented: $showSettings) {
             FinderSettingsSheet(
+                format: capture.captureFormat,
+                onFormat: { capture.setCaptureFormat($0) },
                 grain: capture.grainStyle,
                 onGrain: { capture.setGrainStyle($0) },
                 iso: camera.manualISOValue,

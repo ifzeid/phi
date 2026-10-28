@@ -8,6 +8,39 @@ enum PhotoSaveError: Error {
     case notAuthorized
 }
 
+/// One file inside a Photos asset. A JPEG+RAW pair uses `.photo` for the processed still and `.alternatePhoto` for the DNG.
+struct LibraryPayload {
+    var data: Data
+    var typeIdentifier: String
+    var filename: String
+    var alternate: Bool
+}
+
+struct LibraryRecord: Codable, Equatable {
+    struct File: Codable, Equatable {
+        var path: String
+        var typeIdentifier: String
+        var filename: String
+        var alternate: Bool
+    }
+
+    var files: [File]
+
+    func payloads() -> [LibraryPayload]? {
+        var items: [LibraryPayload] = []
+        for file in files {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: file.path)) else { return nil }
+            items.append(LibraryPayload(
+                data: data,
+                typeIdentifier: file.typeIdentifier,
+                filename: file.filename,
+                alternate: file.alternate
+            ))
+        }
+        return items
+    }
+}
+
 enum PhotoLibrary {
     static func addOnlyStatus() -> PHAuthorizationStatus {
         PHPhotoLibrary.authorizationStatus(for: .addOnly)
@@ -18,6 +51,14 @@ enum PhotoLibrary {
     }
 
     static func save(data: Data, typeIdentifier: String, filename: String) async throws {
+        try await save(payloads: [
+            LibraryPayload(data: data, typeIdentifier: typeIdentifier, filename: filename, alternate: false)
+        ])
+    }
+
+    /// One library asset. Pass the processed still first (`alternate == false`) and the DNG as `alternate` so Photos pairs them the way a RAW+JPEG capture does.
+    static func save(payloads: [LibraryPayload]) async throws {
+        guard payloads.isEmpty == false else { return }
         let status = addOnlyStatus()
         let granted: PHAuthorizationStatus
         if status == .notDetermined {
@@ -27,15 +68,16 @@ enum PhotoLibrary {
         }
         guard granted == .authorized || granted == .limited else { throw PhotoSaveError.notAuthorized }
 
-        let payload = data
-        let type = typeIdentifier
-        let name = filename
+        let items = payloads
         try await PHPhotoLibrary.shared().performChanges {
             let request = PHAssetCreationRequest.forAsset()
-            let options = PHAssetResourceCreationOptions()
-            options.uniformTypeIdentifier = type
-            options.originalFilename = name
-            request.addResource(with: .photo, data: payload, options: options)
+            for item in items {
+                let options = PHAssetResourceCreationOptions()
+                options.uniformTypeIdentifier = item.typeIdentifier
+                options.originalFilename = item.filename
+                let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
+                request.addResource(with: kind, data: item.data, options: options)
+            }
         }
     }
 }
@@ -46,6 +88,7 @@ enum StillArchive {
     static let lastUTIKey = "phi.lastStillUTI"
     static let lastSavedKey = "phi.lastStillSavedToPhotos"
     static let grainStyleKey = "phi.grainStyle"
+    static let lastBundleKey = "phi.lastStillBundle"
 
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -92,14 +135,32 @@ enum StillArchive {
         return try? JSONDecoder().decode(StillRecipe.self, from: data)
     }
 
-    static func write(data: Data, ext: String) throws -> URL {
+    static func stamp() -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let url = directory.appendingPathComponent("PHI-\(formatter.string(from: Date())).\(ext)")
+        return formatter.string(from: Date())
+    }
+
+    static func write(data: Data, ext: String) throws -> URL {
+        try write(data: data, stamp: stamp(), ext: ext)
+    }
+
+    static func write(data: Data, stamp: String, ext: String) throws -> URL {
+        let url = directory.appendingPathComponent("PHI-\(stamp).\(ext)")
         try data.write(to: url, options: .atomic)
         prune()
         return url
+    }
+
+    static func storeLastRecord(_ record: LibraryRecord) {
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        UserDefaults.standard.set(data, forKey: lastBundleKey)
+    }
+
+    static func loadLastRecord() -> LibraryRecord? {
+        guard let data = UserDefaults.standard.data(forKey: lastBundleKey) else { return nil }
+        return try? JSONDecoder().decode(LibraryRecord.self, from: data)
     }
 
     static func thumbnail(from image: UIImage) -> UIImage {
@@ -120,15 +181,20 @@ enum StillArchive {
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey]
         )) ?? []
-        let stills = files
-            .filter { $0.lastPathComponent.hasPrefix("PHI-") }
-            .sorted { lhs, rhs in
-                let left = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let right = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                return left > right
+        let stills = files.filter { $0.lastPathComponent.hasPrefix("PHI-") }
+        let stems = Dictionary(grouping: stills, by: { $0.deletingPathExtension().lastPathComponent })
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        }
+        let ordered = stems.keys.sorted { lhs, rhs in
+            let left = stems[lhs]?.map(modified).max() ?? .distantPast
+            let right = stems[rhs]?.map(modified).max() ?? .distantPast
+            return left > right
+        }
+        for stem in ordered.dropFirst(3) {
+            for url in stems[stem] ?? [] {
+                try? FileManager.default.removeItem(at: url)
             }
-        for url in stills.dropFirst(3) {
-            try? FileManager.default.removeItem(at: url)
         }
     }
 }

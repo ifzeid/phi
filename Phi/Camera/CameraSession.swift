@@ -58,6 +58,7 @@ final class CameraSession: ObservableObject {
     /// Crop stops and non-1× virtual zooms must not request Bayer RAW. `capturePhoto` throws if they do.
     private var rawSuppressed = false
     private var activeStopOptical = true
+    private var captureFormat: CaptureFormat = .jpegAndRaw
     /// The preview's rotation coordinator is created on the main thread. Suspend it before swapping inputs.
     let previewAnchor = PreviewAnchor()
 
@@ -375,13 +376,24 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    func setCaptureFormat(_ format: CaptureFormat) {
+        captureFormat = format
+        sessionQueue.async {
+            self.captureFormat = format
+            guard self.didConfigure else { return }
+            self.publishDeliveryLabel()
+        }
+    }
+
     func capturePhoto(
+        format: CaptureFormat,
         delegate: AVCapturePhotoCaptureDelegate,
         note: @escaping (_ usingRaw: Bool, _ codec: String) -> Void,
         completion: @escaping (Bool) -> Void
     ) {
         let flash = flashMode
         sessionQueue.async {
+            self.captureFormat = format
             guard self.session.isRunning else {
                 DispatchQueue.main.async {
                     self.statusMessage = "相机还没准备好。Camera isn't ready."
@@ -525,8 +537,9 @@ final class CameraSession: ObservableObject {
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
         let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }
+        let hardwareRaw = raw && rawSuppressed == false && activeStopOptical && captureFormat.wantsRaw
         return Discovery(
-            label: "\(raw ? "RAW" : codec) · \(aspect)",
+            label: CaptureFormat.label(preference: captureFormat, rawDelivered: hardwareRaw, codec: codec, aspect: aspect),
             aspect: aspect,
             raw: raw,
             range: range,
@@ -610,10 +623,12 @@ final class CameraSession: ObservableObject {
 
     private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String) {
         alignPhotoDimensions()
-        let bayer = bayerFormatIfDeliverable()
+        let bayer = captureFormat.wantsRaw ? bayerFormatIfDeliverable() : nil
         let processedCodec = processedPhotoCodec()
         let processed: [String: Any] = [AVVideoCodecKey: processedCodec.codec]
         let settings: AVCapturePhotoSettings
+        // RAW-only still asks for a processed companion so the in-app preview exists.
+        // Photos receives only the DNG in that mode. JPEG mode never requests Bayer.
         if let bayer {
             settings = AVCapturePhotoSettings(rawPixelFormatType: bayer, processedFormat: processed)
         } else {
@@ -631,7 +646,12 @@ final class CameraSession: ObservableObject {
         }
         let usingRaw = bayer != nil
         let codecName = processedCodec.name
-        let label = "\(usingRaw ? "RAW" : codecName) · \(cachedAspect)"
+        let label = CaptureFormat.label(
+            preference: captureFormat,
+            rawDelivered: usingRaw,
+            codec: codecName,
+            aspect: cachedAspect
+        )
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
         }
@@ -881,9 +901,14 @@ final class CameraSession: ObservableObject {
         let outputHasBayer = photoOutput.availableRawPhotoPixelFormatTypes.contains {
             AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
         }
-        let usingRaw = rawSuppressed == false && activeStopOptical && outputHasBayer
+        let usingRaw = captureFormat.wantsRaw && rawSuppressed == false && activeStopOptical && outputHasBayer
         let name = processedPhotoCodec().name
-        let label = "\(usingRaw ? "RAW" : name) · \(cachedAspect)"
+        let label = CaptureFormat.label(
+            preference: captureFormat,
+            rawDelivered: usingRaw,
+            codec: name,
+            aspect: cachedAspect
+        )
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
         }
