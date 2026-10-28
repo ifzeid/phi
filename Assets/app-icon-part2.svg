@@ -1,0 +1,8 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Camera mark / ivory body + red shutter">
+<path id="Viewfinder" d="M208 320H816V736H208V320Z" stroke="#F4F3EE" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Lens" d="M512 736C626.875 736 720 642.875 720 528C720 413.125 626.875 320 512 320C397.125 320 304 413.125 304 528C304 642.875 397.125 736 512 736Z" stroke="#F4F3EE" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Split axis" d="M512 320V736" stroke="#F4F3EE" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Shutter accent" d="M272 264H368" stroke="#F45135" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>

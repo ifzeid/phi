@@ -1,1 +1,67 @@
-# phi
+# PHI · 观止
+
+iPhone-only camera. Quiet Finder is the working default: a large viewfinder, focal lengths along its lower edge, and a centered shutter. The exposure sheet opens above that shutter and does not move it.
+
+English / internal name: Phi. Home screen name: **观止**. Bundle ID: `com.zeid.phi`.
+
+This repository was assembled on a machine without Xcode. It has not been compiled here. Open it on a Mac.
+
+## 打开 / Open
+
+需要 Mac、Xcode 16 或更新版本（iOS 18 SDK）。部署目标是 **iOS 18**，只含 iPhone（`TARGETED_DEVICE_FAMILY = 1`），没有 iPad target，也没有 Mac Catalyst。
+
+1. 用 Xcode 打开 `Phi.xcodeproj`。
+2. 运行目标选一台 iPhone，不要选 iPad 或 Mac。
+3. 真机需要在 Signing 里选好 Team。模拟器通常可以不选。
+4. Run。没有 Storyboard。
+
+模拟器没有后置相机。授权之后会看到取景框里的说明，而不是一张假的实时画面。曝光条在没有相机时仍可拖动，用来对一下刻度和数字；快门不会假装已经拍到照片。
+
+Requires a Mac with Xcode 16 or newer and the iOS 18 SDK. iPhone only. No storyboards. The Simulator has no rear camera, so the viewfinder states that instead of showing a stand-in photo.
+
+## 已实现 / What works
+
+- `AVCaptureSession` 后置预览，`.photo` preset。
+- 拍照使用 `photoQualityPrioritization = .speed`（输出上的上限也是 `.speed`）。
+- 设备提供 Bayer RAW 时保存 DNG，并附带一张用于缩略图的处理图；否则保存 HEIC，再不行则 JPEG。顶栏格式是真实结果，例如 `RAW · 4:3` 或 `HEIC · 4:3`。不启用 Apple ProRAW。
+- 快门旁的缩略图是 App 内最近一张。保存走「仅添加照片」权限。失败时文件留在 App 内，可以重试。
+- 焦段是水平视角换算的 35mm 等效焦距，优先 24 / 35 / 50，但只在变焦范围够得到、并且误差在 12% 以内时才用这些数字，同时保留 1×。做不到时改标真实的硬件变焦档。数字不是三枚定焦镜头的承诺。
+- 曝光条范围是 −2…+2 与设备补偿范围的交集，步进 0.1 EV。默认是 `0.0`，不是探索稿里的样例 −0.3。指示线跟当前数字用同一个值。自动曝光时写入 `exposureTargetBias`；关掉自动后，以锁定测光为 0，用 ISO / 快门实现 EV 偏移。
+- 右上角三位数字是已拍摄张数（样例稿上的 `024` 只是示意）。`NATURAL` 表示没有套用 LUT，不是一个胶片预设。
+
+## 未做 / Stubbed
+
+- LUT、胶片颗粒。
+- 视频。
+- 方向 A（精密仪表）整页。`PHOTO` / `MANUAL` 只切换自动 / 手动曝光。
+- 前置摄像头、完整相册、白平衡和手动对焦距离面板。
+- 超广角如果落在 24/35/50 之外，这版的三档选择器不会单独列出它。
+
+## 去算法：做到哪一步 / What is not de-algorithmized
+
+这里减弱了一部分计算摄影，**不是**「完全去算法」。
+
+会做的：
+
+- 优先 Bayer RAW（DNG），不打开 ProRAW。
+- 静帧质量优先级设为 `.speed`，少走融合和增强那条慢路径。速度优先不等于系统保证关闭了所有多帧合成。
+- 设备允许时关闭几何畸变校正、内容感知畸变校正，并关掉低光增强的自动开启。
+- 预览不加品牌 LUT，也不改照片颜色来迁就界面。
+
+仍然存在的：
+
+- 预览是系统视频管线，不是传感器的原始信号。
+- RAW 仍经过封装和相机 ISP，不是科研级的裸 dump。
+- 处理图（缩略图那张）仍然是系统成像的结果。
+- `.speed` 和上面的开关不能证明 Deep Fusion、Smart HDR 或降噪已经完全关闭。
+
+## 设计 / Design
+
+- 技能：[`Design/design-quiet-camera/SKILL.md`](Design/design-quiet-camera/SKILL.md)
+- 探索稿与图标：[`Assets/`](Assets/)
+- 色板：背景 `#090A0A`，面板 `#191B1B`，线 `#343737`，字 `#F4F3EE` / `#A5AAA7`，强调色 `#F45135`
+- 界面字是 SF Pro。参数字是随包的 IBM Plex Mono（SIL Open Font License，见 `Phi/Fonts/OFL.txt`）。如果字体没有注册成功，参数会退回系统等宽，不会冒充 Plex。
+- 产品图标是象牙色机身加朱红快门短横，来自 `Assets/app-icon-mark.svg`。`Design/design-quiet-camera/assets/icon.svg` 是技能自己的铅笔图标，不是 App 图标。
+- `Assets/icons/` 里有几份导出文件名和路径内容对不上。运行时图标在 `Phi/Design/PhiIcon.swift`，按几何重画，不按那些文件名。
+
+Figma（只读）：file `A6cCsPJ7B7GbNH3DZoDCbi`，Quiet Finder `86:80`，曝光 `86:135`，图标 `91:74`。

@@ -1,0 +1,13 @@
+interface:
+  display_name: 极简相机设计
+  short_description: 延续黑色、橙红与细线图标的相机视觉体系，设计取景、参数与拍摄状态
+  default_prompt: 使用 $design-quiet-camera，基于当前相机设计延展一个新界面，保持视觉与交互一致。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
