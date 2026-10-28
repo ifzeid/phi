@@ -709,10 +709,10 @@ final class CameraSession: ObservableObject {
     private func publishManualRanges() {
         guard let device else { return }
         let format = device.activeFormat
-        let isos = ExposureStops.isos(min: format.minISO, max: format.maxISO)
+        let isos = ExposureStops.isos(minISO: format.minISO, maxISO: format.maxISO)
         let shutters = ExposureStops.shutters(
-            min: CMTimeGetSeconds(format.minExposureDuration),
-            max: CMTimeGetSeconds(format.maxExposureDuration)
+            secondsMin: CMTimeGetSeconds(format.minExposureDuration),
+            secondsMax: CMTimeGetSeconds(format.maxExposureDuration)
         )
         DispatchQueue.main.async {
             self.isoChoices = isos
