@@ -212,20 +212,22 @@ enum PhotoLibrary {
         let box = IdentifierBox()
         let items = payloads
         let shotLocation = location
-        try await PHPhotoLibrary.shared().performChanges {
-            let request = PHAssetCreationRequest.forAsset()
-            request.location = shotLocation
-            for item in items {
-                let options = PHAssetResourceCreationOptions()
-                options.uniformTypeIdentifier = item.typeIdentifier
-                options.originalFilename = item.filename
-                let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
-                request.addResource(with: kind, data: item.data, options: options)
-            }
-            if let placeholder = request.placeholderForCreatedAsset {
-                box.localIdentifier = placeholder.localIdentifier
-                if let album, let change = PHAssetCollectionChangeRequest(for: album) {
-                    change.addAssets([placeholder] as NSArray)
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                request.location = shotLocation
+                for item in items {
+                    let options = PHAssetResourceCreationOptions()
+                    options.uniformTypeIdentifier = item.typeIdentifier
+                    options.originalFilename = item.filename
+                    let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
+                    request.addResource(with: kind, data: item.data, options: options)
+                }
+                if let placeholder = request.placeholderForCreatedAsset {
+                    box.localIdentifier = placeholder.localIdentifier
+                    if let album, let change = PHAssetCollectionChangeRequest(for: album) {
+                        change.addAssets([placeholder] as NSArray)
+                    }
                 }
             }
         } catch let error as NSError {
