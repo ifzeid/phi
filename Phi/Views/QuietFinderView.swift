@@ -197,53 +197,50 @@ struct QuietFinderView: View {
         }
     }
 
-    private var stage: some View {
-        ZStack {
-            CameraColor.surface
-            if camera.isConfigured {
-                StableCameraPreview(
-                    session: camera.session,
-                    device: camera.videoDevice,
-                    epoch: camera.previewEpoch,
-                    anchor: camera.previewAnchor,
-                    onTap: { viewPoint, devicePoint in
-                        focusPoint = viewPoint
-                        camera.focus(at: devicePoint)
-                    },
-                    onDrag: { event in
-                        handleDrag(event)
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .equatable()
-            } else {
-                VStack(spacing: 18) {
-                    Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
-                        .font(CameraFont.interface(15, weight: .medium))
-                        .foregroundStyle(CameraColor.textSecondary)
-                        .multilineTextAlignment(.center)
-                    if capture.hasDevelopBase == false, camera.statusMessage != nil {
-                        Button("编辑样张") { capture.openSample() }
-                            .buttonStyle(QuietButtonStyle())
-                            .padding(.horizontal, 28)
-                    }
-                }
-                .padding(24)
+    private var livePreview: some View {
+        let onTap: (CGPoint, CGPoint) -> Void = { viewPoint, devicePoint in
+            focusPoint = viewPoint
+            camera.focus(at: devicePoint)
+        }
+        let onDrag: (PreviewDrag) -> Void = { event in
+            handleDrag(event)
+        }
+        let preview = StableCameraPreview(
+            session: camera.session,
+            device: camera.videoDevice,
+            epoch: camera.previewEpoch,
+            anchor: camera.previewAnchor,
+            onTap: onTap,
+            onDrag: onDrag
+        ).equatable()
+        return preview.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var stagePlaceholder: some View {
+        VStack(spacing: 18) {
+            Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
+                .font(CameraFont.interface(15, weight: .medium))
+                .foregroundStyle(CameraColor.textSecondary)
+                .multilineTextAlignment(.center)
+            if capture.hasDevelopBase == false, camera.statusMessage != nil {
+                Button("编辑样张", action: capture.openSample)
+                    .buttonStyle(QuietButtonStyle())
+                    .padding(.horizontal, 28)
             }
         }
-        .clipped()
-        .overlay {
-            if showGrid {
-                CompositionGrid()
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
-        .overlay {
-            if camera.isConfigured, let message = camera.statusMessage ?? (camera.isRunning ? nil : "正在打开相机") {
-                Button {
-                    camera.statusMessage = nil
-                } label: {
+        .padding(24)
+    }
+
+    private var stageStatusText: String? {
+        if camera.isConfigured == false { return nil }
+        return camera.statusMessage ?? (camera.isRunning ? nil : "正在打开相机")
+    }
+
+    private var stageStatus: some View {
+        let dismiss: () -> Void = { camera.statusMessage = nil }
+        return Group {
+            if let message = stageStatusText {
+                Button(action: dismiss) {
                     Text(message)
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textPrimary)
@@ -259,39 +256,21 @@ struct QuietFinderView: View {
                 .accessibilityHint("点一下关掉提示")
             }
         }
-        .overlay {
-            Color.white
-                .opacity(flashOpacity)
-                .allowsHitTesting(false)
+    }
+
+    private var shutterScale: some View {
+        let onSelect: (Int) -> Void = { index in
+            guard camera.shutterChoices.indices.contains(index) else { return }
+            camera.setManualShutter(camera.shutterChoices[index])
         }
-        .overlay(alignment: .topLeading) {
-            Text(counterText)
-                .font(CameraFont.parameter(12, medium: true))
-                .foregroundStyle(CameraColor.textPrimary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .padding(12)
-                .accessibilityLabel("已拍摄 \(capture.captureCount) 张")
-                .allowsHitTesting(false)
-        }
-        .overlay(alignment: .topTrailing) {
-            ExposureBadge(
-                automatic: camera.autoExposure,
-                iso: isoBadge,
-                shutter: shutterBadge
-            )
-            .padding(12)
-            .allowsHitTesting(false)
-        }
-        .overlay(alignment: .top) {
+        return Group {
             if camera.autoExposure == false, camera.shutterChoices.isEmpty == false {
                 QuietTickScale(
                     label: shutterBadge,
                     index: shutterIndex,
                     count: camera.shutterChoices.count,
                     horizontal: true,
-                    onSelect: { camera.setManualShutter(camera.shutterChoices[$0]) }
+                    onSelect: onSelect
                 )
                 .frame(height: 48)
                 .padding(.leading, 16)
@@ -299,14 +278,21 @@ struct QuietFinderView: View {
                 .padding(.top, 8)
             }
         }
-        .overlay(alignment: .trailing) {
+    }
+
+    private var isoScale: some View {
+        let onSelect: (Int) -> Void = { index in
+            guard camera.isoChoices.indices.contains(index) else { return }
+            camera.setManualISO(camera.isoChoices[index])
+        }
+        return Group {
             if camera.autoExposure == false, camera.isoChoices.isEmpty == false {
                 QuietTickScale(
                     label: isoBadge,
                     index: isoIndex,
                     count: camera.isoChoices.count,
                     horizontal: false,
-                    onSelect: { camera.setManualISO(camera.isoChoices[$0]) }
+                    onSelect: onSelect
                 )
                 .frame(width: 64)
                 .padding(.top, 56)
@@ -314,15 +300,26 @@ struct QuietFinderView: View {
                 .padding(.trailing, 6)
             }
         }
-        .overlay(alignment: .bottom) {
+    }
+
+    private var focalStopBar: some View {
+        let onSelect: (FocalStop) -> Void = { stop in
+            camera.select(stop: stop)
+        }
+        return Group {
             if camera.focalStops.isEmpty == false {
-                FocalLengthPicker(stops: camera.focalStops, selectedID: camera.selectedStopID) { stop in
-                    camera.select(stop: stop)
-                }
+                FocalLengthPicker(
+                    stops: camera.focalStops,
+                    selectedID: camera.selectedStopID,
+                    onSelect: onSelect
+                )
                 .padding(.bottom, 14)
             }
         }
-        .overlay(alignment: .trailing) {
+    }
+
+    private var exposureScale: some View {
+        Group {
             if camera.autoExposure {
                 QuietTickScale(
                     label: ExposureFormat.signedDecimal(camera.exposureEV),
@@ -339,26 +336,89 @@ struct QuietFinderView: View {
                 .accessibilityHidden(rulerOpacity < 0.2)
             }
         }
-        .overlay {
-            GeometryReader { proxy in
-                let point = focusPoint ?? CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                if camera.isConfigured {
-                    FocusReticle()
-                        .position(point)
-                        .allowsHitTesting(false)
-                        .animation(.easeOut(duration: 0.18), value: point.x)
-                        .animation(.easeOut(duration: 0.18), value: point.y)
-                }
-            }
-        }
-        .onChange(of: camera.statusMessage) { _, message in
+    }
+
+    private var stage: some View {
+        let onStatus: (String?, String?) -> Void = { _, message in
             guard let message else { return }
             scheduleStatusDismiss(message)
         }
-        .onChange(of: capture.shutterTick) { _, _ in
+        let onShutter: (Int, Int) -> Void = { _, _ in
             flashOpacity = 0.85
             withAnimation(.easeOut(duration: 0.28)) {
                 flashOpacity = 0
+            }
+        }
+        return ZStack {
+            CameraColor.surface
+            if camera.isConfigured {
+                livePreview
+            } else {
+                stagePlaceholder
+            }
+        }
+        .clipped()
+        .overlay { gridOverlay }
+        .overlay { stageStatus }
+        .overlay { flashOverlay }
+        .overlay(alignment: .topLeading) { captureCounter }
+        .overlay(alignment: .topTrailing) { exposureBadge }
+        .overlay(alignment: .top) { shutterScale }
+        .overlay(alignment: .trailing) { isoScale }
+        .overlay(alignment: .bottom) { focalStopBar }
+        .overlay(alignment: .trailing) { exposureScale }
+        .overlay { focusOverlay }
+        .onChange(of: camera.statusMessage, onStatus)
+        .onChange(of: capture.shutterTick, onShutter)
+    }
+
+    private var gridOverlay: some View {
+        Group {
+            if showGrid {
+                CompositionGrid()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var flashOverlay: some View {
+        Color.white
+            .opacity(flashOpacity)
+            .allowsHitTesting(false)
+    }
+
+    private var captureCounter: some View {
+        Text(counterText)
+            .font(CameraFont.parameter(12, medium: true))
+            .foregroundStyle(CameraColor.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .padding(12)
+            .accessibilityLabel("已拍摄 \(capture.captureCount) 张")
+            .allowsHitTesting(false)
+    }
+
+    private var exposureBadge: some View {
+        ExposureBadge(
+            automatic: camera.autoExposure,
+            iso: isoBadge,
+            shutter: shutterBadge
+        )
+        .padding(12)
+        .allowsHitTesting(false)
+    }
+
+    private var focusOverlay: some View {
+        GeometryReader { proxy in
+            let point = focusPoint ?? CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            if camera.isConfigured {
+                FocusReticle()
+                    .position(point)
+                    .allowsHitTesting(false)
+                    .animation(.easeOut(duration: 0.18), value: point.x)
+                    .animation(.easeOut(duration: 0.18), value: point.y)
             }
         }
     }
