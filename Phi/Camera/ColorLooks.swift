@@ -20,25 +20,25 @@ enum ColorLooks {
         case .ccd:
             current = ccd(current)
         }
+        current = toLinear(current)
         if halo {
-            current = bloom(current)
+            current = highlightDiffusion(current)
         }
-        return toLinear(current)
+        return current
     }
 
     private static func toPerceptual(_ image: CIImage) -> CIImage {
         image.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 0.4545])
     }
 
-    /// Global film curve for the default look. Real blacks, a little midtone snap, soft highlight shoulder.
-    /// No local tone mapping. Fine sharpening only.
+    /// Global film curve. The toe lifts shadows instead of crushing them. No local tone mapping.
     private static func baseFilm(_ image: CIImage) -> CIImage {
         let curved = tone(image, points: [
-            (0.00, 0.00),
-            (0.16, 0.09),
-            (0.42, 0.40),
-            (0.70, 0.74),
-            (1.00, 0.97)
+            (0.00, 0.02),
+            (0.12, 0.18),
+            (0.40, 0.44),
+            (0.72, 0.76),
+            (1.00, 0.98)
         ])
         return curved.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: 1.12,
@@ -215,36 +215,40 @@ enum ColorLooks {
         return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
-    /// High-light diffusion only. Fixed threshold and radius. Stacks on any base look.
-    private static func bloom(_ image: CIImage) -> CIImage {
-        let floor = CGFloat(0.78)
-        let clamped = image.applyingFilter("CIColorClamp", parameters: [
-            "inputMinComponents": CIVector(x: floor, y: floor, z: floor, w: 0),
-            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
+    /// Ricoh-style highlight diffusion. Linear light, source color, no vignette and no tint.
+    /// Runs after the look is back in linear light, and before grain.
+    private static func highlightDiffusion(_ image: CIImage) -> CIImage {
+        let extent = image.extent
+        let longest = Swift.max(extent.width, extent.height)
+        guard longest > 2 else { return image }
+        let highlights = tone(image, points: [
+            (0.00, 0.00),
+            (0.80, 0.00),
+            (0.88, 0.35),
+            (0.94, 0.72),
+            (1.00, 1.00)
         ])
-        let excess = clamped.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: -floor, y: -floor, z: -floor, w: 0)
-        ])
-        let longest = Swift.max(image.extent.width, image.extent.height)
-        let sigma = Swift.max(8, longest * 0.035)
-        let blurred = excess.applyingGaussianBlur(sigma: sigma).cropped(to: image.extent)
+        let clamped = highlights.clampedToExtent()
+        let wide = clamped.applyingGaussianBlur(sigma: longest * 0.028).cropped(to: extent)
+        let tight = clamped.applyingGaussianBlur(sigma: longest * 0.016).cropped(to: extent)
+        guard let scales = CIFilter(name: "CIDissolveTransition") else { return image }
+        scales.setValue(tight, forKey: kCIInputImageKey)
+        scales.setValue(wide, forKey: kCIInputTargetImageKey)
+        scales.setValue(0.5, forKey: kCIInputTimeKey)
+        let glow = (scales.outputImage ?? wide).cropped(to: extent)
         guard let screen = CIFilter(name: "CIScreenBlendMode") else { return image }
-        screen.setValue(blurred, forKey: kCIInputImageKey)
+        screen.setValue(glow, forKey: kCIInputImageKey)
         screen.setValue(image, forKey: kCIInputBackgroundImageKey)
-        guard let bloomed = screen.outputImage?.cropped(to: image.extent) else { return image }
-        guard let dissolve = CIFilter(name: "CIDissolveTransition") else { return image }
-        dissolve.setValue(image, forKey: kCIInputImageKey)
-        dissolve.setValue(bloomed, forKey: kCIInputTargetImageKey)
-        dissolve.setValue(0.42, forKey: kCIInputTimeKey)
-        let mixed = (dissolve.outputImage ?? image).cropped(to: image.extent)
+        guard let bloomed = screen.outputImage?.cropped(to: extent) else { return image }
+        guard let mix = CIFilter(name: "CIDissolveTransition") else { return image }
+        mix.setValue(image, forKey: kCIInputImageKey)
+        mix.setValue(bloomed, forKey: kCIInputTargetImageKey)
+        mix.setValue(0.30, forKey: kCIInputTimeKey)
+        let mixed = (mix.outputImage ?? image).cropped(to: extent)
         return mixed.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: 1,
-            kCIInputBrightnessKey: 0.008,
-            kCIInputContrastKey: 0.94
+            kCIInputBrightnessKey: 0,
+            kCIInputContrastKey: 0.95
         ])
     }
 

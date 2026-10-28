@@ -63,6 +63,32 @@ enum StillPipeline {
         applyGrain(to: image, style: style)
     }
 
+    /// Mean Rec.709 luma of a linear image. Used only to decide a global night lift.
+    static func meanLinearLuma(_ image: CIImage) -> Float? {
+        let extent = image.extent
+        guard extent.width > 2, extent.height > 2, extent.isInfinite == false else { return nil }
+        guard let average = CIFilter(name: "CIAreaAverage") else { return nil }
+        average.setValue(image, forKey: kCIInputImageKey)
+        average.setValue(CIVector(cgRect: extent), forKey: kCIInputExtentKey)
+        guard let pixel = average.outputImage else { return nil }
+        var bitmap = [Float](repeating: 0, count: 4)
+        renderLock.lock()
+        bitmap.withUnsafeMutableBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            context.render(
+                pixel,
+                toBitmap: base,
+                rowBytes: 16,
+                bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                format: .RGBAf,
+                colorSpace: linearP3
+            )
+        }
+        renderLock.unlock()
+        let luma = 0.2126 * bitmap[0] + 0.7152 * bitmap[1] + 0.0722 * bitmap[2]
+        return luma.isFinite ? luma : nil
+    }
+
     static func displayImage(_ image: CIImage) -> CGImage? {
         renderLock.lock()
         defer { renderLock.unlock() }

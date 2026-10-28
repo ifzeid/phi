@@ -11,6 +11,8 @@ struct AlbumBrowser: View {
     var onEditLibrary: (PHAsset) -> Void
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
+    /// DEBUG screenshots. Skips Photos and shows SampleStill.
+    var sampleGallery = false
 
     @State private var shots: [AlbumShot] = []
     @State private var phase: Phase = .checking
@@ -68,6 +70,7 @@ struct AlbumBrowser: View {
             }
         }
         .task(id: revision) { await reload() }
+        .modifier(HiddenSystemChrome())
         .safeAreaInset(edge: .bottom) {
             albumBar
         }
@@ -281,6 +284,11 @@ struct AlbumBrowser: View {
     }
 
     private func reload() async {
+        if sampleGallery {
+            shots = Self.sampleShots()
+            phase = .ready
+            return
+        }
         let locals = PhiLocalShots.load().reversed()
         let status = await PhotoLibrary.requestReadWrite()
         guard PhotoLibrary.canReadLibrary(status) else {
@@ -438,6 +446,41 @@ private struct AlbumShot: Identifiable {
     }
 }
 
+extension AlbumBrowser {
+    fileprivate static func sampleShots() -> [AlbumShot] {
+        let today = Date()
+        let older = Calendar.current.date(byAdding: .day, value: -40, to: today) ?? today
+        func shot(id: String, date: Date, missing: Bool, raw: Bool) -> AlbumShot {
+            let local = PhiLocalShots.Shot(
+                id: id,
+                files: [],
+                hasRaw: raw,
+                savedToPhotos: false,
+                photosIdentifier: nil,
+                saveFailed: false,
+                aspect: PhotoAspect.threeByFour.rawValue,
+                lensZoom: 1
+            )
+            return AlbumShot(
+                id: id,
+                source: .local(local),
+                date: date,
+                hasRaw: raw,
+                needsRetry: false,
+                missing: missing,
+                lensZoom: 1,
+                framed: .threeByFour
+            )
+        }
+        return [
+            shot(id: "sample-1", date: today, missing: false, raw: true),
+            shot(id: "sample-2", date: today, missing: false, raw: false),
+            shot(id: "sample-missing", date: today, missing: true, raw: false),
+            shot(id: "sample-3", date: older, missing: false, raw: true)
+        ]
+    }
+}
+
 private struct AlbumThumb: View {
     var shot: AlbumShot
     var marked: Bool? = nil
@@ -505,6 +548,10 @@ private struct AlbumThumb: View {
     }
 
     private func load() async {
+        if shot.id.hasPrefix("sample-") {
+            image = shot.missing ? nil : UIImage(named: "SampleStill")
+            return
+        }
         switch shot.source {
         case .library(let asset):
             if image == nil {
@@ -608,26 +655,26 @@ private struct AlbumPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                CameraColor.background
-                if shot.missing {
-                    VStack(spacing: 8) {
-                        PhiGlyphImage(glyph: .missing)
-                            .foregroundStyle(CameraColor.textSecondary)
-                        Text("文件不可用")
-                            .font(CameraFont.interface(13))
-                            .foregroundStyle(CameraColor.textSecondary)
+            PhotoCanvas(widthOverHeight: shot.framed.widthOverHeight) {
+                ZStack {
+                    CameraColor.background
+                    if shot.missing {
+                        VStack(spacing: 8) {
+                            PhiGlyphImage(glyph: .missing)
+                                .foregroundStyle(CameraColor.textSecondary)
+                            Text("文件不可用")
+                                .font(CameraFont.interface(13))
+                                .foregroundStyle(CameraColor.textSecondary)
+                        }
+                    } else if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        ProgressView().tint(CameraColor.accent)
                     }
-                } else if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    ProgressView().tint(CameraColor.accent)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(390.0 / 520.0, contentMode: .fit)
             Text(metaLine)
                 .font(CameraFont.parameter(11))
                 .foregroundStyle(CameraColor.textSecondary)

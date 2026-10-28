@@ -65,6 +65,8 @@ final class CameraSession: ObservableObject {
     private var lensGeneration = 0
     private var focusReturnObservation: NSKeyValueObservation?
     private var focusGeneration = 0
+    private var focusHeld = false
+    private var subjectAreaToken: NSObjectProtocol?
     private var didHintTooClose = false
     private var manualISO: Float?
     private var manualDuration: CMTime?
@@ -366,25 +368,29 @@ final class CameraSession: ObservableObject {
             guard watch.sawAdjusting else { return }
             self?.sessionQueue.async {
                 guard self?.device?.uniqueID == token, self?.focusGeneration == generation else { return }
-                self?.engageContinuousAutofocus()
+                self?.holdFocus(deviceID: token, generation: generation)
             }
         }
         sessionQueue.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             guard self?.device?.uniqueID == token, self?.focusGeneration == generation else { return }
+            guard self?.focusHeld == false else { return }
             guard self?.device?.isAdjustingFocus == false else { return }
-            self?.engageContinuousAutofocus()
+            self?.holdFocus(deviceID: token, generation: generation)
         }
         DispatchQueue.main.async {
             self.focusLocked = false
         }
     }
 
-    /// Continuous autofocus on the device that is actually in the session. Custom exposure does not take the lens.
+    /// Continuous autofocus. Used when a new physical camera is installed, not on every exposure tick.
     private func engageContinuousAutofocus() {
         focusReturnObservation?.invalidate()
         focusReturnObservation = nil
+        clearSubjectWatch()
+        focusHeld = false
         try? lockDevice { device in
             Self.applyFocusLimits(device)
+            device.isSubjectAreaChangeMonitoringEnabled = false
             if device.isFocusModeSupported(.continuousAutoFocus) {
                 device.focusMode = .continuousAutoFocus
             }
@@ -392,6 +398,55 @@ final class CameraSession: ObservableObject {
                 device.exposureMode = .continuousAutoExposure
             }
         }
+        DispatchQueue.main.async {
+            self.focusLocked = false
+        }
+    }
+
+    /// After a tap settles, keep that focus until the subject area changes.
+    private func holdFocus(deviceID: String, generation: Int) {
+        guard device?.uniqueID == deviceID, focusGeneration == generation else { return }
+        guard let current = device else { return }
+        focusHeld = true
+        try? lockDevice { device in
+            if device.isFocusModeSupported(.locked) {
+                device.focusMode = .locked
+            }
+            device.isSubjectAreaChangeMonitoringEnabled = true
+        }
+        watchSubjectArea(current, deviceID: deviceID, generation: generation)
+        DispatchQueue.main.async {
+            self.focusLocked = true
+        }
+    }
+
+    private func watchSubjectArea(_ device: AVCaptureDevice, deviceID: String, generation: Int) {
+        clearSubjectWatch()
+        subjectAreaToken = NotificationCenter.default.addObserver(
+            forName: AVCaptureDevice.subjectAreaDidChangeNotification,
+            object: device,
+            queue: nil
+        ) { [weak self] _ in
+            self?.sessionQueue.async {
+                guard self?.device?.uniqueID == deviceID, self?.focusGeneration == generation else { return }
+                self?.engageContinuousAutofocus()
+            }
+        }
+    }
+
+    private func clearSubjectWatch() {
+        if let subjectAreaToken {
+            NotificationCenter.default.removeObserver(subjectAreaToken)
+            self.subjectAreaToken = nil
+        }
+    }
+
+    /// Handheld night stills can use a shutter as long as 1/4 s. Nothing here forces a shorter cap.
+    private static func allowHandheldShutter(_ device: AVCaptureDevice) {
+        let quarter = CMTime(value: 1, timescale: 4)
+        let longest = CMTimeMinimum(quarter, device.activeFormat.maxExposureDuration)
+        guard CMTimeCompare(longest, device.activeFormat.minExposureDuration) >= 0 else { return }
+        device.activeMaxExposureDuration = longest
     }
 
     /// Physical cameras only. The virtual multi-cam's own focus defaults are what let tele zoom focus.
@@ -525,9 +580,6 @@ final class CameraSession: ObservableObject {
                 self.evApplyQueued = false
                 let ev = self.pendingEV ?? stepped
                 try? self.lockDevice { device in
-                    if device.isExposureModeSupported(.continuousAutoExposure) {
-                        device.exposureMode = .continuousAutoExposure
-                    }
                     device.setExposureTargetBias(self.clampedBias(Float(ev), device: device), completionHandler: nil)
                 }
             }
@@ -685,7 +737,8 @@ final class CameraSession: ObservableObject {
         currentInput = input
         session.addOutput(photoOutput)
         // Speed is set before any AVCapturePhotoSettings is created. A higher value throws.
-        photoOutput.maxPhotoQualityPrioritization = .speed
+        // .speed delivers a fast, denoised, soft still. The shutter still uses one frame; quality is the photo.
+        photoOutput.maxPhotoQualityPrioritization = .quality
         if photoOutput.isAppleProRAWSupported {
             photoOutput.isAppleProRAWEnabled = false
         }
@@ -733,6 +786,7 @@ final class CameraSession: ObservableObject {
                 device.whiteBalanceMode = .continuousAutoWhiteBalance
             }
             device.setExposureTargetBias(0, completionHandler: nil)
+            Self.allowHandheldShutter(device)
             if device.isGeometricDistortionCorrectionSupported {
                 device.isGeometricDistortionCorrectionEnabled = false
             }
@@ -852,7 +906,9 @@ final class CameraSession: ObservableObject {
         if dimensions.width > 0, dimensions.height > 0 {
             settings.maxPhotoDimensions = dimensions
         }
-        settings.photoQualityPrioritization = .speed
+        settings.photoQualityPrioritization = .quality
+        let shotDimensions = settings.maxPhotoDimensions
+        log.info("photo settings quality raw \(rawPixel != nil) codec \(chosenCodec.name, privacy: .public) dims \(shotDimensions.width)x\(shotDimensions.height)")
         if photoOutput.supportedFlashModes.contains(flash) {
             settings.flashMode = flash
         }
@@ -944,8 +1000,8 @@ final class CameraSession: ObservableObject {
             }
         }
         session.commitConfiguration()
-        engageContinuousAutofocus()
         if sameDevice == false {
+            self.engageContinuousAutofocus()
             observeMeter(newDevice)
             let deviceID = newDevice.uniqueID
             let millimeters = Self.framedMillimeters(newDevice)
@@ -1020,10 +1076,6 @@ final class CameraSession: ObservableObject {
             self.manualISO = iso
             self.manualDuration = duration
             device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: nil)
-            Self.applyFocusLimits(device)
-            if device.isFocusModeSupported(.continuousAutoFocus) {
-                device.focusMode = .continuousAutoFocus
-            }
             let seconds = CMTimeGetSeconds(duration)
             DispatchQueue.main.async {
                 self.manualISOValue = iso
@@ -1093,8 +1145,6 @@ final class CameraSession: ObservableObject {
                 device.setExposureTargetBias(self.clampedBias(Float(bias), device: device), completionHandler: nil)
             }
         }
-        alignPhotoDimensions()
-        engageContinuousAutofocus()
         publishManualRanges()
         publishDeliveryLabel()
     }
@@ -1190,37 +1240,50 @@ final class CameraSession: ObservableObject {
         match: (OSType) -> Bool
     ) -> Bool {
         guard let device else { return false }
-        let ordered = Self.formatsForRaw(on: device, preferFullSensor: preferFullSensor)
-        // Read only after the device swap has committed. A list from the previous camera is not this stop.
-        logRawTypes(millimeters: millimeters, note: "after-commit")
-        if preferFullSensor == false, rawTypes(matching: match).isEmpty == false {
-            alignPhotoDimensions()
-            if rawTypes(matching: match).isEmpty == false {
-                stillFormatDeviceID = device.uniqueID
-                logActiveCamera("capture-format")
-                return true
-            }
+        // Mode 0 must leave ProRAW off. While it is on, the output hides Bayer formats.
+        applyProRAWSwitch()
+        if session.sessionPreset != .photo, session.canSetSessionPreset(.photo) {
+            session.beginConfiguration()
+            session.sessionPreset = .photo
+            session.commitConfiguration()
         }
-        for format in ordered.prefix(8) {
+        logActiveCamera("after-commit")
+        logRawTypes(millimeters: millimeters, note: "after-commit")
+        if keepRawDimensions(on: device.activeFormat, match: match) {
+            stillFormatDeviceID = device.uniqueID
+            logActiveCamera("capture-format")
+            return true
+        }
+        let ordered = Self.formatsForRaw(on: device, preferFullSensor: preferFullSensor)
+        for format in ordered.prefix(12) {
+            if format === device.activeFormat { continue }
             do {
-                try applyActiveFormat(format, on: device)
+                try commitStillFormat(format, on: device)
             } catch {
                 continue
             }
-            // Formats are valid only after commitConfiguration returns.
             logRawTypes(millimeters: millimeters, note: "tried")
-            if rawTypes(matching: match).isEmpty == false {
+            if keepRawDimensions(on: format, match: match) {
                 stillFormatDeviceID = device.uniqueID
                 logActiveCamera("capture-format")
                 return true
             }
         }
         logRawTypes(millimeters: millimeters, note: "none")
+        logActiveCamera("capture-none")
         return false
     }
 
-    private func applyActiveFormat(_ format: AVCaptureDevice.Format, on device: AVCaptureDevice) throws {
+    /// Writes the still format, zoom 1, the photo preset, and the ProRAW flag, then commits.
+    /// RAW types are only meaningful after this returns.
+    private func commitStillFormat(_ format: AVCaptureDevice.Format, on device: AVCaptureDevice) throws {
         session.beginConfiguration()
+        if session.canSetSessionPreset(.photo) {
+            session.sessionPreset = .photo
+        }
+        if photoOutput.isAppleProRAWSupported {
+            photoOutput.isAppleProRAWEnabled = processMode.wantsProRaw
+        }
         do {
             try device.lockForConfiguration()
         } catch {
@@ -1235,21 +1298,39 @@ final class CameraSession: ObservableObject {
             device.videoZoomFactor = native
         }
         device.unlockForConfiguration()
-        if let dimensions = Self.largestPhotoDimensions(format) {
-            photoOutput.maxPhotoDimensions = dimensions
-        }
         session.commitConfiguration()
-        engageContinuousAutofocus()
     }
 
-    /// Device type, zoom, and RAW formats. Call only after `commitConfiguration` has returned.
+    /// Picks the largest `maxPhotoDimensions` that still lists the RAW format. A too-large size clears the list.
+    private func keepRawDimensions(on format: AVCaptureDevice.Format, match: (OSType) -> Bool) -> Bool {
+        let sizes = format.supportedMaxPhotoDimensions.sorted { lhs, rhs in
+            Int(lhs.width) * Int(lhs.height) > Int(rhs.width) * Int(rhs.height)
+        }
+        if rawTypes(matching: match).isEmpty == false, sizes.isEmpty {
+            return true
+        }
+        let previous = photoOutput.maxPhotoDimensions
+        for size in sizes {
+            photoOutput.maxPhotoDimensions = size
+            if rawTypes(matching: match).isEmpty == false {
+                return true
+            }
+        }
+        photoOutput.maxPhotoDimensions = previous
+        return rawTypes(matching: match).isEmpty == false
+    }
+
+    /// Device type, zoom, RAW formats, preset, ProRAW flag, and dimensions. Call after `commitConfiguration`.
     private func logActiveCamera(_ context: String) {
         guard let device else { return }
         let types = photoOutput.availableRawPhotoPixelFormatTypes
         let listed = types.map { String($0) }.joined(separator: ",")
         let bayer = types.filter(AVCapturePhotoOutput.isBayerRAWPixelFormat).map { String($0) }.joined(separator: ",")
         let zoom = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), Double(device.videoZoomFactor))
-        log.info("\(context, privacy: .public) type \(device.deviceType.rawValue, privacy: .public) zoom \(zoom, privacy: .public) raw [\(listed, privacy: .public)] bayer [\(bayer, privacy: .public)]")
+        let preset = session.sessionPreset.rawValue
+        let proRaw = photoOutput.isAppleProRAWEnabled ? "on" : "off"
+        let dimensions = photoOutput.maxPhotoDimensions
+        log.info("\(context, privacy: .public) type \(device.deviceType.rawValue, privacy: .public) zoom \(zoom, privacy: .public) preset \(preset, privacy: .public) proRaw \(proRaw, privacy: .public) dims \(dimensions.width)x\(dimensions.height) raw [\(listed, privacy: .public)] bayer [\(bayer, privacy: .public)]")
     }
 
     private static func framedMillimeters(_ device: AVCaptureDevice) -> Int {
@@ -1324,9 +1405,12 @@ final class CameraSession: ObservableObject {
     private func alignPhotoDimensions() {
         guard let device else { return }
         guard let match = Self.largestPhotoDimensions(device.activeFormat) else { return }
-        let current = photoOutput.maxPhotoDimensions
-        if current.width != match.width || current.height != match.height {
-            photoOutput.maxPhotoDimensions = match
+        let previous = photoOutput.maxPhotoDimensions
+        if previous.width == match.width, previous.height == match.height { return }
+        photoOutput.maxPhotoDimensions = match
+        // The largest size can drop Bayer. Keep the size the RAW search already proved.
+        if processMode.wantsRaw, photoAspect.allowsRaw, bayerTypes().isEmpty, previous.width > 0 {
+            photoOutput.maxPhotoDimensions = previous
         }
     }
 

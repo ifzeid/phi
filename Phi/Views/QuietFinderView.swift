@@ -45,18 +45,33 @@ struct QuietFinderView: View {
     var body: some View {
         ZStack {
             CameraColor.background.ignoresSafeArea()
-            switch camera.gate {
-            case .unknown:
-                CameraColor.background
-            case .needsPermission:
-                CameraGateView(denied: false) { camera.requestAccess() }
-            case .denied:
-                CameraGateView(denied: true, onPrimary: openSettings)
-            case .authorized:
+            if showsFinder {
                 finder
+            } else {
+                switch camera.gate {
+                case .unknown:
+                    CameraColor.background
+                case .needsPermission:
+                    CameraGateView(denied: false) { camera.requestAccess() }
+                case .denied:
+                    CameraGateView(denied: true, onPrimary: openSettings)
+                case .authorized:
+                    finder
+                }
             }
         }
-        .onAppear { camera.refreshAuthorization() }
+        .modifier(HiddenSystemChrome())
+        .onAppear {
+            #if DEBUG
+            if PHIUITest.screen == .flash {
+                flashMenu = true
+            }
+            if PHIUITest.screen == .capture || PHIUITest.screen == .flash {
+                return
+            }
+            #endif
+            camera.refreshAuthorization()
+        }
         .onChange(of: scenePhase) { _, phase in
             guard camera.gate == .authorized else { return }
             if phase == .active {
@@ -121,12 +136,10 @@ struct QuietFinderView: View {
 
     private var finder: some View {
         GeometryReader { geo in
-            let chrome: CGFloat = 56 + 62 + 44 + 80 + 28
-            let canvas = min(geo.size.width * 520 / 390, max(geo.size.height - chrome, 160))
             VStack(spacing: 0) {
                 topBar
                 viewfinder
-                    .frame(height: canvas)
+                    .frame(width: geo.size.width)
                 parameterSlot
                     .frame(height: 62)
                 exposureRow
@@ -139,7 +152,13 @@ struct QuietFinderView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
-        .statusBarHidden(true)
+    }
+
+    private var showsFinder: Bool {
+        #if DEBUG
+        if PHIUITest.screen == .capture || PHIUITest.screen == .flash { return true }
+        #endif
+        return false
     }
 
     /// Mode and aspect, plus the millimeters of the camera that is actually running.
@@ -187,15 +206,8 @@ struct QuietFinderView: View {
     }
 
     private var viewfinder: some View {
-        GeometryReader { geo in
-            let ratio = capture.photoAspect.widthOverHeight
-            let fitted = fittedSize(in: geo.size, ratio: ratio)
-            ZStack {
-                CameraColor.background
-                stage
-                    .frame(width: fitted.width, height: fitted.height)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
+        PhotoCanvas(widthOverHeight: capture.photoAspect.widthOverHeight) {
+            stage
         }
     }
 
@@ -221,7 +233,17 @@ struct QuietFinderView: View {
             onDrag: onDrag,
             onLongPress: onLongPress
         ).equatable()
-        return preview.frame(maxWidth: .infinity, maxHeight: .infinity)
+        return preview
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                #if DEBUG
+                if PHIUITest.screen == .capture || PHIUITest.screen == .flash, let sample = PHIUITest.sample {
+                    Image(uiImage: sample)
+                        .resizable()
+                        .scaledToFill()
+                }
+                #endif
+            }
     }
 
     private var stagePlaceholder: some View {
@@ -351,11 +373,21 @@ struct QuietFinderView: View {
         }
     }
 
+    private var shownStops: [FocalStop] {
+        #if DEBUG
+        if camera.focalStops.isEmpty, PHIUITest.screen != nil {
+            return PHIUITest.lensStops
+        }
+        #endif
+        return camera.focalStops
+    }
+
     private var lensBar: some View {
         HStack(spacing: 8) {
-            ForEach(camera.focalStops) { stop in
-                let selected = stop.id == camera.selectedStopID
+            ForEach(shownStops) { stop in
+                let selected = stop.id == camera.selectedStopID || (camera.selectedStopID == nil && stop.millimeters == 25)
                 Button {
+                    guard camera.focalStops.isEmpty == false else { return }
                     camera.select(stop: stop)
                 } label: {
                     Text("\(stop.millimeters)")
