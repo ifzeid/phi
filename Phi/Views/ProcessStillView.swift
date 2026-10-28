@@ -48,7 +48,8 @@ struct ProcessStillView: View {
         }
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
-        .statusBarHidden(true)
+        .modifier(UnderIsland())
+        .safeAreaPadding(.bottom, 8)
         .onAppear(perform: captureBaseline)
     }
 
@@ -77,27 +78,31 @@ struct ProcessStillView: View {
                 if holdingOriginal {
                     Image(uiImage: session.originalImage ?? UIImage(cgImage: session.base))
                         .resizable()
-                        .scaledToFill()
+                        .scaledToFit()
                 } else if let preview = session.preview {
                     Image(uiImage: preview)
                         .resizable()
-                        .scaledToFill()
+                        .scaledToFit()
                 } else {
                     ProgressView().tint(CameraColor.accent)
                 }
             }
         }
-        Text(session.developInfo)
-            .font(CameraFont.parameter(11))
-            .foregroundStyle(CameraColor.textSecondary)
-            .lineLimit(2)
-            .padding(.horizontal, 20)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PHIShowDevelopInfo") {
+            Text(session.developInfo)
+                .font(CameraFont.parameter(11))
+                .foregroundStyle(CameraColor.textSecondary)
+                .lineLimit(2)
+                .padding(.horizontal, 20)
+        }
+        #endif
     }
 
     private var tabBar: some View {
         HStack(spacing: 8) {
             ForEach(EditorTab.allCases) { item in
-                SelectPill(title: item.rawValue, selected: tab == item, height: 36) {
+                SelectPill(title: item.rawValue, selected: tab == item, width: 104, height: 36) {
                     tab = item
                 }
             }
@@ -222,6 +227,7 @@ struct ProcessStillView: View {
             .disabled(session.isExporting || session.preview == nil)
         }
         .padding(.horizontal, 12)
+        .padding(.bottom, 12)
     }
 
     private var discardDialog: some View {

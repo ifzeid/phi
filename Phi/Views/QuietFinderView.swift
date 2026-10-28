@@ -61,6 +61,7 @@ struct QuietFinderView: View {
             }
         }
         .modifier(HiddenSystemChrome())
+        .modifier(UnderIsland())
         .onAppear {
             #if DEBUG
             if PHIUITest.screen == .flash {
@@ -152,6 +153,22 @@ struct QuietFinderView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
+        .overlay(alignment: .topLeading) {
+            if flashMenu {
+                FlashChoiceMenu(
+                    selection: camera.flashMode,
+                    enabled: camera.flashAvailable,
+                    reason: camera.flashAvailable ? nil : "这枚镜头或当前格式不能用闪光灯。",
+                    onSelect: { mode in
+                        camera.setFlash(mode)
+                        flashMenu = false
+                    }
+                )
+                .padding(.leading, 18)
+                .padding(.top, 48)
+                .zIndex(8)
+            }
+        }
     }
 
     private var showsFinder: Bool {
@@ -168,33 +185,19 @@ struct QuietFinderView: View {
     }
 
     private var topBar: some View {
-        ZStack(alignment: .topLeading) {
-            HStack {
-                PhiGlyphButton(glyph: flashGlyph, label: flashLabel) {
-                    flashMenu.toggle()
-                }
-                Spacer()
-                PhiGlyphButton(glyph: showGrid ? .gridOn : .gridOff, label: showGrid ? "隐藏九宫格" : "显示九宫格") {
-                    showGrid.toggle()
-                }
+        HStack(spacing: 4) {
+            PhiGlyphButton(glyph: flashGlyph, label: flashLabel) {
+                flashMenu.toggle()
             }
-            .padding(.horizontal, 8)
-            if flashMenu {
-                FlashChoiceMenu(
-                    selection: camera.flashMode,
-                    enabled: camera.flashAvailable,
-                    reason: camera.flashAvailable ? nil : "这枚镜头或当前格式不能用闪光灯。",
-                    onSelect: { mode in
-                        camera.setFlash(mode)
-                        flashMenu = false
-                    }
-                )
-                .padding(.leading, 18)
-                .padding(.top, 48)
-                .zIndex(2)
+            Spacer(minLength: 4)
+            modePill
+            Spacer(minLength: 4)
+            PhiGlyphButton(glyph: showGrid ? .gridOn : .gridOff, label: showGrid ? "隐藏九宫格" : "显示九宫格") {
+                showGrid.toggle()
             }
         }
-        .frame(height: 56)
+        .padding(.horizontal, 8)
+        .frame(height: 44)
     }
 
     private var flashGlyph: PhiGlyph {
@@ -266,10 +269,20 @@ struct QuietFinderView: View {
         return camera.statusMessage ?? (camera.isRunning ? nil : "正在打开相机")
     }
 
+    private var uiTestCapture: Bool {
+        #if DEBUG
+        return PHIUITest.screen == .capture || PHIUITest.screen == .flash
+        #else
+        return false
+        #endif
+    }
+
     private var stageStatus: some View {
         let dismiss: () -> Void = { camera.statusMessage = nil }
         return Group {
-            if let message = stageStatusText {
+            if uiTestCapture {
+                EmptyView()
+            } else if let message = stageStatusText {
                 Button(action: dismiss) {
                     Text(message)
                         .font(CameraFont.interface(13, weight: .medium))
@@ -301,17 +314,28 @@ struct QuietFinderView: View {
         }
         return ZStack {
             CameraColor.surface
+            #if DEBUG
+            if uiTestCapture, let sample = PHIUITest.sample {
+                Image(uiImage: sample)
+                    .resizable()
+                    .scaledToFill()
+            } else if camera.isConfigured {
+                livePreview
+            } else {
+                stagePlaceholder
+            }
+            #else
             if camera.isConfigured {
                 livePreview
             } else {
                 stagePlaceholder
             }
+            #endif
         }
         .clipped()
         .overlay { gridOverlay }
         .overlay { stageStatus }
         .overlay { flashOverlay }
-        .overlay(alignment: .top) { modePill.padding(.top, 4) }
         .overlay { focusOverlay }
         .onChange(of: camera.statusMessage, onStatus)
         .onChange(of: capture.shutterTick, onShutter)
@@ -401,8 +425,9 @@ struct QuietFinderView: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 40)
+        .frame(width: 240, height: 40)
         .background(CameraColor.scrim, in: Capsule())
+        .frame(maxWidth: .infinity)
     }
 
     private func activeRuler(_ ruler: CaptureRuler) -> some View {
@@ -461,7 +486,7 @@ struct QuietFinderView: View {
             }
             Spacer(minLength: 8)
             if camera.autoExposure {
-                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: openRuler == .ev, width: 94) {
+                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: openRuler == .ev, width: 94, height: 36) {
                     toggleRuler(.ev)
                 }
             } else {
@@ -528,11 +553,17 @@ struct QuietFinderView: View {
     }
 
     private var captionRow: some View {
-        Text("\(camera.isoText) · \(camera.shutterText) · \(camera.whiteBalanceText)")
-            .font(CameraFont.parameter(11))
-            .foregroundStyle(CameraColor.textSecondary)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity)
+        HStack {
+            Text(camera.isoText)
+            Spacer()
+            Text(camera.shutterText)
+            Spacer()
+            Text(camera.whiteBalanceText)
+        }
+        .font(CameraFont.parameter(11))
+        .foregroundStyle(CameraColor.textSecondary)
+        .lineLimit(1)
+        .padding(.horizontal, 24)
     }
 
     private var exposureCount: Int {

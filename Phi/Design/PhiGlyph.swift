@@ -207,7 +207,7 @@ struct SharedRuler: View {
             let mid = size.width / 2
             for offset in labels.indices {
                 let x = mid + CGFloat(offset - index) * step
-                if x < -8 || x > size.width + 8 { continue }
+                if x < -28 || x > size.width + 28 { continue }
                 let major = offset % 5 == 0
                 let height: CGFloat = major ? 18 : 8
                 var path = Path()
@@ -215,10 +215,11 @@ struct SharedRuler: View {
                 path.addLine(to: CGPoint(x: x, y: 4 + height))
                 context.stroke(path, with: .color(CameraColor.textSecondary), lineWidth: 1)
                 if major {
+                    let labelX = min(max(x, 22), size.width - 22)
                     let text = Text(labels[offset]).font(CameraFont.parameter(11))
                     context.draw(
                         text.foregroundColor(offset == index ? CameraColor.accent : CameraColor.textSecondary),
-                        at: CGPoint(x: x, y: 40),
+                        at: CGPoint(x: labelX, y: 40),
                         anchor: .center
                     )
                 }
@@ -236,9 +237,9 @@ struct FlashChoiceMenu: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            row(.auto, title: "自动", glyph: .flashAuto)
-            row(.on, title: "打开", glyph: .flashOn)
             row(.off, title: "关闭", glyph: .flashOff)
+            row(.auto, title: "自动", glyph: .flashAuto)
+            row(.on, title: "开启", glyph: .flashOn)
             if enabled == false, let reason {
                 Text(reason)
                     .font(CameraFont.interface(12))
@@ -258,10 +259,10 @@ struct FlashChoiceMenu: View {
         } label: {
             HStack(spacing: 10) {
                 PhiGlyphImage(glyph: glyph)
-                    .foregroundStyle(enabled ? CameraColor.textPrimary : CameraColor.textSecondary.opacity(0.4))
+                    .foregroundStyle(CameraColor.textPrimary)
                 Text(title)
                     .font(CameraFont.interface(14, weight: .medium))
-                    .foregroundStyle(enabled ? CameraColor.textPrimary : CameraColor.textSecondary.opacity(0.4))
+                    .foregroundStyle(CameraColor.textPrimary)
                 Spacer()
                 if selection == mode {
                     PhiGlyphImage(glyph: .check)

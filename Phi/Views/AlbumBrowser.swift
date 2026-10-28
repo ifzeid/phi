@@ -71,6 +71,7 @@ struct AlbumBrowser: View {
         }
         .task(id: revision) { await reload() }
         .modifier(HiddenSystemChrome())
+        .modifier(UnderIsland())
         .safeAreaInset(edge: .bottom) {
             albumBar
         }
@@ -129,7 +130,7 @@ struct AlbumBrowser: View {
                 Color.clear.frame(width: 44, height: 44)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 20)
         .frame(height: 56)
     }
 
@@ -154,8 +155,10 @@ struct AlbumBrowser: View {
                 Spacer()
                 Button("返回拍摄", action: onClose)
                     .font(CameraFont.interface(14, weight: .medium))
-                    .foregroundStyle(CameraColor.textPrimary)
-                    .frame(minHeight: 44)
+                    .foregroundStyle(CameraColor.accent)
+                    .padding(.horizontal, 16)
+                    .frame(height: 36)
+                    .background(CameraColor.surface, in: Capsule())
             }
         }
         .padding(.horizontal, 16)
@@ -202,9 +205,11 @@ struct AlbumBrowser: View {
                         Text(section.title)
                             .font(CameraFont.interface(22, weight: .medium))
                             .foregroundStyle(CameraColor.textPrimary)
+                            .padding(.horizontal, 20)
                         Text(section.subtitle)
                             .font(CameraFont.interface(13))
                             .foregroundStyle(CameraColor.textSecondary)
+                            .padding(.horizontal, 20)
                         LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(section.items) { item in
                                 Button {
@@ -216,6 +221,7 @@ struct AlbumBrowser: View {
                                 .accessibilityLabel(accessibilityName(item.shot, index: item.offset))
                             }
                         }
+                        .padding(.horizontal, 2)
                     }
                 }
             }
