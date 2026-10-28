@@ -1,4 +1,5 @@
 import CoreLocation
+import os
 import UIKit
 
 /// One developed still. When `sourceDNG` is set, exposure and grain re-develop that Bayer file.
@@ -14,9 +15,12 @@ final class ProcessSession: ObservableObject, Identifiable {
     let captureLocation: CLLocation?
     @Published var exposureEV: Double
     @Published var style: GrainStyle
+    @Published var colorLook: ColorLook
+    @Published var halo: Bool
     @Published var preview: UIImage?
     @Published var isExporting = false
     @Published var status: String?
+    @Published var developInfo: String
 
     var onPreview: ((UIImage) -> Void)?
 
@@ -32,7 +36,9 @@ final class ProcessSession: ObservableObject, Identifiable {
         sourceDNG: Data? = nil,
         sourceMetadata: [String: Any]? = nil,
         framedAspect: PhotoAspect = .threeByFour,
-        captureLocation: CLLocation? = nil
+        captureLocation: CLLocation? = nil,
+        colorLook: ColorLook = .none,
+        halo: Bool = false
     ) {
         self.base = base
         self.exposureEV = exposureEV
@@ -44,6 +50,9 @@ final class ProcessSession: ObservableObject, Identifiable {
         self.sourceMetadata = sourceMetadata
         self.framedAspect = framedAspect
         self.captureLocation = captureLocation
+        self.colorLook = colorLook
+        self.halo = halo
+        self.developInfo = sourceDNG == nil ? "来源 系统成片" : "来源 DNG"
     }
 
     func setExposure(_ value: Double) {
@@ -57,6 +66,18 @@ final class ProcessSession: ObservableObject, Identifiable {
         schedule()
     }
 
+    func setColorLook(_ next: ColorLook) {
+        guard next != colorLook else { return }
+        colorLook = next
+        schedule()
+    }
+
+    func setHalo(_ enabled: Bool) {
+        guard enabled != halo else { return }
+        halo = enabled
+        schedule()
+    }
+
     func schedule() {
         token += 1
         let current = token
@@ -65,17 +86,31 @@ final class ProcessSession: ObservableObject, Identifiable {
         let style = style
         let dng = sourceDNG
         let aspect = framedAspect
+        let look = colorLook
+        let haloOn = halo
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 45_000_000)
             guard current == self.token else { return }
             let rendered = await Task.detached(priority: .userInitiated) {
                 if let dng {
-                    return RawDevelop.image(dng: dng, exposureEV: ev, style: style, aspect: aspect, maxSide: 1600, draft: false)
+                    return RawDevelop.image(
+                        dng: dng,
+                        exposureEV: ev,
+                        style: style,
+                        look: look,
+                        halo: haloOn,
+                        aspect: aspect,
+                        maxSide: 1600,
+                        draft: false
+                    )
                 }
                 return StillPipeline.render(base, exposureEV: ev, style: style, maxSide: 1600)
             }.value
             guard current == self.token, let rendered else { return }
             let image = UIImage(cgImage: rendered)
+            let source = dng == nil ? "系统成片" : "DNG"
+            self.developInfo = "\(source) · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality)"
+            Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
             self.preview = image
             self.onPreview?(image)
         }

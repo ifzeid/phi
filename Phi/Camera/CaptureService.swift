@@ -73,7 +73,16 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let rawShot = PhiRawAsset.contains(asset)
         Task {
             let dng = await PhotoLibrary.loadAlternateData(for: asset)
-            if let dng, let preview = RawDevelop.image(dng: dng, exposureEV: 0, style: .off, aspect: aspect, maxSide: 1600, draft: false) {
+            if let dng, let preview = RawDevelop.image(
+                dng: dng,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: false,
+                aspect: aspect,
+                maxSide: 1600,
+                draft: false
+            ) {
                 let metadata = PhotoMetadata.properties(of: dng)
                 await MainActor.run {
                     self.present(
@@ -146,13 +155,23 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             StillArchive.writeRecipe(StillRecipe(
                 exposureEV: session.exposureEV,
                 style: session.style,
-                originalWasRaw: session.originalWasRaw
+                originalWasRaw: session.originalWasRaw,
+                colorLook: session.colorLook,
+                halo: session.halo
             ))
         }
         processSession = nil
     }
 
     func exportDeveloped(_ session: ProcessSession) async {
+        guard session.isSample || session.sourceDNG != nil else {
+            await MainActor.run {
+                session.isExporting = false
+                session.status = "没有 Bayer RAW，不会把系统成片另存成 PHI。"
+                session.developInfo = "来源 系统成片 · 未导出"
+            }
+            return
+        }
         await MainActor.run { session.isExporting = true }
         let base = session.base
         let ev = session.exposureEV
@@ -162,9 +181,20 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let dng = session.sourceDNG
         let metadata = session.sourceMetadata
         let aspect = session.framedAspect
+        let look = session.colorLook
+        let halo = session.halo
         let rendered = await Task.detached(priority: .userInitiated) {
             if let dng {
-                return RawDevelop.image(dng: dng, exposureEV: ev, style: style, aspect: aspect, maxSide: nil, draft: false)
+                return RawDevelop.image(
+                    dng: dng,
+                    exposureEV: ev,
+                    style: style,
+                    look: look,
+                    halo: halo,
+                    aspect: aspect,
+                    maxSide: nil,
+                    draft: false
+                )
             }
             return StillPipeline.render(base, exposureEV: ev, style: style, maxSide: nil)
         }.value
@@ -323,7 +353,16 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             // Apple's HEIF/JPEG stays the archived companion. Do not re-encode it.
             let processedData = originalProcessed
             let developed = rawData.flatMap {
-                RawDevelop.image(dng: $0, exposureEV: 0, style: .off, aspect: aspect, maxSide: 1600, draft: false)
+                RawDevelop.image(
+                    dng: $0,
+                    exposureEV: 0,
+                    style: .off,
+                    look: .none,
+                    halo: false,
+                    aspect: aspect,
+                    maxSide: 1600,
+                    draft: false
+                )
             }
             let upright = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
                 ?? originalProcessed.flatMap { UIImage(data: $0) }.flatMap { StillPipeline.normalizedCGImage(from: $0) }
@@ -376,13 +415,16 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let thumbImage = base.map { UIImage(cgImage: $0) } ?? preview
             let thumb = thumbImage.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
-            let captureStatus = Self.captureStatus(
-                codec: spokenCodec,
-                savedRaw: keptRaw,
-                savedProcessed: files.contains { $0.alternate == false && $0.filename.lowercased().hasSuffix(".dng") == false },
-                skippedRaw: skippedRaw,
-                croppedAspect: aspect != .threeByFour
-            )
+            let noRawDevelop = format.wantsRaw && aspect.allowsRaw && rawData == nil
+            let captureStatus = noRawDevelop
+                ? "这一档没有 Bayer RAW。画面来自系统成片，不会另存为 PHI 显影。"
+                : Self.captureStatus(
+                    codec: spokenCodec,
+                    savedRaw: keptRaw,
+                    savedProcessed: files.contains { $0.alternate == false && $0.filename.lowercased().hasSuffix(".dng") == false },
+                    skippedRaw: skippedRaw,
+                    croppedAspect: aspect != .threeByFour
+                )
             DispatchQueue.main.async {
                 self.isCapturing = false
                 if let thumb {
@@ -543,7 +585,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             sourceDNG: sourceDNG,
             sourceMetadata: sourceMetadata,
             framedAspect: aspect,
-            captureLocation: location
+            captureLocation: location,
+            colorLook: recipe.colorLook,
+            halo: recipe.halo
         )
         if isSample == false {
             session.onPreview = { [weak self] image in
@@ -565,7 +609,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         StillArchive.writeRecipe(StillRecipe(
             exposureEV: session.exposureEV,
             style: session.style,
-            originalWasRaw: session.originalWasRaw
+            originalWasRaw: session.originalWasRaw,
+            colorLook: session.colorLook,
+            halo: session.halo
         ))
     }
 
