@@ -2,7 +2,7 @@ import CoreImage
 import os
 
 /// Bayer develop. Noise reduction, sharpness, detail, and moiré stay at 0 after scale,
-/// because scale can restore defaults. The global curve lives in `ColorLooks` and does not sharpen.
+/// because scale can restore defaults. The global curve lives in `ColorLooks`. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
 /// The EV dial is `CIRAWFilter.exposure`. Apple's HEIF is not an input.
 enum RawDevelop {
