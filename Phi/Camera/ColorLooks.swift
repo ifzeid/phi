@@ -3,9 +3,11 @@ import CoreImage
 /// Fixed develop looks. No brand names, no intensity controls.
 /// Input and output are in the linear working space. Curves run in a temporary gamma so they are not crushed.
 enum ColorLooks {
-    static func apply(_ image: CIImage, look: ColorLook, halo: Bool) -> CIImage {
+    static func apply(_ image: CIImage, look: ColorLook, halo: Bool, includeBase: Bool = true) -> CIImage {
         var current = toPerceptual(image)
-        current = baseFilm(current)
+        if includeBase {
+            current = baseFilm(current)
+        }
         switch look {
         case .none:
             break
@@ -36,14 +38,10 @@ enum ColorLooks {
             (0.70, 0.74),
             (1.00, 0.97)
         ])
-        let colored = curved.applyingFilter("CIColorControls", parameters: [
+        return curved.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: 1.12,
             kCIInputBrightnessKey: 0,
             kCIInputContrastKey: 1.04
-        ])
-        return colored.applyingFilter("CIUnsharpMask", parameters: [
-            kCIInputRadiusKey: 0.6,
-            kCIInputIntensityKey: 0.4
         ])
     }
 
@@ -115,10 +113,7 @@ enum ColorLooks {
             (0.76, 0.84),
             (1, 1)
         ])
-        return curved.applyingFilter("CIUnsharpMask", parameters: [
-            kCIInputRadiusKey: 1.6,
-            kCIInputIntensityKey: 0.35
-        ])
+        return curved
     }
 
     /// High-light diffusion only. Fixed threshold and radius. Stacks on any base look.

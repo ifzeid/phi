@@ -1,7 +1,24 @@
 import AVFoundation
+import CoreImage
 import CoreLocation
 import ImageIO
 import UniformTypeIdentifiers
+
+enum ImageOrientation {
+    static func exif(of data: Data) -> Int {
+        guard let props = PhotoMetadata.properties(of: data),
+              let value = props[kCGImagePropertyOrientation as String] as? Int else { return 1 }
+        return value
+    }
+
+    /// Turns EXIF orientation into upright pixels. Callers then write orientation 1, not both and not neither.
+    static func upright(_ image: CIImage, exif: Int) -> CIImage {
+        guard let orientation = CGImagePropertyOrientation(rawValue: UInt32(exif)), orientation != .up else {
+            return image
+        }
+        return image.oriented(orientation)
+    }
+}
 
 enum PhiVersion {
     /// Shown in EXIF/TIFF Software. Uses the bundle short version, currently 0.1.0.
@@ -37,6 +54,9 @@ enum PhotoMetadata {
             }
         }
         props[kCGImagePropertyOrientation as String] = 1
+        if let profile = CGColorSpace(name: CGColorSpace.displayP3)?.copyICCData() {
+            props[kCGImagePropertyICCProfile as String] = profile
+        }
         var tiff = metadata?[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
         tiff[kCGImagePropertyTIFFSoftware as String] = PhiVersion.software
         props[kCGImagePropertyTIFFDictionary as String] = tiff

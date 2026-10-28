@@ -17,6 +17,11 @@ struct AlbumBrowser: View {
     @State private var limited = false
     @State private var libraryDenied = false
     @State private var viewerIndex: Int?
+    @State private var selecting = false
+    @State private var selected: Set<String> = []
+    @State private var confirmDelete = false
+    @State private var pendingDelete: [AlbumShot] = []
+    @State private var deleteError: String?
 
     private enum Phase {
         case checking
@@ -62,6 +67,43 @@ struct AlbumBrowser: View {
             }
         }
         .task(id: revision) { await reload() }
+        .safeAreaInset(edge: .bottom) {
+            if selecting, selected.isEmpty == false {
+                Button(action: requestDeleteSelected) {
+                    Text("删除")
+                        .font(CameraFont.interface(16, weight: .medium))
+                        .foregroundStyle(CameraColor.accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(CameraColor.border, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                .accessibilityLabel("删除所选照片")
+            }
+        }
+        .alert("删除这些照片？", isPresented: $confirmDelete) {
+            Button("删除", role: .destructive) {
+                let targets = pendingDelete
+                pendingDelete = []
+                Task { await commitDelete(targets) }
+            }
+            Button("取消", role: .cancel) {
+                pendingDelete = []
+            }
+        } message: {
+            Text("App 内的文件会去掉。系统相册里的照片会进入最近删除。")
+        }
+        .alert("无法删除", isPresented: Binding(get: { deleteError != nil }, set: { if $0 == false { deleteError = nil } })) {
+            Button("好", role: .cancel) { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
+        }
         .overlay {
             if let viewerIndex, shots.indices.contains(viewerIndex) {
                 AlbumPager(
@@ -71,7 +113,7 @@ struct AlbumBrowser: View {
                     onEditLibrary: onEditLibrary,
                     onEditLocal: onEditLocal,
                     onRetryLocal: onRetryLocal,
-                    onDeleteLocal: deleteLocal
+                    onDelete: { requestDelete([$0]) }
                 )
             }
         }
@@ -98,7 +140,17 @@ struct AlbumBrowser: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("关闭相册")
                 Spacer()
-                if limited {
+                if phase == .ready, shots.isEmpty == false {
+                    Button(selecting ? "取消" : "选择") {
+                        selecting.toggle()
+                        if selecting == false { selected = [] }
+                    }
+                    .font(CameraFont.interface(15, weight: .medium))
+                    .foregroundStyle(CameraColor.textPrimary)
+                    .padding(.trailing, limited && selecting == false ? 4 : 12)
+                    .accessibilityLabel(selecting ? "取消选择" : "选择照片")
+                }
+                if limited, selecting == false {
                     Button("管理照片") { presentLimitedPicker() }
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
@@ -115,9 +167,17 @@ struct AlbumBrowser: View {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(Array(shots.enumerated()), id: \.element.id) { offset, shot in
                     Button {
-                        viewerIndex = offset
+                        if selecting {
+                            if selected.contains(shot.id) {
+                                selected.remove(shot.id)
+                            } else {
+                                selected.insert(shot.id)
+                            }
+                        } else {
+                            viewerIndex = offset
+                        }
                     } label: {
-                        AlbumThumb(shot: shot)
+                        AlbumThumb(shot: shot, marked: selecting ? selected.contains(shot.id) : nil)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(accessibilityName(shot, index: offset))
@@ -197,10 +257,56 @@ struct AlbumBrowser: View {
         PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: controller)
     }
 
-    private func deleteLocal(_ id: String) {
-        PhiLocalShots.forget(id: id)
-        viewerIndex = nil
-        Task { await reload() }
+    private func requestDeleteSelected() {
+        requestDelete(shots.filter { selected.contains($0.id) })
+    }
+
+    private func requestDelete(_ targets: [AlbumShot]) {
+        guard targets.isEmpty == false else { return }
+        let hasLocal = targets.contains { shot in
+            if case .local = shot.source { return true }
+            return false
+        }
+        if hasLocal {
+            pendingDelete = targets
+            confirmDelete = true
+        } else {
+            Task { await commitDelete(targets) }
+        }
+    }
+
+    private func commitDelete(_ targets: [AlbumShot]) async {
+        let localIDs = targets.compactMap { shot -> String? in
+            if case .local(let item) = shot.source { return item.id }
+            return nil
+        }
+        PhiLocalShots.remove(ids: localIDs)
+        let assets = targets.compactMap { shot -> PHAsset? in
+            if case .library(let asset) = shot.source { return asset }
+            return nil
+        }
+        if assets.isEmpty == false {
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.deleteAssets(assets as NSArray)
+                }
+                PhiShotIndex.remove(localIdentifiers: assets.map(\.localIdentifier))
+            } catch {
+                let ns = error as NSError
+                let cancelled = ns.domain == PHPhotosErrorDomain && ns.code == 3072
+                if cancelled == false {
+                    await MainActor.run {
+                        deleteError = "\(ns.domain) \(ns.code)"
+                    }
+                }
+            }
+        }
+        await MainActor.run {
+            viewerIndex = nil
+            selected = []
+            selecting = false
+        }
+        await reload()
     }
 
     private func openSettings() {
@@ -255,6 +361,7 @@ private struct AlbumShot: Identifiable {
 
 private struct AlbumThumb: View {
     var shot: AlbumShot
+    var marked: Bool? = nil
     @State private var image: UIImage?
 
     var body: some View {
@@ -281,6 +388,15 @@ private struct AlbumThumb: View {
                         .font(CameraFont.parameter(9, medium: true))
                         .foregroundStyle(CameraColor.accent)
                         .padding(5)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let marked {
+                    Image(systemName: marked ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(marked ? CameraColor.accent : CameraColor.textPrimary)
+                        .padding(6)
+                        .accessibilityHidden(true)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -317,7 +433,7 @@ private struct AlbumPager: View {
     var onEditLibrary: (PHAsset) -> Void
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
-    var onDeleteLocal: (String) -> Void
+    var onDelete: (AlbumShot) -> Void
 
     var body: some View {
         ZStack {
@@ -331,7 +447,7 @@ private struct AlbumPager: View {
                             onEditLibrary: onEditLibrary,
                             onEditLocal: onEditLocal,
                             onRetryLocal: onRetryLocal,
-                            onDeleteLocal: onDeleteLocal
+                            onDelete: onDelete
                         )
                         .tag(offset)
                     }
@@ -381,7 +497,7 @@ private struct AlbumPage: View {
     var onEditLibrary: (PHAsset) -> Void
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
-    var onDeleteLocal: (String) -> Void
+    var onDelete: (AlbumShot) -> Void
     @State private var image: UIImage?
     @State private var share = false
 
@@ -407,17 +523,17 @@ private struct AlbumPage: View {
                         .foregroundStyle(CameraColor.accent)
                 }
                 Spacer()
-                if shot.missing, case .local(let local) = shot.source {
-                    Button("删除") { onDeleteLocal(local.id) }
-                        .font(CameraFont.interface(15, weight: .medium))
-                        .foregroundStyle(CameraColor.textSecondary)
-                        .frame(minHeight: 44)
-                } else if shot.needsRetry, case .local(let local) = shot.source {
+                if shot.needsRetry, case .local(let local) = shot.source {
                     Button("重试") { onRetryLocal(local.id) }
                         .font(CameraFont.interface(15, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
                         .frame(minHeight: 44)
                 }
+                Button("删除") { onDelete(shot) }
+                    .font(CameraFont.interface(15, weight: .medium))
+                    .foregroundStyle(CameraColor.accent)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("删除")
                 Button("导出") { share = true }
                     .font(CameraFont.interface(15, weight: .medium))
                     .foregroundStyle(image == nil ? CameraColor.border : CameraColor.textSecondary)
@@ -570,13 +686,16 @@ enum AlbumImage {
     }
 
     private static func image(from source: CGImageSource, maxSide: CGFloat?) -> UIImage? {
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let pixelWidth = props?[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+        let pixelHeight = props?[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+        let nativeLongest = max(pixelWidth, pixelHeight)
+        let cap = maxSide ?? (nativeLongest > 0 ? nativeLongest : 1)
         var options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailWithTransform: true
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: cap
         ]
-        if let maxSide, maxSide > 0 {
-            options[kCGImageSourceThumbnailMaxPixelSize] = maxSide
-            options[kCGImageSourceCreateThumbnailFromImageAlways] = true
-        }
         let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
             ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
         guard let cg else { return nil }
