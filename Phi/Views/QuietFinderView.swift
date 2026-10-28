@@ -5,7 +5,6 @@ struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
     @State private var showExposure = false
-    @State private var showLastStill = false
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
     @State private var flashOpacity: Double = 0
@@ -35,13 +34,16 @@ struct QuietFinderView: View {
                 camera.stop()
             }
         }
-        .sheet(isPresented: $showLastStill) {
-            LastStillView(
-                image: capture.thumbnail,
-                note: capture.lastSavedNote,
-                canRetry: capture.canRetryPhotoSave,
-                onRetry: { capture.retryPhotoSave() },
-                onClose: { showLastStill = false }
+        .fullScreenCover(item: $capture.processSession, onDismiss: { capture.dismissProcess() }) { session in
+            ProcessStillView(
+                session: session,
+                canRetryOriginal: capture.canRetryPhotoSave,
+                onExport: {
+                    Task { await capture.exportDeveloped(session) }
+                    return
+                },
+                onRetryOriginal: { capture.retryPhotoSave() },
+                onClose: { capture.dismissProcess() }
             )
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: capture.shutterTick)
@@ -58,9 +60,10 @@ struct QuietFinderView: View {
             viewfinder
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             metaRow
-                .frame(height: 36)
+                .frame(height: 44)
                 .opacity(showExposure ? 0 : 1)
-                .padding(.horizontal, 20)
+                .allowsHitTesting(showExposure == false)
+                .padding(.horizontal, 16)
             controlRow
                 .frame(height: controls)
                 .padding(.horizontal, 24)
@@ -137,11 +140,18 @@ struct QuietFinderView: View {
                     camera.focus(at: devicePoint)
                 }
             } else {
-                Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
-                    .font(CameraFont.interface(15, weight: .medium))
-                    .foregroundStyle(CameraColor.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(24)
+                VStack(spacing: 18) {
+                    Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
+                        .font(CameraFont.interface(15, weight: .medium))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                    if capture.hasDevelopBase == false, camera.statusMessage != nil {
+                        Button("处理样张") { capture.openSample() }
+                            .buttonStyle(QuietButtonStyle())
+                            .padding(.horizontal, 28)
+                    }
+                }
+                .padding(24)
             }
         }
         .clipped()
@@ -207,16 +217,15 @@ struct QuietFinderView: View {
     }
 
     private var metaRow: some View {
-        HStack {
-            Text("NATURAL")
-                .font(CameraFont.interface(11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(CameraColor.textSecondary)
-                .accessibilityLabel("自然色彩，未套用胶片或 LUT")
-            Spacer()
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                GrainStylePicker(selection: capture.grainStyle) { capture.setGrainStyle($0) }
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             Text("\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(CameraColor.accent)
+                .accessibilityLabel("相机曝光补偿 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
         }
     }
 
@@ -224,14 +233,14 @@ struct QuietFinderView: View {
         ZStack {
             HStack {
                 Button {
-                    showLastStill = true
+                    capture.openProcess()
                 } label: {
                     thumbnail
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(capture.thumbnail == nil ? "还没有照片" : "最近一张照片")
+                .accessibilityLabel(capture.hasDevelopBase ? "最近一张，进入处理" : "打开样张")
                 Spacer()
                 IconHitButton(
                     symbol: .controls,

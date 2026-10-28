@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import Photos
 import UIKit
 import UniformTypeIdentifiers
@@ -44,6 +45,7 @@ enum StillArchive {
     static let lastPathKey = "phi.lastStillPath"
     static let lastUTIKey = "phi.lastStillUTI"
     static let lastSavedKey = "phi.lastStillSavedToPhotos"
+    static let grainStyleKey = "phi.grainStyle"
 
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -54,6 +56,40 @@ enum StillArchive {
 
     static var thumbnailURL: URL {
         directory.appendingPathComponent("last-thumb.jpg")
+    }
+
+    static var basePreviewURL: URL {
+        directory.appendingPathComponent("last-base.jpg")
+    }
+
+    static var recipeURL: URL {
+        directory.appendingPathComponent("last-recipe.json")
+    }
+
+    static func writeBasePreview(_ image: CGImage) throws {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+        try (data as Data).write(to: basePreviewURL, options: .atomic)
+    }
+
+    static func loadBasePreview() -> CGImage? {
+        guard let data = try? Data(contentsOf: basePreviewURL),
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    static func writeRecipe(_ recipe: StillRecipe) {
+        guard let data = try? JSONEncoder().encode(recipe) else { return }
+        try? data.write(to: recipeURL, options: .atomic)
+    }
+
+    static func loadRecipe() -> StillRecipe? {
+        guard let data = try? Data(contentsOf: recipeURL) else { return nil }
+        return try? JSONDecoder().decode(StillRecipe.self, from: data)
     }
 
     static func write(data: Data, ext: String) throws -> URL {
