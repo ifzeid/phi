@@ -81,8 +81,6 @@ struct QuietFinderView: View {
                 onFormat: { capture.setCaptureFormat($0) },
                 aspect: capture.photoAspect,
                 onAspect: { capture.setPhotoAspect($0) },
-                grain: capture.grainStyle,
-                onGrain: { capture.setGrainStyle($0) },
                 iso: camera.manualISOValue,
                 isoChoices: camera.isoChoices,
                 shutter: camera.manualShutterSeconds,
@@ -275,17 +273,13 @@ struct QuietFinderView: View {
     }
 
     private var metaRow: some View {
-        HStack(spacing: 8) {
-            Text(capture.grainStyle.title)
-                .font(CameraFont.parameter(12, medium: true))
-                .foregroundStyle(CameraColor.textSecondary)
+        HStack {
             Spacer()
             Text("\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(CameraColor.accent)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("颗粒 \(capture.grainStyle.title)，曝光 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
+        .accessibilityLabel("曝光 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
     }
 
     private var controlRow: some View {

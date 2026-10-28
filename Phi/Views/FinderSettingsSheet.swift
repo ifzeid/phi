@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// Format, grain, ISO, and shutter. Exposure compensation stays on the viewfinder drag.
+/// Format, aspect, ISO, and shutter. Grain stays on the develop screen.
 struct FinderSettingsSheet: View {
     var format: CaptureFormat
     var onFormat: (CaptureFormat) -> Void
     var aspect: PhotoAspect
     var onAspect: (PhotoAspect) -> Void
-    var grain: GrainStyle
-    var onGrain: (GrainStyle) -> Void
     var iso: Float
     var isoChoices: [Float]
     var shutter: Double
@@ -26,11 +24,6 @@ struct FinderSettingsSheet: View {
                 }
                 section("ASPECT", caption: "默认 3:4，即整幅传感器。其他画幅从中心裁切，取景和成片一致。这些画幅不写 RAW。") {
                     PhotoAspectPicker(selection: aspect, onSelect: onAspect)
-                }
-                section("GRAIN", caption: "拍摄后的颗粒，不改变取景") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        GrainStylePicker(selection: grain, onSelect: onGrain)
-                    }
                 }
                 section("ISO", caption: manualSupported ? "锁定这枚镜头的感光度" : "这枚镜头不能单独锁定 ISO 或快门。") {
                     StepValue(

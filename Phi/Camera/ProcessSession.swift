@@ -71,7 +71,7 @@ final class ProcessSession: ObservableObject, Identifiable {
             context.fill(CGRect(x: 0, y: y, width: 800, height: 1))
         }
         let image = context.makeImage()!
-        let session = ProcessSession(base: image, exposureEV: 0, style: .fine, isSample: true, originalWasRaw: false, status: "预览渐变，不是照片。")
+        let session = ProcessSession(base: image, exposureEV: 0, style: .off, isSample: true, originalWasRaw: false, status: "预览渐变，不是照片。")
         session.schedule()
         return session
     }

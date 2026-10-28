@@ -218,7 +218,6 @@ enum StillArchive {
     static let lastPathKey = "phi.lastStillPath"
     static let lastUTIKey = "phi.lastStillUTI"
     static let lastSavedKey = "phi.lastStillSavedToPhotos"
-    static let grainStyleKey = "phi.grainStyle"
     static let lastBundleKey = "phi.lastStillBundle"
 
     static var directory: URL {

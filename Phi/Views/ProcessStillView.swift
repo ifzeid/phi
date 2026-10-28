@@ -81,7 +81,15 @@ struct ProcessStillView: View {
                 .foregroundStyle(CameraColor.textSecondary)
                 .accessibilityLabel("这是成片曝光，不是相机测光")
 
+            Text("GRAIN")
+                .font(CameraFont.interface(11, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(CameraColor.textSecondary)
             GrainStylePicker(selection: session.style) { session.setStyle($0) }
+            Text("只在这里。打开就是 FINE，没有强度。取景不加颗粒，也不加光晕。")
+                .font(CameraFont.interface(12))
+                .foregroundStyle(CameraColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button(action: onExport) {
                 Text(session.isExporting ? "正在导出" : "保存处理图")

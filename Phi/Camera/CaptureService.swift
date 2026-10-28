@@ -13,7 +13,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var thumbnail: UIImage?
     @Published private(set) var lastSavedNote: String?
     @Published private(set) var canRetryPhotoSave = false
-    @Published private(set) var grainStyle: GrainStyle
     @Published private(set) var captureFormat: CaptureFormat = .jpegAndRaw
     @Published private(set) var photoAspect: PhotoAspect = .threeByFour
     @Published var processSession: ProcessSession?
@@ -24,7 +23,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     private var pending = PendingCapture()
 
     override init() {
-        grainStyle = GrainStyle.stored(UserDefaults.standard.string(forKey: StillArchive.grainStyleKey))
         super.init()
         captureFormat = CaptureFormat.stored(UserDefaults.standard.string(forKey: CaptureFormat.storageKey))
         photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
@@ -50,11 +48,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             .store(in: &cancellables)
     }
 
-    func setGrainStyle(_ style: GrainStyle) {
-        grainStyle = style
-        UserDefaults.standard.set(style.rawValue, forKey: StillArchive.grainStyleKey)
-    }
-
     func setCaptureFormat(_ format: CaptureFormat) {
         captureFormat = format
         UserDefaults.standard.set(format.rawValue, forKey: CaptureFormat.storageKey)
@@ -78,7 +71,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             : "导出时另存处理图，不覆盖相册里的原片。"
         present(
             base: base,
-            recipe: StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: originalWasRaw),
+            recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: originalWasRaw),
             isSample: false,
             status: status
         )
@@ -87,7 +80,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     /// Opens the last developed still, or the bundled sample when nothing has been captured.
     func openProcess() {
         if let base = StillArchive.loadBasePreview() {
-            let recipe = StillArchive.loadRecipe() ?? StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: false)
+            let recipe = StillArchive.loadRecipe() ?? StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false)
             present(
                 base: base,
                 recipe: recipe,
@@ -106,7 +99,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         }
         present(
             base: base,
-            recipe: StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: false),
+            recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false),
             isSample: true,
             status: "样张，不是这次拍摄。Sample still, not a capture."
         )
@@ -263,7 +256,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let saveProcessed = format != .raw || saveRaw == false
         let skippedRaw = format.wantsRaw && saveRaw == false && hasProcessed
         let preview = snapshot.preview
-        let style = grainStyle
         let rawData = snapshot.raw
         let originalProcessed = snapshot.processed
 
@@ -323,11 +315,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 try? StillArchive.writeBasePreview(base)
             }
             let keptRaw = files.contains { $0.filename.lowercased().hasSuffix(".dng") }
-            let recipe = StillRecipe(exposureEV: 0, style: style, originalWasRaw: keptRaw)
+            let recipe = StillRecipe(exposureEV: 0, style: .off, originalWasRaw: keptRaw)
             if base != nil {
                 StillArchive.writeRecipe(recipe)
             }
-            let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: style, maxSide: 900) }
+            let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: .off, maxSide: 900) }
             let thumb = thumbSource.map { StillArchive.thumbnail(from: UIImage(cgImage: $0)) } ?? preview.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
             let captureStatus = Self.captureStatus(
