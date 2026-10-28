@@ -13,16 +13,21 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var thumbnail: UIImage?
     @Published private(set) var lastSavedNote: String?
     @Published private(set) var canRetryPhotoSave = false
+    @Published private(set) var grainStyle: GrainStyle
+    @Published var processSession: ProcessSession?
+    @Published private(set) var hasDevelopBase = false
 
     private var cancellables = Set<AnyCancellable>()
     private let pendingLock = NSLock()
     private var pending = PendingCapture()
 
     override init() {
+        grainStyle = GrainStyle.stored(UserDefaults.standard.string(forKey: StillArchive.grainStyleKey))
         super.init()
         captureCount = UserDefaults.standard.integer(forKey: StillArchive.countKey)
         canRetryPhotoSave = UserDefaults.standard.string(forKey: StillArchive.lastPathKey) != nil
             && UserDefaults.standard.bool(forKey: StillArchive.lastSavedKey) == false
+        hasDevelopBase = StillArchive.loadBasePreview() != nil
         if let data = try? Data(contentsOf: StillArchive.thumbnailURL), let image = UIImage(data: data) {
             thumbnail = image
         }
@@ -32,6 +37,98 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+    }
+
+    func setGrainStyle(_ style: GrainStyle) {
+        grainStyle = style
+        UserDefaults.standard.set(style.rawValue, forKey: StillArchive.grainStyleKey)
+    }
+
+    /// Opens the last developed still, or the bundled sample when nothing has been captured.
+    func openProcess() {
+        if let base = StillArchive.loadBasePreview() {
+            let recipe = StillArchive.loadRecipe() ?? StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: false)
+            present(
+                base: base,
+                recipe: recipe,
+                isSample: false,
+                status: lastSavedNote
+            )
+            return
+        }
+        openSample()
+    }
+
+    func openSample() {
+        guard let image = UIImage(named: "SampleStill"), let base = StillPipeline.normalizedCGImage(from: image) else {
+            camera.statusMessage = "样张没有装进 App。Sample still is missing."
+            return
+        }
+        present(
+            base: base,
+            recipe: StillRecipe(exposureEV: 0, style: grainStyle, originalWasRaw: false),
+            isSample: true,
+            status: "样张，不是这次拍摄。Sample still, not a capture."
+        )
+    }
+
+    func dismissProcess() {
+        if let session = processSession, session.isSample == false {
+            StillArchive.writeRecipe(StillRecipe(
+                exposureEV: session.exposureEV,
+                style: session.style,
+                originalWasRaw: session.originalWasRaw
+            ))
+        }
+        processSession = nil
+    }
+
+    func exportDeveloped(_ session: ProcessSession) async {
+        await MainActor.run { session.isExporting = true }
+        let base = session.base
+        let ev = session.exposureEV
+        let style = session.style
+        let isSample = session.isSample
+        let originalWasRaw = session.originalWasRaw
+        let rendered = await Task.detached(priority: .userInitiated) {
+            StillPipeline.render(base, exposureEV: ev, style: style, maxSide: nil)
+        }.value
+        guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered) else {
+            await MainActor.run {
+                session.isExporting = false
+                session.status = "没有导出处理图。Couldn't render the still."
+            }
+            return
+        }
+        let stamp = Self.fileStamp()
+        let filename = "PHI-\(style.title)-\(stamp).\(encoded.ext)"
+        do {
+            try await PhotoLibrary.save(data: encoded.data, typeIdentifier: encoded.uti, filename: filename)
+            let note: String
+            if isSample {
+                note = "已把样张的处理图存入相册。Saved the sample develop."
+            } else if originalWasRaw {
+                note = "已另存处理图。RAW 原片没有改动。Saved a develop. The RAW file was left as captured."
+            } else {
+                note = "已另存处理图，没有覆盖拍摄原片。Saved a separate develop."
+            }
+            await MainActor.run {
+                session.isExporting = false
+                session.status = note
+                self.lastSavedNote = note
+            }
+        } catch PhotoSaveError.notAuthorized {
+            await MainActor.run {
+                session.isExporting = false
+                session.status = "没有相册权限，处理图还没写入。Allow Photos access to save it."
+                self.camera.statusMessage = "没有相册权限。Allow Photos access in Settings."
+            }
+        } catch {
+            await MainActor.run {
+                session.isExporting = false
+                session.status = "处理图没有写入相册。Couldn't save the develop."
+            }
+        }
     }
 
     func capture() {
@@ -120,10 +217,20 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let preview = snapshot.preview
         let codec = snapshot.codec
         let usedRaw = snapshot.usedRaw
+        let style = grainStyle
 
         DispatchQueue.global(qos: .userInitiated).async {
             let url = try? StillArchive.write(data: payload, ext: ext)
-            let thumb = preview.map { StillArchive.thumbnail(from: $0) }
+            let base = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
+            if let base {
+                try? StillArchive.writeBasePreview(base)
+            }
+            let recipe = StillRecipe(exposureEV: 0, style: style, originalWasRaw: savedRaw)
+            if base != nil {
+                StillArchive.writeRecipe(recipe)
+            }
+            let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: style, maxSide: 900) }
+            let thumb = thumbSource.map { StillArchive.thumbnail(from: UIImage(cgImage: $0)) } ?? preview.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
             DispatchQueue.main.async {
                 self.isCapturing = false
@@ -135,6 +242,18 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 self.captureCount += 1
                 UserDefaults.standard.set(self.captureCount, forKey: StillArchive.countKey)
+                if usedRaw && !savedRaw {
+                    self.camera.statusMessage = "这张没能存成 RAW，已改存 \(codec)。"
+                }
+                if let base {
+                    self.hasDevelopBase = true
+                    self.present(
+                        base: base,
+                        recipe: recipe,
+                        isSample: false,
+                        status: self.camera.statusMessage
+                    )
+                }
                 guard let url else {
                     self.camera.statusMessage = "照片没有留在 App 内。Couldn't keep the still in the app."
                     return
@@ -143,9 +262,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 UserDefaults.standard.set(uti, forKey: StillArchive.lastUTIKey)
                 UserDefaults.standard.set(false, forKey: StillArchive.lastSavedKey)
                 self.canRetryPhotoSave = true
-                if usedRaw && !savedRaw {
-                    self.camera.statusMessage = "这张没能存成 RAW，已改存 \(codec)。"
-                }
                 Task {
                     await self.saveToPhotos(
                         data: payload,
@@ -169,19 +285,79 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             } else {
                 note = "已保存到相册。Saved to Photos."
             }
-            lastSavedNote = note
-            canRetryPhotoSave = false
-            UserDefaults.standard.set(true, forKey: StillArchive.lastSavedKey)
-            if camera.statusMessage?.contains("相册") == true {
-                camera.statusMessage = nil
+            await MainActor.run {
+                self.lastSavedNote = note
+                self.canRetryPhotoSave = false
+                UserDefaults.standard.set(true, forKey: StillArchive.lastSavedKey)
+                if self.camera.statusMessage?.contains("相册") == true {
+                    self.camera.statusMessage = nil
+                }
+                if self.processSession?.isSample == false {
+                    self.processSession?.status = note
+                }
             }
         } catch PhotoSaveError.notAuthorized {
-            canRetryPhotoSave = true
-            camera.statusMessage = "没有相册权限，照片留在 App 内。Allow Photos access to save it."
+            await MainActor.run {
+                self.canRetryPhotoSave = true
+                self.camera.statusMessage = "没有相册权限，照片留在 App 内。Allow Photos access to save it."
+                if self.processSession?.isSample == false {
+                    self.processSession?.status = "原片还没写入相册。Allow Photos access, then retry the original."
+                }
+            }
         } catch {
-            canRetryPhotoSave = true
-            camera.statusMessage = "未能写入相册，照片留在 App 内。Couldn't save to Photos."
+            await MainActor.run {
+                self.canRetryPhotoSave = true
+                self.camera.statusMessage = "未能写入相册，照片留在 App 内。Couldn't save to Photos."
+            }
         }
+    }
+
+    private func present(base: CGImage, recipe: StillRecipe, isSample: Bool, status: String?) {
+        let session = ProcessSession(
+            base: base,
+            exposureEV: recipe.exposureEV,
+            style: recipe.style,
+            isSample: isSample,
+            originalWasRaw: recipe.originalWasRaw,
+            status: status
+        )
+        if isSample == false {
+            session.onPreview = { [weak self] image in
+                self?.storeThumbnail(image)
+                self?.persist(session)
+            }
+            if session.status == nil {
+                session.status = recipe.originalWasRaw
+                    ? "RAW 原片单独保存，这里只改处理图。The RAW file stays as captured."
+                    : "导出时另存处理图，不覆盖刚拍的原片。"
+            }
+        }
+        session.schedule()
+        processSession = session
+    }
+
+    private func persist(_ session: ProcessSession) {
+        guard session.isSample == false else { return }
+        StillArchive.writeRecipe(StillRecipe(
+            exposureEV: session.exposureEV,
+            style: session.style,
+            originalWasRaw: session.originalWasRaw
+        ))
+    }
+
+    private func storeThumbnail(_ image: UIImage) {
+        let thumb = StillArchive.thumbnail(from: image)
+        thumbnail = thumb
+        if let jpeg = thumb.jpegData(compressionQuality: 0.82) {
+            try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
+        }
+    }
+
+    private static func fileStamp() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
     }
 
     private func resetPending() {
