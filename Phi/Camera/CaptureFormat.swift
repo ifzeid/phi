@@ -17,7 +17,7 @@ enum ProcessMode: String, CaseIterable, Identifiable {
         switch self {
         case .bayer: "0"
         case .proRaw: "Φ"
-        case .standard: "标准"
+        case .standard: "1"
         }
     }
 
@@ -45,7 +45,7 @@ enum ProcessMode: String, CaseIterable, Identifiable {
     /// Reads the new keys, or maps the old JPEG+RAW / RAW / JPEG setting once.
     static func load() -> Preference {
         let defaults = UserDefaults.standard
-        if let raw = defaults.string(forKey: storageKey), let mode = ProcessMode(rawValue: raw) {
+        if let raw = defaults.string(forKey: storageKey), let mode = mode(fromStored: raw) {
             let save = defaults.object(forKey: saveHEIFKey) as? Bool ?? true
             return Preference(mode: mode, saveHEIF: mode == .standard ? true : save)
         }
@@ -62,6 +62,12 @@ enum ProcessMode: String, CaseIterable, Identifiable {
         defaults.set(preference.mode.rawValue, forKey: storageKey)
         defaults.set(preference.saveHEIF, forKey: saveHEIFKey)
         return preference
+    }
+
+    /// Stored value stays `standard`. The old on-screen word `标准` still loads as mode 1.
+    private static func mode(fromStored raw: String) -> ProcessMode? {
+        if raw == "标准" { return .standard }
+        return ProcessMode(rawValue: raw)
     }
 
     static func label(mode: ProcessMode, aspect: String) -> String {
