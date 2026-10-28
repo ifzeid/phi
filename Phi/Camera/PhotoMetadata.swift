@@ -42,7 +42,8 @@ enum PhotoMetadata {
         return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
     }
 
-    /// Properties for one final HEIF/JPEG write. Orientation is upright because the pixels were already turned.
+    /// Properties for one final HEIF/JPEG write. Orientation is 1 because the pixels were already turned upright.
+    /// Display P3 is the CGImage color space from `CIContext.createCGImage`, which ImageIO embeds. This SDK has no ICC property key.
     static func exportProperties(from metadata: [String: Any]?, quality: CGFloat) -> [CFString: Any] {
         var props: [String: Any] = [:]
         if let metadata {
@@ -54,9 +55,6 @@ enum PhotoMetadata {
             }
         }
         props[kCGImagePropertyOrientation as String] = 1
-        if let profile = CGColorSpace(name: CGColorSpace.displayP3)?.copyICCData() {
-            props[kCGImagePropertyICCProfile as String] = profile
-        }
         var tiff = metadata?[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
         tiff[kCGImagePropertyTIFFSoftware as String] = PhiVersion.software
         props[kCGImagePropertyTIFFDictionary as String] = tiff

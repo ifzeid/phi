@@ -68,6 +68,7 @@ enum StillPipeline {
         defer { renderLock.unlock() }
         let extent = image.extent.integral
         guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return nil }
+        // Display P3 on the CGImage is what ImageIO writes into the HEIF. There is no separate ICC property key on this SDK.
         return context.createCGImage(image, from: extent, format: .RGBA8, colorSpace: displayP3)
     }
 
