@@ -28,17 +28,26 @@ enum StillPipeline {
         }.cgImage
     }
 
-    static func render(_ image: CGImage, exposureEV: Double, style: GrainStyle, maxSide: CGFloat?) -> CGImage? {
+    static func render(
+        _ image: CGImage,
+        exposureEV: Double,
+        style: GrainStyle,
+        look: ColorLook = .none,
+        halo: Bool = false,
+        maxSide: CGFloat?
+    ) -> CGImage? {
         var input = CIImage(cgImage: image)
         let longest = max(input.extent.width, input.extent.height)
         if let maxSide, longest > maxSide, longest > 0 {
             let scale = maxSide / longest
             input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-
+        // The file is display-encoded. Looks expect the linear working space.
+        input = input.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
         let bounded = Swift.min(2, Swift.max(-2, exposureEV))
         let exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
-        let developed = grained(exposed, style: style)
+        let looked = ColorLooks.apply(exposed, look: look, halo: halo)
+        let developed = grained(looked, style: style)
         return displayImage(developed)
     }
 

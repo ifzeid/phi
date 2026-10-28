@@ -115,11 +115,11 @@ struct ProcessStillView: View {
                 Text(session.isExporting ? "正在导出" : "保存处理图")
             }
             .buttonStyle(QuietButtonStyle())
-            .disabled(session.isExporting || session.preview == nil || (session.sourceDNG == nil && session.isSample == false))
-            .accessibilityHint("从 DNG 显影导出 HEIF。不改写相册里的原片。")
+            .disabled(session.isExporting || session.preview == nil)
+            .accessibilityHint("把当前显影另存成 HEIF，写入系统相册和 PHI 相册。")
 
             if canRetryOriginal, session.isSample == false {
-                Button("重试保存原片", action: onRetryOriginal)
+                Button("重试", action: onRetryOriginal)
                     .font(CameraFont.interface(13, weight: .medium))
                     .foregroundStyle(CameraColor.textSecondary)
                     .frame(minHeight: 44)

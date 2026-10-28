@@ -21,6 +21,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
     @Published private(set) var albumRevision = 0
+    /// Local id of an edited HEIF whose Photos write failed. Album 重试 and the editor 重试 both use it.
+    private var developRetryID: String?
 
     private var cancellables = Set<AnyCancellable>()
     private let pendingLock = NSLock()
@@ -230,14 +232,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     func exportDeveloped(_ session: ProcessSession) async {
-        guard session.isSample || session.sourceDNG != nil else {
-            await MainActor.run {
-                session.isExporting = false
-                session.status = "没有 Bayer RAW，不会把系统成片另存成 PHI。"
-                session.developInfo = "来源 系统成片 · 未导出"
-            }
-            return
-        }
         await MainActor.run { session.isExporting = true }
         let base = session.base
         let ev = session.exposureEV
@@ -262,7 +256,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     draft: false
                 )
             }
-            return StillPipeline.render(base, exposureEV: ev, style: style, maxSide: nil)
+            return StillPipeline.render(
+                base,
+                exposureEV: ev,
+                style: style,
+                look: look,
+                halo: halo,
+                maxSide: nil
+            )
         }.value
         guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered, metadata: metadata) else {
             await MainActor.run {
@@ -271,49 +272,120 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             }
             return
         }
+        let sourceName = dng == nil ? "系统成片" : "DNG"
         let bytes = encoded.data.count
-        let info = "DNG · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
+        let info = "\(sourceName) · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
         Logger(subsystem: "com.zeid.phi", category: "develop").info("\(info, privacy: .public)")
-        await MainActor.run { session.developInfo = info }
         let stamp = Self.fileStamp()
         let filename = "PHI-\(style.title)-\(stamp).\(encoded.ext)"
+        guard let url = try? StillArchive.write(data: encoded.data, stamp: stamp, ext: encoded.ext) else {
+            await MainActor.run {
+                session.isExporting = false
+                session.status = "处理图没有留在 App 内。"
+            }
+            return
+        }
+        let file = LibraryRecord.File(
+            path: url.lastPathComponent,
+            typeIdentifier: encoded.uti,
+            filename: filename,
+            alternate: false
+        )
+        let localShot = PhiLocalShots.Shot(
+            id: stamp,
+            files: [file],
+            hasRaw: false,
+            savedToPhotos: false,
+            photosIdentifier: nil,
+            saveFailed: nil,
+            aspect: aspect.rawValue
+        )
+        PhiLocalShots.remember(localShot)
+        let payload = LibraryPayload(
+            data: encoded.data,
+            typeIdentifier: encoded.uti,
+            filename: filename,
+            alternate: false
+        )
+        await MainActor.run {
+            session.developInfo = info
+            self.developRetryID = stamp
+            self.albumRevision += 1
+            self.canRetryPhotoSave = true
+        }
+        let note: String
+        if isSample {
+            note = "已把样张的处理图存入相册。Saved the sample develop."
+        } else if originalWasRaw {
+            note = "已另存处理图。RAW 原片没有改动。Saved a develop. The RAW file was left as captured."
+        } else {
+            note = "已另存处理图，没有覆盖拍摄原片。Saved a separate develop."
+        }
+        await saveDevelopedToPhotos(payload, localShotID: stamp, successNote: note, session: session)
+    }
+
+    /// Editor 重试. A failed develop is saved again; otherwise the last original capture is.
+    func retryFailedSave() {
+        if let id = developRetryID {
+            retryLocalShot(id: id)
+            return
+        }
+        retryPhotoSave()
+    }
+
+    private func saveDevelopedToPhotos(
+        _ payload: LibraryPayload,
+        localShotID: String,
+        successNote: String,
+        session: ProcessSession
+    ) async {
         do {
-            try await PhotoLibrary.save(
-                data: encoded.data,
-                typeIdentifier: encoded.uti,
-                filename: filename,
+            let identifier = try await PhotoLibrary.save(
+                payloads: [payload],
+                fileInAlbum: true,
                 location: session.captureLocation
             )
-            let note: String
-            if isSample {
-                note = "已把样张的处理图存入相册。Saved the sample develop."
-            } else if originalWasRaw {
-                note = "已另存处理图。RAW 原片没有改动。Saved a develop. The RAW file was left as captured."
-            } else {
-                note = "已另存处理图，没有覆盖拍摄原片。Saved a separate develop."
+            if let identifier {
+                PhiShotIndex.append(localIdentifier: identifier, hasRaw: false, aspect: session.framedAspect.rawValue)
+                PhiLocalShots.markSaved(id: localShotID, photosIdentifier: identifier)
             }
             await MainActor.run {
+                self.albumRevision += 1
+                self.developRetryID = nil
+                self.canRetryPhotoSave = false
+                self.lastSavedNote = successNote
                 session.isExporting = false
-                session.status = note
-                self.lastSavedNote = note
-            }
-        } catch PhotoSaveError.notAuthorized {
-            await MainActor.run {
-                session.isExporting = false
-                session.status = "没有相册权限，处理图还没写入。Allow Photos access to save it."
-                self.camera.statusMessage = "没有相册权限。Allow Photos access in Settings."
+                session.status = successNote
+                if self.camera.statusMessage?.contains("相册") == true {
+                    self.camera.statusMessage = nil
+                }
             }
         } catch let error as PhotoSaveError {
+            let line = error.debugLine
+            Logger(subsystem: "com.zeid.phi", category: "photos").error("develop \(line, privacy: .public)")
+            PhiLocalShots.markFailed(id: localShotID)
             await MainActor.run {
+                self.albumRevision += 1
+                self.developRetryID = localShotID
+                self.canRetryPhotoSave = true
                 session.isExporting = false
-                session.status = "处理图没有写入相册（\(error.codeLine)）。"
-                session.developInfo = error.debugLine
+                session.status = "未能写入相册（\(error.codeLine)）。处理图留在 App 内。"
+                session.developInfo = line
+                self.camera.statusMessage = "未能写入相册（\(error.codeLine)）。照片留在 App 内。"
             }
         } catch {
             let ns = error as NSError
+            let line = "\(ns.domain) \(ns.code) \(ns.localizedDescription)"
+            Logger(subsystem: "com.zeid.phi", category: "photos").error("develop \(line, privacy: .public)")
+            PhiLocalShots.markFailed(id: localShotID)
             await MainActor.run {
+                self.albumRevision += 1
+                self.developRetryID = localShotID
+                self.canRetryPhotoSave = true
                 session.isExporting = false
-                session.status = "处理图没有写入相册（\(ns.domain) \(ns.code)）。"
+                session.status = "未能写入相册（\(ns.domain) \(ns.code)）。处理图留在 App 内。"
+                session.developInfo = line
+                self.camera.statusMessage = "未能写入相册（\(ns.domain) \(ns.code)）。照片留在 App 内。"
             }
         }
     }
@@ -563,6 +635,10 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.albumRevision += 1
                 self.lastSavedNote = note
                 self.canRetryPhotoSave = false
+                if self.developRetryID == localShotID {
+                    self.developRetryID = nil
+                }
+                self.processSession?.isExporting = false
                 UserDefaults.standard.set(true, forKey: StillArchive.lastSavedKey)
                 if self.camera.statusMessage?.contains("相册") == true {
                     self.camera.statusMessage = nil
