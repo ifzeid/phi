@@ -1,0 +1,244 @@
+import SwiftUI
+
+/// Capture settings, measured from Figma `101:338` (390×844).
+/// Vertical sizes stay in points. Horizontal padding and pill tracks scale with the screen width.
+enum SettingsToken {
+    static let designWidth: CGFloat = 390
+    static let pageInset: CGFloat = 20
+    static let pillGap: CGFloat = 8
+    static let pillHeight: CGFloat = 38
+    static let pillRadius: CGFloat = 19
+    static let controlRowHeight: CGFloat = 44
+    static let toggleRowHeight: CGFloat = 48
+    static let switchWidth: CGFloat = 42
+    static let switchHeight: CGFloat = 26
+    static let headerHeight: CGFloat = 44
+    static let closeLeading: CGFloat = 14
+    static let titleGap: CGFloat = 20
+    static let sectionLine: CGFloat = 19
+    static let rowLine: CGFloat = 23
+    static let cardTitleLine: CGFloat = 20
+    static let cardBodyLine: CGFloat = 19
+    static let cardHeight: CGFloat = 92
+    static let cardRadius: CGFloat = 14
+    static let cardInset: CGFloat = 16
+    static let cardTitleTop: CGFloat = 14
+    static let afterHeader: CGFloat = 24
+    static let headerToControls: CGFloat = 11
+    static let modeCaptionGap: CGFloat = 8
+    static let modeCaptionToDivider: CGFloat = 25
+    static let dividerToToggle: CGFloat = 19
+    static let toggleToFormat: CGFloat = 8
+    static let formatCaptionGap: CGFloat = 10
+    static let formatCaptionToDivider: CGFloat = 30
+    static let dividerToAspect: CGFloat = 24
+    static let aspectCaptionGap: CGFloat = 13
+    static let aspectCaptionToCard: CGFloat = 62
+
+    static func sectionFont() -> Font { .system(size: 13, weight: .regular) }
+    static func rowFont() -> Font { .system(size: 16, weight: .regular) }
+    static func pillFont() -> Font { .system(size: 13, weight: .medium) }
+    static func titleFont() -> Font { .system(size: 14, weight: .medium) }
+    static func cardTitleFont() -> Font { .system(size: 14, weight: .medium) }
+    static func cardBodyFont() -> Font { .system(size: 13, weight: .regular) }
+}
+
+private struct SettingsScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    var settingsScale: CGFloat {
+        get { self[SettingsScaleKey.self] }
+        set { self[SettingsScaleKey.self] = newValue }
+    }
+}
+
+struct SettingsHeader: View {
+    var title: String
+    var closeLabel: String
+    var onClose: () -> Void
+    @Environment(\.settingsScale) private var scale
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onClose) {
+                PhiGlyphImage(glyph: .close)
+                    .foregroundStyle(CameraColor.textPrimary)
+                    .frame(width: SettingsToken.headerHeight, height: SettingsToken.headerHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(closeLabel)
+            Text(title)
+                .font(SettingsToken.titleFont())
+                .foregroundStyle(CameraColor.textPrimary)
+                .frame(height: SettingsToken.cardTitleLine)
+                .padding(.leading, SettingsToken.titleGap * scale)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, SettingsToken.closeLeading * scale)
+        .frame(height: SettingsToken.headerHeight)
+    }
+}
+
+struct SettingsSection<Content: View>: View {
+    var title: String
+    var caption: String
+    var captionGap: CGFloat
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsCaption(text: title)
+            Color.clear.frame(height: SettingsToken.headerToControls)
+            content()
+            Color.clear.frame(height: captionGap)
+            SettingsCaption(text: caption)
+        }
+    }
+}
+
+struct SettingsCaption: View {
+    var text: String
+    @Environment(\.settingsScale) private var scale
+
+    var body: some View {
+        Text(text)
+            .font(SettingsToken.sectionFont())
+            .foregroundStyle(CameraColor.textSecondary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: SettingsToken.sectionLine)
+            .padding(.horizontal, SettingsToken.pageInset * scale)
+    }
+}
+
+struct SettingsRow<Content: View>: View {
+    var height: CGFloat = SettingsToken.controlRowHeight
+    @ViewBuilder var content: () -> Content
+    @Environment(\.settingsScale) private var scale
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content()
+        }
+        .padding(.horizontal, SettingsToken.pageInset * scale)
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+    }
+}
+
+struct SettingsToggleRow: View {
+    var title: String
+    var isOn: Bool
+    var onChange: (Bool) -> Void
+
+    var body: some View {
+        SettingsRow(height: SettingsToken.toggleRowHeight) {
+            Text(title)
+                .font(SettingsToken.rowFont())
+                .foregroundStyle(CameraColor.textPrimary)
+                .frame(height: SettingsToken.rowLine)
+            Spacer(minLength: 8)
+            SettingsSwitch(isOn: isOn, onChange: onChange)
+        }
+    }
+}
+
+struct SettingsSwitch: View {
+    var isOn: Bool
+    var onChange: (Bool) -> Void
+
+    var body: some View {
+        Button {
+            onChange(!isOn)
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? CameraColor.accent : CameraColor.border)
+                Circle()
+                    .fill(CameraColor.textPrimary)
+                    .padding(2)
+                    .frame(width: SettingsToken.switchHeight - 4, height: SettingsToken.switchHeight - 4)
+            }
+            .frame(width: SettingsToken.switchWidth, height: SettingsToken.switchHeight)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isOn ? "已打开" : "已关闭")
+    }
+}
+
+struct SettingsPillGroup: View {
+    var titles: [String]
+    var selection: Int
+    var onSelect: (Int) -> Void
+    @Environment(\.settingsScale) private var scale
+
+    var body: some View {
+        HStack(spacing: SettingsToken.pillGap * scale) {
+            ForEach(titles.indices, id: \.self) { index in
+                let selected = index == selection
+                Button {
+                    onSelect(index)
+                } label: {
+                    Text(titles[index])
+                        .font(SettingsToken.pillFont())
+                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: SettingsToken.pillHeight)
+                        .background(
+                            selected ? CameraColor.surface : CameraColor.background,
+                            in: RoundedRectangle(cornerRadius: SettingsToken.pillRadius, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(titles[index])
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, SettingsToken.pageInset * scale)
+        .frame(height: SettingsToken.controlRowHeight)
+    }
+}
+
+struct SettingsDivider: View {
+    @Environment(\.settingsScale) private var scale
+
+    var body: some View {
+        Rectangle()
+            .fill(CameraColor.border)
+            .frame(height: 1)
+            .padding(.horizontal, SettingsToken.pageInset * scale)
+    }
+}
+
+struct SettingsHelpCard: View {
+    var title: String
+    var bodyText: String
+    @Environment(\.settingsScale) private var scale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(SettingsToken.cardTitleFont())
+                .foregroundStyle(CameraColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: SettingsToken.cardTitleLine)
+            Text(bodyText)
+                .font(SettingsToken.cardBodyFont())
+                .foregroundStyle(CameraColor.textSecondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: SettingsToken.cardBodyLine * 2)
+        }
+        .padding(.horizontal, SettingsToken.cardInset * scale)
+        .padding(.top, SettingsToken.cardTitleTop)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: SettingsToken.cardHeight, alignment: .top)
+        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: SettingsToken.cardRadius, style: .continuous))
+        .padding(.horizontal, SettingsToken.pageInset * scale)
+    }
+}

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Format, aspect, ISO, and shutter. Grain stays on the develop screen.
+/// Capture settings. Every row comes from `SettingsChrome`.
 struct FinderSettingsSheet: View {
     var mode: ProcessMode
     var onMode: (ProcessMode) -> Void
@@ -13,34 +13,15 @@ struct FinderSettingsSheet: View {
     var onClose: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                header
-                section("处理方式", caption: modeCaption) {
-                    ProcessModePicker(selection: mode, onSelect: onMode)
-                }
-                Divider().overlay(CameraColor.border)
-                companionBlock
-                section("画幅", caption: "预览与成片使用所选比例；RAW 保留完整画面") {
-                    PhotoAspectPicker(selection: aspect, onSelect: onAspect)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("设备支持决定可选格式")
-                        .font(CameraFont.interface(13, weight: .medium))
-                        .foregroundStyle(CameraColor.textPrimary)
-                    Text("没有的格式会停用，并写明原因。")
-                        .font(CameraFont.interface(13))
-                        .foregroundStyle(CameraColor.textSecondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        GeometryReader { geo in
+            let scale = geo.size.width / SettingsToken.designWidth
+            ScrollView {
+                column
+                    .environment(\.settingsScale, scale)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
+            .scrollIndicators(.hidden)
+            .contentMargins(.top, 0, for: .scrollContent)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .background(CameraColor.background)
         .modifier(UnderIsland())
         .presentationDetents([.large])
@@ -49,115 +30,82 @@ struct FinderSettingsSheet: View {
         .modifier(HiddenSystemChrome())
     }
 
-    private var header: some View {
-        ZStack {
-            Text("拍摄设置")
-                .font(CameraFont.interface(14, weight: .medium))
-                .foregroundStyle(CameraColor.textPrimary)
-            HStack {
-                Button(action: onClose) {
-                    PhiIcon(symbol: .close, color: CameraColor.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+    private var column: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsHeader(title: "拍摄设置", closeLabel: "关闭设置", onClose: onClose)
+            Color.clear.frame(height: SettingsToken.afterHeader)
+            SettingsSection(
+                title: "处理方式",
+                caption: modeCaption,
+                captionGap: SettingsToken.modeCaptionGap
+            ) {
+                SettingsPillGroup(
+                    titles: ProcessMode.allCases.map(\.mark),
+                    selection: ProcessMode.allCases.firstIndex(of: mode) ?? 0
+                ) { index in
+                    onMode(ProcessMode.allCases[index])
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭设置")
-                Spacer()
             }
-        }
-    }
-
-    private var companionBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
+            Color.clear.frame(height: SettingsToken.modeCaptionToDivider)
+            SettingsDivider()
+            Color.clear.frame(height: SettingsToken.dividerToToggle)
             if mode.wantsRaw {
-                HStack {
-                    Text("同时保存成片")
-                        .font(CameraFont.interface(16, weight: .medium))
-                        .foregroundStyle(CameraColor.textPrimary)
-                    Spacer()
-                    Toggle("同时保存成片", isOn: Binding(get: { saveHEIF }, set: onSaveHEIF))
-                        .labelsHidden()
-                        .tint(CameraColor.accent)
-                        .scaleEffect(0.82)
-                        .frame(width: 42, height: 26)
+                SettingsToggleRow(title: "同时保存成片", isOn: saveHEIF, onChange: onSaveHEIF)
+                if saveHEIF {
+                    formatBlock
                 }
-                .frame(minHeight: 44)
+            } else {
+                formatBlock
             }
-            if mode.wantsRaw == false || saveHEIF {
-                HStack(spacing: 8) {
-                    ForEach(ProcessedCodec.allCases) { item in
-                        SelectPill(title: item.title, selected: item == codec, height: 38) {
-                            onCodec(item)
-                        }
-                    }
+            Color.clear.frame(height: SettingsToken.formatCaptionToDivider)
+            SettingsDivider()
+            Color.clear.frame(height: SettingsToken.dividerToAspect)
+            SettingsSection(
+                title: "画幅",
+                caption: "预览与成片使用所选比例；RAW 保留完整画面。",
+                captionGap: SettingsToken.aspectCaptionGap
+            ) {
+                SettingsPillGroup(
+                    titles: PhotoAspect.allCases.map(\.title),
+                    selection: PhotoAspect.allCases.firstIndex(of: aspect) ?? 0
+                ) { index in
+                    onAspect(PhotoAspect.allCases[index])
                 }
             }
-            Text(codecCaption)
-                .font(CameraFont.interface(13))
-                .foregroundStyle(CameraColor.textSecondary)
-                .lineLimit(1)
+            Color.clear.frame(height: SettingsToken.aspectCaptionToCard)
+            SettingsHelpCard(
+                title: "设备支持决定可选格式",
+                bodyText: "不支持的选项会说明原因。拍摄参数回到取景页直接调整。"
+            )
+            Color.clear.frame(height: 24)
         }
     }
 
-    private func section<Content: View>(_ title: String, caption: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(CameraFont.interface(11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(CameraColor.textSecondary)
-            content()
-            Text(caption)
-                .font(CameraFont.interface(13))
-                .foregroundStyle(CameraColor.textSecondary)
-                .lineLimit(1)
+    private var formatBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: SettingsToken.toggleToFormat)
+            SettingsPillGroup(
+                titles: ProcessedCodec.allCases.map(\.title),
+                selection: ProcessedCodec.allCases.firstIndex(of: codec) ?? 0
+            ) { index in
+                onCodec(ProcessedCodec.allCases[index])
+            }
+            Color.clear.frame(height: SettingsToken.formatCaptionGap)
+            SettingsCaption(text: codecCaption)
         }
     }
 
     private var codecCaption: String {
-        if mode == .standard { return "只存苹果成片。没有 HEVC 时改存 JPEG。" }
-        if saveHEIF { return "成片为 HEIC 或 JPEG。关掉时仍保留主图。" }
+        if mode == .standard { return "成片为 HEIC 或 JPEG。" }
+        if saveHEIF { return "成片与 RAW 一起保存，方便直接查看和分享。" }
         return "系统相册仍会带上成片作为主图。"
     }
 
     private var modeCaption: String {
         switch mode {
-        case .bayer: "0 单帧 Bayer。DNG 是副档。"
-        case .proRaw: "Φ 是 ProRAW。没有时改用 Bayer。"
-        case .standard: "1 只存苹果处理好的成片。"
-        }
-    }
-
-}
-
-private struct PhotoAspectPicker: View {
-    var selection: PhotoAspect
-    var onSelect: (PhotoAspect) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(PhotoAspect.allCases) { aspect in
-                SelectPill(title: aspect.title, selected: aspect == selection, height: 38) {
-                    onSelect(aspect)
-                }
-                .accessibilityLabel(aspect.title)
-            }
+        case .bayer: "保留 RAW 数据，留给后期更多空间。"
+        case .proRaw: "Φ 没有 ProRAW 时改用 Bayer。"
+        case .standard: "只存苹果处理好的成片。"
         }
     }
 }
-
-private struct ProcessModePicker: View {
-    var selection: ProcessMode
-    var onSelect: (ProcessMode) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(ProcessMode.allCases) { mode in
-                SelectPill(title: mode.mark, selected: mode == selection, width: 111, height: 38) {
-                    onSelect(mode)
-                }
-                .accessibilityLabel(mode.fullName)
-            }
-        }
-    }
-}
-
