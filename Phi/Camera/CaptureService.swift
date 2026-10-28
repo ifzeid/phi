@@ -75,6 +75,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let displayStored = PhiLocalShots.displayFile(of: shot)?.path
         let hasRaw = shot.hasRaw
         let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? photoAspect
+        let zoom = shot.lensZoom ?? 1
         Task {
             if let stored = dngStored, let url = StillArchive.resolve(stored),
                let dng = try? Data(contentsOf: url),
@@ -85,6 +86,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 look: .none,
                 halo: false,
                 aspect: aspect,
+                lensZoom: zoom,
                 maxSide: 1600,
                 draft: false
                ) {
@@ -97,7 +99,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         status: "从 App 内的 DNG 显影。",
                         sourceDNG: dng,
                         sourceMetadata: metadata,
-                        aspect: aspect
+                        aspect: aspect,
+                        lensZoom: zoom
                     )
                 }
                 return
@@ -105,7 +108,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             if let stored = displayStored, let url = StillArchive.resolve(stored),
                let image = AlbumImage.fileImage(url: url, maxSide: nil) {
                 await MainActor.run {
-                    self.openDevelop(image: image, originalWasRaw: hasRaw)
+                    self.openDevelop(image: image, originalWasRaw: hasRaw, lensZoom: zoom)
                 }
                 return
             }
@@ -134,6 +137,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
         let aspect = PhiShotIndex.aspect(for: localIdentifier) ?? photoAspect
+        let zoom = PhiShotIndex.lensZoom(for: localIdentifier)
         let rawShot = PhiRawAsset.contains(asset)
         Task {
             let dng = await PhotoLibrary.loadAlternateData(for: asset)
@@ -144,6 +148,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 look: .none,
                 halo: false,
                 aspect: aspect,
+                lensZoom: zoom,
                 maxSide: 1600,
                 draft: false
             ) {
@@ -157,6 +162,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         sourceDNG: dng,
                         sourceMetadata: metadata,
                         aspect: aspect,
+                        lensZoom: zoom,
                         location: asset.location
                     )
                 }
@@ -164,7 +170,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             }
             if let image = await AlbumImage.loadOriginal(asset) {
                 await MainActor.run {
-                    self.openDevelop(image: image, originalWasRaw: rawShot)
+                    self.openDevelop(image: image, originalWasRaw: rawShot, lensZoom: zoom)
                 }
                 return
             }
@@ -174,7 +180,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         }
     }
 
-    func openDevelop(image: UIImage, originalWasRaw: Bool) {
+    func openDevelop(image: UIImage, originalWasRaw: Bool, lensZoom: Double = 1) {
         guard let base = StillPipeline.normalizedCGImage(from: image) else {
             camera.statusMessage = "这张照片打不开。Couldn't open that still."
             return
@@ -186,7 +192,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             base: base,
             recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: originalWasRaw),
             isSample: false,
-            status: status
+            status: status,
+            lensZoom: lensZoom
         )
     }
 
@@ -243,6 +250,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let aspect = session.framedAspect
         let look = session.colorLook
         let halo = session.halo
+        let zoom = session.lensZoom
         let rendered = await Task.detached(priority: .userInitiated) {
             if let dng {
                 return RawDevelop.image(
@@ -252,6 +260,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     look: look,
                     halo: halo,
                     aspect: aspect,
+                    lensZoom: zoom,
                     maxSide: nil,
                     draft: false
                 )
@@ -262,6 +271,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 style: style,
                 look: look,
                 halo: halo,
+                lensZoom: zoom,
                 maxSide: nil
             )
         }.value
@@ -298,7 +308,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             savedToPhotos: false,
             photosIdentifier: nil,
             saveFailed: nil,
-            aspect: aspect.rawValue
+            aspect: aspect.rawValue,
+            lensZoom: nil
         )
         PhiLocalShots.remember(localShot)
         let payload = LibraryPayload(
@@ -469,6 +480,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         pending = PendingCapture()
         pendingLock.unlock()
         DispatchQueue.main.async {
+            self.camera.restoreFinderFraming()
             self.finish(snapshot)
         }
     }
@@ -484,6 +496,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         }
 
         let aspect = photoAspect
+        let lensZoom = camera.framingZoom()
         let codec = snapshot.codec
         let rawUTI = UTType(filenameExtension: "dng")?.identifier ?? "com.adobe.raw-image"
         let saveRaw = format.wantsRaw && hasRaw && aspect.allowsRaw
@@ -547,7 +560,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let sourceThumb = preview ?? originalProcessed.flatMap { UIImage(data: $0) }
             let thumbImage = sourceThumb.flatMap { image -> UIImage? in
                 guard let cg = StillPipeline.normalizedCGImage(from: image) else { return image }
-                return UIImage(cgImage: aspect.cropped(cg))
+                return UIImage(cgImage: aspect.cropped(LensCrop.cropped(cg, zoom: lensZoom)))
             }
             let thumb = thumbImage.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
@@ -586,7 +599,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     savedToPhotos: false,
                     photosIdentifier: nil,
                     saveFailed: nil,
-                    aspect: aspect.rawValue
+                    aspect: aspect.rawValue,
+                    lensZoom: lensZoom > 1.01 ? lensZoom : nil
                 )
                 PhiLocalShots.remember(localShot)
                 self.albumRevision += 1
@@ -603,6 +617,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         croppedAspect: aspect != .threeByFour,
                         location: shotLocation,
                         aspect: aspect,
+                        lensZoom: lensZoom,
                         thumb: thumb,
                         localShotID: stamp
                     )
@@ -617,6 +632,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         croppedAspect: Bool,
         location: CLLocation? = nil,
         aspect: PhotoAspect = .threeByFour,
+        lensZoom: Double = 1,
         thumb: UIImage? = nil,
         localShotID: String = ""
     ) async {
@@ -624,7 +640,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true, location: location)
             if let identifier {
                 let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
-                PhiShotIndex.append(localIdentifier: identifier, hasRaw: hasRaw, aspect: aspect.rawValue)
+                PhiShotIndex.append(
+                    localIdentifier: identifier,
+                    hasRaw: hasRaw,
+                    aspect: aspect.rawValue,
+                    lensZoom: lensZoom > 1.01 ? lensZoom : nil
+                )
                 PhiLocalShots.markSaved(id: localShotID, photosIdentifier: identifier)
                 if let thumb {
                     DevelopCache.store(thumb, identifier: identifier)
@@ -708,6 +729,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         sourceDNG: Data? = nil,
         sourceMetadata: [String: Any]? = nil,
         aspect: PhotoAspect = .threeByFour,
+        lensZoom: Double = 1,
         location: CLLocation? = nil
     ) {
         let session = ProcessSession(
@@ -720,6 +742,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             sourceDNG: sourceDNG,
             sourceMetadata: sourceMetadata,
             framedAspect: aspect,
+            lensZoom: lensZoom,
             captureLocation: location,
             colorLook: recipe.colorLook,
             halo: recipe.halo

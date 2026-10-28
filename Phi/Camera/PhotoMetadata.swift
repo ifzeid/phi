@@ -1,7 +1,24 @@
 import AVFoundation
+import CoreImage
 import CoreLocation
 import ImageIO
 import UniformTypeIdentifiers
+
+enum ImageOrientation {
+    static func exif(of data: Data) -> Int {
+        guard let props = PhotoMetadata.properties(of: data),
+              let value = props[kCGImagePropertyOrientation as String] as? Int else { return 1 }
+        return value
+    }
+
+    /// Turns EXIF orientation into upright pixels. Callers then write orientation 1, not both and not neither.
+    static func upright(_ image: CIImage, exif: Int) -> CIImage {
+        guard let orientation = CGImagePropertyOrientation(rawValue: UInt32(exif)), orientation != .up else {
+            return image
+        }
+        return image.oriented(orientation)
+    }
+}
 
 enum PhiVersion {
     /// Shown in EXIF/TIFF Software. Uses the bundle short version, currently 0.1.0.
@@ -25,7 +42,8 @@ enum PhotoMetadata {
         return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
     }
 
-    /// Properties for one final HEIF/JPEG write. Orientation is upright because the pixels were already turned.
+    /// Properties for one final HEIF/JPEG write. Orientation is 1 because the pixels were already turned upright.
+    /// Display P3 is the CGImage color space from `CIContext.createCGImage`, which ImageIO embeds. This SDK has no ICC property key.
     static func exportProperties(from metadata: [String: Any]?, quality: CGFloat) -> [CFString: Any] {
         var props: [String: Any] = [:]
         if let metadata {

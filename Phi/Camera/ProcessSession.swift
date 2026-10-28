@@ -12,6 +12,8 @@ final class ProcessSession: ObservableObject, Identifiable {
     let sourceDNG: Data?
     let sourceMetadata: [String: Any]?
     let framedAspect: PhotoAspect
+    /// 1 is the full sensor. A crop stop such as 2× keeps the center of the full-frame DNG.
+    let lensZoom: Double
     let captureLocation: CLLocation?
     @Published var exposureEV: Double
     @Published var style: GrainStyle
@@ -36,6 +38,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         sourceDNG: Data? = nil,
         sourceMetadata: [String: Any]? = nil,
         framedAspect: PhotoAspect = .threeByFour,
+        lensZoom: Double = 1,
         captureLocation: CLLocation? = nil,
         colorLook: ColorLook = .none,
         halo: Bool = false
@@ -49,6 +52,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         self.sourceDNG = sourceDNG
         self.sourceMetadata = sourceMetadata
         self.framedAspect = framedAspect
+        self.lensZoom = lensZoom > 1 ? lensZoom : 1
         self.captureLocation = captureLocation
         self.colorLook = colorLook
         self.halo = halo
@@ -86,6 +90,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         let style = style
         let dng = sourceDNG
         let aspect = framedAspect
+        let zoom = lensZoom
         let look = colorLook
         let haloOn = halo
         Task { @MainActor in
@@ -100,6 +105,7 @@ final class ProcessSession: ObservableObject, Identifiable {
                         look: look,
                         halo: haloOn,
                         aspect: aspect,
+                        lensZoom: zoom,
                         maxSide: 1600,
                         draft: false
                     )
@@ -110,12 +116,13 @@ final class ProcessSession: ObservableObject, Identifiable {
                     style: style,
                     look: look,
                     halo: haloOn,
+                    lensZoom: zoom,
                     maxSide: 1600
                 )
             }.value
             guard current == self.token, let rendered else { return }
             let image = UIImage(cgImage: rendered)
-            let source = dng == nil ? "系统成片" : "DNG"
+            let source = dng == nil ? "source HEIF" : "source DNG"
             self.developInfo = "\(source) · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality)"
             Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
             self.preview = image

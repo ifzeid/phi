@@ -34,19 +34,27 @@ enum StillPipeline {
         style: GrainStyle,
         look: ColorLook = .none,
         halo: Bool = false,
+        lensZoom: Double = 1,
         maxSide: CGFloat?
     ) -> CGImage? {
         var input = CIImage(cgImage: image)
+        let zoom = lensZoom > 1 ? lensZoom : 1
+        input = LensCrop.cropped(input, zoom: zoom)
         let longest = max(input.extent.width, input.extent.height)
         if let maxSide, longest > maxSide, longest > 0 {
             let scale = maxSide / longest
             input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-        // The file is display-encoded. Looks expect the linear working space.
+        // Display-encoded HEIF. Exposure runs in linear light. The Process Zero curve stays on the DNG path.
         input = input.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
         let bounded = Swift.min(2, Swift.max(-2, exposureEV))
         let exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
-        let looked = ColorLooks.apply(exposed, look: look, halo: halo)
+        let looked: CIImage
+        if look != .none || halo {
+            looked = ColorLooks.apply(exposed, look: look, halo: halo, includeBase: false)
+        } else {
+            looked = exposed
+        }
         let developed = grained(looked, style: style)
         return displayImage(developed)
     }
@@ -60,6 +68,7 @@ enum StillPipeline {
         defer { renderLock.unlock() }
         let extent = image.extent.integral
         guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return nil }
+        // Display P3 on the CGImage is what ImageIO writes into the HEIF. There is no separate ICC property key on this SDK.
         return context.createCGImage(image, from: extent, format: .RGBA8, colorSpace: displayP3)
     }
 

@@ -40,6 +40,8 @@ enum PhiShotIndex {
         var localIdentifier: String
         var hasRaw: Bool
         var aspect: String?
+        /// Center-crop zoom for a focal-length crop stop. Nil or 1 is the full frame.
+        var lensZoom: Double?
     }
 
     static func load() -> [Entry] {
@@ -47,10 +49,18 @@ enum PhiShotIndex {
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
     }
 
-    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?) {
+    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double? = nil) {
         var entries = load()
         entries.removeAll { $0.localIdentifier == localIdentifier }
-        entries.append(Entry(localIdentifier: localIdentifier, hasRaw: hasRaw, aspect: aspect))
+        entries.append(Entry(localIdentifier: localIdentifier, hasRaw: hasRaw, aspect: aspect, lensZoom: lensZoom))
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
+    static func remove(localIdentifiers: [String]) {
+        guard localIdentifiers.isEmpty == false else { return }
+        let dropping = Set(localIdentifiers)
+        let entries = load().filter { dropping.contains($0.localIdentifier) == false }
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
@@ -58,6 +68,11 @@ enum PhiShotIndex {
     static func aspect(for localIdentifier: String) -> PhotoAspect? {
         guard let raw = load().first(where: { $0.localIdentifier == localIdentifier })?.aspect else { return nil }
         return PhotoAspect(rawValue: raw)
+    }
+
+    static func lensZoom(for localIdentifier: String) -> Double {
+        let stored = load().first(where: { $0.localIdentifier == localIdentifier })?.lensZoom ?? 1
+        return stored > 1 ? stored : 1
     }
 }
 
@@ -73,6 +88,8 @@ enum PhiLocalShots {
         var saveFailed: Bool?
         /// `PhotoAspect.rawValue` at capture. Older records omit it.
         var aspect: String?
+        /// Center-crop zoom. Older records omit it.
+        var lensZoom: Double?
     }
 
     private static var fileURL: URL {
@@ -100,7 +117,22 @@ enum PhiLocalShots {
     }
 
     static func forget(id: String) {
-        write(load().filter { $0.id != id })
+        remove(ids: [id])
+    }
+
+    /// Deletes the files and the index rows for shots that never made it into Photos, or whose files are already gone.
+    static func remove(ids: [String]) {
+        let dropping = Set(ids)
+        guard dropping.isEmpty == false else { return }
+        let shots = load()
+        for shot in shots where dropping.contains(shot.id) {
+            for file in shot.files {
+                if let url = StillArchive.resolve(file.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+        write(shots.filter { dropping.contains($0.id) == false })
     }
 
     static func remember(_ shot: Shot) {

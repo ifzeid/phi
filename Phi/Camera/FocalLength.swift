@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// One real lens, or the wide camera's 2× crop. Millimeters come from that camera's field of view.
 struct FocalStop: Identifiable, Equatable, Hashable {
@@ -67,6 +68,48 @@ enum FocalLengthMath {
             return native
         }
         return stops.first { abs($0.zoomFactor - 1) < 0.01 && $0.isOpticalStep } ?? stops.first
+    }
+}
+
+/// Center crop for a focal-length stop that is a zoom into a physical camera.
+/// `zoom` of 1 keeps the frame. `zoom` of 2 keeps the middle half of each side, at the pixels that region already has.
+enum LensCrop {
+    static func cropped(_ image: CIImage, zoom: Double) -> CIImage {
+        guard zoom > 1.01 else { return image }
+        let extent = image.extent.integral
+        guard extent.width > 2, extent.height > 2, extent.isInfinite == false else { return image }
+        let cropWidth = extent.width / zoom
+        let cropHeight = extent.height / zoom
+        let rect = CGRect(
+            x: extent.origin.x + (extent.width - cropWidth) / 2,
+            y: extent.origin.y + (extent.height - cropHeight) / 2,
+            width: cropWidth,
+            height: cropHeight
+        ).integral
+        guard rect.width > 1, rect.height > 1 else { return image }
+        return image.cropped(to: rect)
+    }
+
+    static func cropped(_ image: CGImage, zoom: Double) -> CGImage {
+        guard zoom > 1.01 else { return image }
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        guard width > 2, height > 2 else { return image }
+        let cropWidth = width / zoom
+        let cropHeight = height / zoom
+        let rect = CGRect(
+            x: (width - cropWidth) / 2,
+            y: (height - cropHeight) / 2,
+            width: cropWidth,
+            height: cropHeight
+        ).integral
+        guard rect.width > 1, rect.height > 1, let cropped = image.cropping(to: rect) else { return image }
+        return cropped
+    }
+
+    static func cropped(_ image: UIImage, zoom: Double) -> UIImage {
+        guard zoom > 1.01, let cg = image.cgImage else { return image }
+        return UIImage(cgImage: LensCrop.cropped(cg, zoom: zoom), scale: image.scale, orientation: image.imageOrientation)
     }
 }
 

@@ -499,6 +499,27 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    /// Zoom of the selected crop stop. Optical stops are 1. Safe to call on the main thread.
+    func framingZoom() -> Double {
+        guard let id = selectedStopID, let stop = focalStops.first(where: { $0.id == id }) else { return 1 }
+        guard stop.isOpticalStep == false, stop.zoomFactor > 1.01 else { return 1 }
+        return stop.zoomFactor
+    }
+
+    /// After a full-frame RAW capture, put the viewfinder back on the cropped framing.
+    func restoreFinderFraming() {
+        let stopID = selectedStopID
+        DispatchQueue.main.async {
+            self.previewAnchor.suspend()
+            self.sessionQueue.async {
+                if let stopID, let stop = self.lensStops.first(where: { $0.id == stopID }) {
+                    try? self.performSelect(stop)
+                }
+                self.previewAnchor.resume(device: self.device)
+            }
+        }
+    }
+
     func setPhotoAspect(_ aspect: PhotoAspect) {
         photoAspect = aspect
         sessionQueue.async {
@@ -910,7 +931,7 @@ final class CameraSession: ObservableObject {
         try switchInput(to: target)
         let zoom = stop?.zoomFactor ?? 1
         try applyZoom(zoom, ramp: false)
-        rawSuppressed = stop?.isOpticalStep == false
+        rawSuppressed = false
         publishDeliveryLabel()
     }
 
@@ -1045,7 +1066,7 @@ final class CameraSession: ObservableObject {
             zoom = stop.zoomFactor
             ramp = true
         }
-        rawSuppressed = !stop.isOpticalStep
+        rawSuppressed = false
         // Lock exposure before the zoom ramp. Locking again afterwards cancels the ramp.
         if !exposureIsAuto {
             try lockCustomExposure()
@@ -1065,67 +1086,117 @@ final class CameraSession: ObservableObject {
         publishDeliveryLabel()
     }
 
-    /// Optical tele on the virtual camera sits at a switch-over zoom, where Bayer RAW is often unavailable.
-    /// The physical camera at zoom 1 is the native delivery.
+    /// Optical and crop stops both need the physical camera at zoom 1 before Bayer is requested.
+    /// The virtual camera's zoomed format often lists no RAW, including the tele stop.
     private func needsPhysicalRawSwitch() -> Bool {
         guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
-        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), stop.isOpticalStep else { return false }
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }) else { return false }
         guard let device else { return false }
         let onNative = device.uniqueID == stop.deviceID && abs(Double(device.videoZoomFactor) - 1) < 0.05
-        return onNative == false
+        if onNative == false { return true }
+        return bayerTypes().isEmpty
     }
 
     private func settleRawCamera() {
         guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return }
-        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), stop.isOpticalStep else {
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }),
+              let physical = AVCaptureDevice(uniqueID: stop.deviceID) else {
             rawSuppressed = true
-            activeStopOptical = false
             return
         }
-        activeStopOptical = true
-        if needsPhysicalRawSwitch(), let physical = AVCaptureDevice(uniqueID: stop.deviceID) {
+        activeStopOptical = stop.isOpticalStep
+        let onNative = device?.uniqueID == physical.uniqueID && abs(Double(device?.videoZoomFactor ?? 0) - 1) < 0.05
+        if onNative == false {
             do {
-                try switchInput(to: physical, matchStillFormat: true)
+                try switchInput(to: physical, matchStillFormat: false)
                 try applyZoom(1, ramp: false)
             } catch {
                 rawSuppressed = true
-                return
-            }
-        } else if let device {
-            do {
-                try switchInput(to: device, matchStillFormat: true)
-                if abs(Double(device.videoZoomFactor) - 1) > 0.05 {
-                    try applyZoom(1, ramp: false)
-                }
-            } catch {
-                rawSuppressed = true
+                log.info("stop \(stop.millimeters)mm could not reach the physical camera")
                 return
             }
         }
-        if let device, isVirtual(device), abs(Double(device.videoZoomFactor) - 1) > 0.05 {
+        if let device, isVirtual(device) {
             rawSuppressed = true
+            log.info("stop \(stop.millimeters)mm still on the virtual camera, Bayer not requested")
             return
         }
-        let listed = photoOutput.availableRawPhotoPixelFormatTypes.contains {
-            AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
-        }
-        rawSuppressed = listed == false
+        let found = activateBayerFormat(preferFullSensor: stop.isOpticalStep == false, millimeters: stop.millimeters)
+        rawSuppressed = found == false
     }
 
-    /// Bayer RAW is requested for an optical stop when the photo output lists a Bayer format.
-    /// A 2× crop still skips RAW. Optical tele is not skipped just because the virtual-camera zoom is above 1.
-    private func bayerFormatIfDeliverable() -> OSType? {
-        guard rawSuppressed == false, activeStopOptical else { return nil }
-        return photoOutput.availableRawPhotoPixelFormatTypes.first {
-            AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
+    /// Sets formats one at a time and reads Bayer types only after `commitConfiguration`.
+    /// A ~12MP format on the tele often has no Bayer; the native still format does.
+    private func activateBayerFormat(preferFullSensor: Bool, millimeters: Int) -> Bool {
+        guard let device else { return false }
+        let ordered = Self.formatsForRaw(on: device, preferFullSensor: preferFullSensor)
+        if preferFullSensor == false, bayerTypes().isEmpty == false {
+            logRawTypes(millimeters: millimeters, note: "current")
+            alignPhotoDimensions()
+            if bayerTypes().isEmpty == false {
+                stillFormatDeviceID = device.uniqueID
+                return true
+            }
         }
+        for format in ordered.prefix(5) {
+            do {
+                try applyActiveFormat(format, on: device)
+            } catch {
+                continue
+            }
+            logRawTypes(millimeters: millimeters, note: "tried")
+            if bayerTypes().isEmpty == false {
+                alignPhotoDimensions()
+                logRawTypes(millimeters: millimeters, note: "chosen")
+                if bayerTypes().isEmpty {
+                    log.info("stop \(millimeters)mm Bayer disappeared after maxPhotoDimensions")
+                }
+                stillFormatDeviceID = device.uniqueID
+                return bayerTypes().isEmpty == false
+            }
+        }
+        logRawTypes(millimeters: millimeters, note: "none")
+        return false
+    }
+
+    private func applyActiveFormat(_ format: AVCaptureDevice.Format, on device: AVCaptureDevice) throws {
+        session.beginConfiguration()
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            session.commitConfiguration()
+            throw error
+        }
+        device.activeFormat = format
+        device.unlockForConfiguration()
+        session.commitConfiguration()
+        engageContinuousAutofocus()
+    }
+
+    private func bayerTypes() -> [OSType] {
+        photoOutput.availableRawPhotoPixelFormatTypes.filter { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
+    }
+
+    private func logRawTypes(millimeters: Int, note: String) {
+        let types = photoOutput.availableRawPhotoPixelFormatTypes
+        let listed = types.map { String($0) }.joined(separator: ",")
+        let bayer = bayerTypes().map { String($0) }.joined(separator: ",")
+        log.info("stop \(millimeters)mm \(note, privacy: .public) raw [\(listed, privacy: .public)] bayer [\(bayer, privacy: .public)]")
+    }
+
+    /// Bayer after the physical camera and a RAW-capable format are committed.
+    private func bayerFormatIfDeliverable() -> OSType? {
+        guard rawSuppressed == false else { return nil }
+        guard let device, isVirtual(device) == false else { return nil }
+        return bayerTypes().first
     }
 
     private func publishDeliveryLabel() {
         let outputHasBayer = photoOutput.availableRawPhotoPixelFormatTypes.contains {
             AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
         }
-        let usingRaw = captureFormat.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false && activeStopOptical && outputHasBayer
+        let cropStop = selectedIsCrop
+        let usingRaw = captureFormat.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false && (cropStop || (activeStopOptical && outputHasBayer))
         let name = processedPhotoCodec().name
         let label = CaptureFormat.label(
             preference: captureFormat,
@@ -1149,14 +1220,40 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    private func needsStillFormatWork() -> Bool {
-        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
-        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), stop.isOpticalStep else { return false }
-        guard let device else { return false }
-        return stillFormatDeviceID != device.uniqueID
+    private var selectedIsCrop: Bool {
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }) else { return false }
+        return stop.isOpticalStep == false && stop.zoomFactor > 1.01
     }
 
-    /// Prefer the format whose full photo size is nearest 12MP, so Bayer and the HEIF are the same frame.
+    private func needsStillFormatWork() -> Bool {
+        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), let device else { return false }
+        if isVirtual(device) || device.uniqueID != stop.deviceID { return true }
+        if abs(Double(device.videoZoomFactor) - 1) > 0.05 { return true }
+        return bayerTypes().isEmpty
+    }
+
+    /// Crop stops want the largest still format so a 2× crop of the 48MP frame stays detailed.
+    /// Optical stops try a ~12MP format first, then larger ones, and keep the first that lists Bayer after commit.
+    private static func formatsForRaw(on device: AVCaptureDevice, preferFullSensor: Bool) -> [AVCaptureDevice.Format] {
+        let ranked: [(AVCaptureDevice.Format, Int)] = device.formats.compactMap { format in
+            guard let area = largestPhotoDimensions(format).map({ Int($0.width) * Int($0.height) }), area > 0 else {
+                return nil
+            }
+            return (format, area)
+        }
+        if preferFullSensor {
+            return ranked.sorted { $0.1 > $1.1 }.map(\.0)
+        }
+        let near = ranked
+            .filter { abs($0.1 - 12_000_000) <= 4_000_000 }
+            .sorted { abs($0.1 - 12_000_000) < abs($1.1 - 12_000_000) }
+        let nearIDs = Set(near.map { ObjectIdentifier($0.0) })
+        let others = ranked.sorted { $0.1 > $1.1 }.map(\.0).filter { nearIDs.contains(ObjectIdentifier($0)) == false }
+        return near.map(\.0) + others
+    }
+
+    /// Used when a caller asks for a still format without a Bayer search. Prefer ~12MP.
     private static func matchedStillFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
         let ranked: [(AVCaptureDevice.Format, Int)] = device.formats.compactMap { format in
             guard let area = largestPhotoDimensions(format).map({ Int($0.width) * Int($0.height) }), area > 0 else {
