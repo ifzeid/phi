@@ -891,15 +891,9 @@ final class CameraSession: ObservableObject {
     private func bayerFormatIfDeliverable() -> OSType? {
         guard rawSuppressed == false, activeStopOptical, let device else { return nil }
         guard abs(Double(device.videoZoomFactor) - 1) < 0.05 else { return nil }
-        let outputTypes = photoOutput.availableRawPhotoPixelFormatTypes.filter {
+        return photoOutput.availableRawPhotoPixelFormatTypes.first {
             AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
         }
-        guard outputTypes.isEmpty == false else { return nil }
-        let supported = device.activeFormat.supportedRawPhotoPixelFormatTypes
-        if supported.isEmpty == false {
-            return outputTypes.first { supported.contains($0) }
-        }
-        return outputTypes.first
     }
 
     private func publishDeliveryLabel() {
@@ -1036,6 +1030,8 @@ final class CameraSession: ObservableObject {
             statusMessage = "分屏时无法使用相机。"
         case .videoDeviceNotAvailableDueToSystemPressure:
             statusMessage = "系统繁忙，相机已暂停。"
+        case .sensitiveContentMitigationActivated:
+            statusMessage = "相机已暂停。"
         @unknown default:
             statusMessage = "相机已暂停。"
         }
