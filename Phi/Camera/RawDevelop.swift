@@ -34,9 +34,9 @@ enum RawDevelop {
         filter.sharpnessAmount = 0
         filter.boostAmount = 0
         filter.contrastAmount = 0
-        filter.isDraftMode = draft
+        filter.isDraftModeEnabled = draft
         if let maxSide {
-            let native = filter.outputNativeSize
+            let native = filter.nativeSize
             let longest = max(native.width, native.height)
             if longest > maxSide, longest > 0 {
                 filter.scaleFactor = Float(maxSide / longest)
