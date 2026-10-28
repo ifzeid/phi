@@ -6,7 +6,7 @@ import Photos
 import UIKit
 import UniformTypeIdentifiers
 
-/// Builds each still at `.speed`. JPEG+RAW is the default; RAW is skipped when this stop cannot deliver Bayer.
+/// Builds each still at `.quality`. RAW is skipped when this stop cannot deliver Bayer.
 final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     let camera = CameraSession()
 
@@ -277,7 +277,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let originalPixels = session.originalImage?.cgImage
         let rendered = await Task.detached(priority: .userInitiated) {
             if neutral {
-                return originalPixels ?? base
+                return Optional(originalPixels ?? base)
             }
             if let dng {
                 return RawDevelop.image(

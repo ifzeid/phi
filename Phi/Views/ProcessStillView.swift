@@ -69,6 +69,7 @@ struct ProcessStillView: View {
         .frame(height: 52)
     }
 
+    @ViewBuilder
     private var editorImage: some View {
         PhotoCanvas(widthOverHeight: session.framedAspect.widthOverHeight) {
             ZStack {

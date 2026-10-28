@@ -40,11 +40,11 @@ struct PHIUITestHost: View {
         case .album:
             AlbumBrowser(
                 revision: 0,
-                sampleGallery: true,
                 onClose: {},
                 onEditLibrary: { _ in },
                 onEditLocal: { _ in },
-                onRetryLocal: { _ in }
+                onRetryLocal: { _ in },
+                sampleGallery: true
             )
         case .editor:
             ProcessStillView(

@@ -1327,7 +1327,7 @@ final class CameraSession: ObservableObject {
         let listed = types.map { String($0) }.joined(separator: ",")
         let bayer = types.filter(AVCapturePhotoOutput.isBayerRAWPixelFormat).map { String($0) }.joined(separator: ",")
         let zoom = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), Double(device.videoZoomFactor))
-        let preset = session.sessionPreset?.rawValue ?? "-"
+        let preset = session.sessionPreset.rawValue
         let proRaw = photoOutput.isAppleProRAWEnabled ? "on" : "off"
         let dimensions = photoOutput.maxPhotoDimensions
         log.info("\(context, privacy: .public) type \(device.deviceType.rawValue, privacy: .public) zoom \(zoom, privacy: .public) preset \(preset, privacy: .public) proRaw \(proRaw, privacy: .public) dims \(dimensions.width)x\(dimensions.height) raw [\(listed, privacy: .public)] bayer [\(bayer, privacy: .public)]")
