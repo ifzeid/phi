@@ -25,30 +25,14 @@ private struct CompositionGrid: View {
     }
 }
 
-private enum DragParameter {
-    case ev
-    case iso
-    case shutter
-
-    var accessibilityName: String {
-        switch self {
-        case .ev: "曝光补偿"
-        case .iso: "ISO"
-        case .shutter: "快门"
-        }
-    }
-}
-
 struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
     @AppStorage("phi.showGrid") private var showGrid = false
-    @State private var dragParameter: DragParameter = .ev
+    @State private var showSettings = false
     @State private var dragBaseEV: Double = 0
-    @State private var dragBaseISO: Float = 100
-    @State private var dragBaseShutter: Double = 1.0 / 125
+    @State private var rulerOpacity: Double = 0
     @State private var focusPoint: CGPoint?
-    @State private var focusToken = 0
     @State private var flashOpacity: Double = 0
 
     private var camera: CameraSession { capture.camera }
@@ -75,6 +59,20 @@ struct QuietFinderView: View {
             } else {
                 camera.stop()
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            FinderSettingsSheet(
+                grain: capture.grainStyle,
+                onGrain: { capture.setGrainStyle($0) },
+                iso: camera.manualISOValue,
+                isoChoices: camera.isoChoices,
+                shutter: camera.manualShutterSeconds,
+                shutterChoices: camera.shutterChoices,
+                manualSupported: camera.manualExposureSupported,
+                onISO: { camera.setManualISO($0) },
+                onShutter: { camera.setManualShutter($0) },
+                onClose: { showSettings = false }
+            )
         }
         .fullScreenCover(item: $capture.processSession, onDismiss: { capture.dismissProcess() }) { session in
             ProcessStillView(
@@ -157,14 +155,16 @@ struct QuietFinderView: View {
         ZStack {
             CameraColor.surface
             if camera.isConfigured {
-                CameraPreview(session: camera.session, device: camera.videoDevice) { viewPoint, devicePoint in
+                CameraPreview(
+                    session: camera.session,
+                    device: camera.videoDevice,
+                    anchor: camera.previewAnchor
+                ) { viewPoint, devicePoint in
                     focusPoint = viewPoint
-                    focusToken += 1
                     camera.focus(at: devicePoint)
                 } onDrag: { event in
                     handleDrag(event)
                 }
-                .id(camera.activeDeviceID)
             } else {
                 VStack(spacing: 18) {
                     Text(camera.statusMessage ?? "正在打开相机\nOpening the camera")
@@ -220,23 +220,31 @@ struct QuietFinderView: View {
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .bottom) {
-            VStack(spacing: 10) {
-                dragTargets
-                if camera.focalStops.isEmpty == false {
-                    FocalLengthPicker(stops: camera.focalStops, selectedID: camera.selectedStopID) { stop in
-                        camera.select(stop: stop)
-                    }
+            if camera.focalStops.isEmpty == false {
+                FocalLengthPicker(stops: camera.focalStops, selectedID: camera.selectedStopID) { stop in
+                    camera.select(stop: stop)
                 }
+                .padding(.bottom, 14)
             }
-            .padding(.bottom, 14)
+        }
+        .overlay(alignment: .trailing) {
+            ExposureDragScale(value: camera.exposureEV, range: camera.exposureRange)
+                .padding(.trailing, 10)
+                .padding(.bottom, 56)
+                .opacity(rulerOpacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(rulerOpacity < 0.2)
         }
         .overlay {
-            if let focusPoint {
-                PhiIcon(symbol: .focus, color: CameraColor.textPrimary)
-                    .scaleEffect(2.6)
-                    .frame(width: 72, height: 72)
-                    .position(focusPoint)
-                    .allowsHitTesting(false)
+            GeometryReader { proxy in
+                let point = focusPoint ?? CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                if camera.isConfigured {
+                    FocusReticle()
+                        .position(point)
+                        .allowsHitTesting(false)
+                        .animation(.easeOut(duration: 0.18), value: point.x)
+                        .animation(.easeOut(duration: 0.18), value: point.y)
+                }
             }
         }
         .onChange(of: capture.shutterTick) { _, _ in
@@ -245,26 +253,20 @@ struct QuietFinderView: View {
                 flashOpacity = 0
             }
         }
-        .task(id: focusToken) {
-            guard focusToken > 0 else { return }
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            focusPoint = nil
-        }
     }
 
     private var metaRow: some View {
         HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                GrainStylePicker(selection: capture.grainStyle) { capture.setGrainStyle($0) }
-            }
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            Text(activeValueText)
+            Text(capture.grainStyle.title)
+                .font(CameraFont.parameter(12, medium: true))
+                .foregroundStyle(CameraColor.textSecondary)
+            Spacer()
+            Text("\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
                 .font(CameraFont.parameter(13, medium: true))
                 .foregroundStyle(CameraColor.accent)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .accessibilityLabel(activeValueText)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("颗粒 \(capture.grainStyle.title)，曝光 \(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
     }
 
     private var controlRow: some View {
@@ -280,9 +282,11 @@ struct QuietFinderView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(capture.hasDevelopBase ? "最近一张，进入处理" : "打开样张")
                 Spacer()
-                Color.clear
-                    .frame(width: 48, height: 48)
-                    .accessibilityHidden(true)
+                IconHitButton(
+                    symbol: .controls,
+                    label: "拍摄设置",
+                    action: { showSettings = true }
+                )
             }
             ShutterButton(isReady: camera.isRunning, isCapturing: capture.isCapturing) {
                 capture.capture()
@@ -324,103 +328,22 @@ struct QuietFinderView: View {
         .padding(.horizontal, 8)
     }
 
-    private var dragTargets: some View {
-        HStack(spacing: 8) {
-            dragChip(.ev, title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV")
-            dragChip(.iso, title: isoChip)
-            dragChip(.shutter, title: shutterChip)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Color.black.opacity(0.88), in: Capsule())
-    }
-
-    private func dragChip(_ parameter: DragParameter, title: String) -> some View {
-        let selected = dragParameter == parameter
-        return Button {
-            dragParameter = parameter
-        } label: {
-            VStack(spacing: 4) {
-                Text(title)
-                    .font(CameraFont.parameter(12, medium: selected))
-                    .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
-                    .lineLimit(1)
-                Rectangle()
-                    .fill(selected ? CameraColor.accent : Color.clear)
-                    .frame(width: 14, height: 1.5)
-            }
-            .frame(minWidth: 64, minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(parameter.accessibilityName)
-        .accessibilityHint("在取景画面上上下拖动")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private var isoChip: String {
-        let value = camera.manualISOValue
-        return value >= 100 ? "\(Int(value.rounded()))" : String(format: "%.0f", value)
-    }
-
-    private var shutterChip: String {
-        MeterFormat.shutter(seconds: camera.manualShutterSeconds).replacingOccurrences(of: " S", with: "")
-    }
-
-    private var activeValueText: String {
-        switch dragParameter {
-        case .ev:
-            "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV"
-        case .iso:
-            "ISO \(isoChip)"
-        case .shutter:
-            MeterFormat.shutter(seconds: camera.manualShutterSeconds)
-        }
-    }
-
     private func handleDrag(_ event: PreviewDrag) {
         switch event {
         case .began:
             dragBaseEV = camera.exposureEV
-            dragBaseISO = camera.manualISOValue
-            dragBaseShutter = camera.manualShutterSeconds
+            withAnimation(.easeOut(duration: 0.12)) {
+                rulerOpacity = 1
+            }
         case .changed(let translationY):
             let steps = Int((-translationY / 22).rounded())
-            switch dragParameter {
-            case .ev:
-                camera.setExposureEV(dragBaseEV + Double(steps) * 0.1)
-            case .iso:
-                nudgeISO(steps)
-            case .shutter:
-                nudgeShutter(steps)
-            }
+            camera.setExposureEV(dragBaseEV + Double(steps) * 0.1)
         case .ended:
-            if dragParameter == .ev {
-                camera.commitExposureEV()
+            camera.commitExposureEV()
+            withAnimation(.easeOut(duration: 0.7).delay(0.12)) {
+                rulerOpacity = 0
             }
         }
-    }
-
-    private func nudgeISO(_ steps: Int) {
-        let choices = camera.isoChoices
-        guard choices.isEmpty == false else {
-            camera.setManualISO(dragBaseISO)
-            return
-        }
-        let start = ExposureStops.nearestIndex(to: dragBaseISO, in: choices)
-        let index = min(max(start + steps, 0), choices.count - 1)
-        camera.setManualISO(choices[index])
-    }
-
-    private func nudgeShutter(_ steps: Int) {
-        let choices = camera.shutterChoices
-        guard choices.isEmpty == false else {
-            camera.setManualShutter(dragBaseShutter)
-            return
-        }
-        let start = ExposureStops.nearestIndex(to: dragBaseShutter, in: choices)
-        let index = min(max(start + steps, 0), choices.count - 1)
-        camera.setManualShutter(choices[index])
     }
 
     private var counterText: String {
@@ -447,5 +370,59 @@ struct QuietFinderView: View {
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+/// Vertical exposure scale. Drawn only while a viewfinder drag is in progress.
+private struct ExposureDragScale: View {
+    var value: Double
+    var range: ClosedRange<Double>
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(ExposureFormat.signedDecimal(value))
+                .font(CameraFont.parameter(13, medium: true))
+                .foregroundStyle(CameraColor.accent)
+                .frame(width: 44, alignment: .trailing)
+            Canvas { context, size in
+                let span = range.upperBound - range.lowerBound
+                let inset: CGFloat = 8
+                let usable = max(size.height - inset * 2, 1)
+                func yPosition(_ sample: Double) -> CGFloat {
+                    guard span > 0 else { return size.height / 2 }
+                    let fraction = (range.upperBound - sample) / span
+                    return inset + CGFloat(fraction) * usable
+                }
+                var spine = Path()
+                spine.move(to: CGPoint(x: 18, y: inset))
+                spine.addLine(to: CGPoint(x: 18, y: size.height - inset))
+                context.stroke(spine, with: .color(CameraColor.textPrimary.opacity(0.45)), lineWidth: 1)
+
+                let steps = max(Int((span / 0.5).rounded()), 1)
+                for index in 0...steps {
+                    let sample = range.lowerBound + (span * Double(index) / Double(steps))
+                    let y = yPosition(sample)
+                    let major = abs(sample.rounded() - sample) < 0.05
+                    var tick = Path()
+                    let length: CGFloat = major ? 10 : 5
+                    tick.move(to: CGPoint(x: 18, y: y))
+                    tick.addLine(to: CGPoint(x: 18 - length, y: y))
+                    context.stroke(
+                        tick,
+                        with: .color(major ? CameraColor.textPrimary.opacity(0.8) : CameraColor.border),
+                        lineWidth: 1
+                    )
+                }
+
+                let needleY = yPosition(value)
+                var needle = Path()
+                needle.addEllipse(in: CGRect(x: 14, y: needleY - 4, width: 8, height: 8))
+                context.fill(needle, with: .color(CameraColor.accent))
+            }
+            .frame(width: 28, height: 168)
+        }
+        .shadow(color: .black.opacity(0.55), radius: 2, y: 0)
+        .accessibilityLabel("曝光补偿")
+        .accessibilityValue("\(ExposureFormat.signedDecimal(value)) EV")
     }
 }
