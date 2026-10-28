@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 
 /// What a shutter press writes into Photos. The processed file is HEIC when the device offers HEVC, otherwise JPEG.
@@ -103,5 +104,25 @@ enum PhotoAspect: String, CaseIterable, Identifiable {
         let integral = rect.integral.intersection(bounds)
         guard integral.width > 1, integral.height > 1, let cropped = image.cropping(to: integral) else { return image }
         return cropped
+    }
+
+    /// Same center crop in CIImage space. Extent origin is included so a non-zero origin still crops the middle.
+    func cropped(_ image: CIImage) -> CIImage {
+        let extent = image.extent.integral
+        guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return image }
+        let current = extent.width / extent.height
+        let target = widthOverHeight
+        guard abs(current - target) > 0.008 else { return image }
+        let rect: CGRect
+        if target < current {
+            let cropWidth = extent.height * target
+            let originX = extent.origin.x + (extent.width - cropWidth) / 2
+            rect = CGRect(x: originX, y: extent.origin.y, width: cropWidth, height: extent.height)
+        } else {
+            let cropHeight = extent.width / target
+            let originY = extent.origin.y + (extent.height - cropHeight) / 2
+            rect = CGRect(x: extent.origin.x, y: originY, width: extent.width, height: cropHeight)
+        }
+        return image.cropped(to: rect.integral)
     }
 }

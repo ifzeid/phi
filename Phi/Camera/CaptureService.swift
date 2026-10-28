@@ -1,5 +1,7 @@
 import AVFoundation
 import Combine
+import CoreLocation
+import Photos
 import UIKit
 import UniformTypeIdentifiers
 
@@ -61,6 +63,40 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     /// Opens Process for a still chosen in the PHI album. The library original is not overwritten.
+    func openLibraryShot(localIdentifier: String) {
+        let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
+        guard let asset else {
+            camera.statusMessage = "这张照片不在 PHI 相册里。"
+            return
+        }
+        let aspect = PhiShotIndex.aspect(for: localIdentifier) ?? photoAspect
+        let rawShot = asset.mediaSubtypes.contains(.photoRAW)
+        Task {
+            let dng = await PhotoLibrary.loadAlternateData(for: asset)
+            if let dng, let preview = RawDevelop.image(dng: dng, exposureEV: 0, style: .off, aspect: aspect, maxSide: 1600, draft: false) {
+                let metadata = PhotoMetadata.properties(of: dng)
+                await MainActor.run {
+                    self.present(
+                        base: preview,
+                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
+                        isSample: false,
+                        status: "从相册里的 Bayer DNG 重新显影。",
+                        sourceDNG: dng,
+                        sourceMetadata: metadata,
+                        aspect: aspect,
+                        location: asset.location
+                    )
+                }
+                return
+            }
+            if let image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false) {
+                await MainActor.run {
+                    self.openDevelop(image: image, originalWasRaw: rawShot)
+                }
+            }
+        }
+    }
+
     func openDevelop(image: UIImage, originalWasRaw: Bool) {
         guard let base = StillPipeline.normalizedCGImage(from: image) else {
             camera.statusMessage = "这张照片打不开。Couldn't open that still."
@@ -123,10 +159,16 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let style = session.style
         let isSample = session.isSample
         let originalWasRaw = session.originalWasRaw
+        let dng = session.sourceDNG
+        let metadata = session.sourceMetadata
+        let aspect = session.framedAspect
         let rendered = await Task.detached(priority: .userInitiated) {
-            StillPipeline.render(base, exposureEV: ev, style: style, maxSide: nil)
+            if let dng {
+                return RawDevelop.image(dng: dng, exposureEV: ev, style: style, aspect: aspect, maxSide: nil, draft: false)
+            }
+            return StillPipeline.render(base, exposureEV: ev, style: style, maxSide: nil)
         }.value
-        guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered) else {
+        guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered, metadata: metadata) else {
             await MainActor.run {
                 session.isExporting = false
                 session.status = "没有导出处理图。Couldn't render the still."
@@ -136,7 +178,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let stamp = Self.fileStamp()
         let filename = "PHI-\(style.title)-\(stamp).\(encoded.ext)"
         do {
-            try await PhotoLibrary.save(data: encoded.data, typeIdentifier: encoded.uti, filename: filename)
+            try await PhotoLibrary.save(
+                data: encoded.data,
+                typeIdentifier: encoded.uti,
+                filename: filename,
+                location: session.captureLocation
+            )
             let note: String
             if isSample {
                 note = "已把样张的处理图存入相册。Saved the sample develop."
@@ -213,11 +260,19 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             pending.error = error.localizedDescription
             return
         }
+        let packed = PhotoMetadata.fileData(from: photo, location: CaptureLocation.shared.location)
+        if pending.location == nil {
+            pending.location = CaptureLocation.shared.location
+        }
         if photo.isRawPhoto {
-            pending.raw = photo.fileDataRepresentation()
+            pending.raw = packed.data
+            pending.metadata = packed.metadata
         } else {
-            pending.processed = photo.fileDataRepresentation()
-            if let data = pending.processed, let image = UIImage(data: data) {
+            pending.processed = packed.data
+            if pending.metadata == nil {
+                pending.metadata = packed.metadata
+            }
+            if let data = packed.data, let image = UIImage(data: data) {
                 pending.preview = image
             }
         }
@@ -258,22 +313,21 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let preview = snapshot.preview
         let rawData = snapshot.raw
         let originalProcessed = snapshot.processed
+        let metadata = snapshot.metadata
+        let shotLocation = snapshot.location
 
         DispatchQueue.global(qos: .userInitiated).async {
-            var spokenCodec = codec
-            var processedExt = codec == "HEIC" ? "heic" : "jpg"
-            var processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
-            var bytes = originalProcessed
+            let spokenCodec = codec
+            let processedExt = codec == "HEIC" ? "heic" : "jpg"
+            let processedUTI = codec == "HEIC" ? UTType.heic.identifier : UTType.jpeg.identifier
+            // Apple's HEIF/JPEG stays the archived companion. Do not re-encode it.
+            let processedData = originalProcessed
+            let developed = rawData.flatMap {
+                RawDevelop.image(dng: $0, exposureEV: 0, style: .off, aspect: aspect, maxSide: 1600, draft: false)
+            }
             let upright = preview.flatMap { StillPipeline.normalizedCGImage(from: $0) }
                 ?? originalProcessed.flatMap { UIImage(data: $0) }.flatMap { StillPipeline.normalizedCGImage(from: $0) }
-            let framed = upright.map { aspect.cropped($0) }
-            if aspect != .threeByFour, let framed, let encoded = StillPipeline.encodeDeveloped(framed) {
-                bytes = encoded.data
-                processedExt = encoded.ext
-                processedUTI = encoded.uti
-                spokenCodec = encoded.ext == "heic" ? "HEIC" : "JPEG"
-            }
-            let processedData = bytes
+            let framed = developed ?? upright.map { aspect.cropped($0) }
             let stamp = StillArchive.stamp()
             var files: [LibraryRecord.File] = []
             var payloads: [LibraryPayload] = []
@@ -319,8 +373,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             if base != nil {
                 StillArchive.writeRecipe(recipe)
             }
-            let thumbSource = base.flatMap { StillPipeline.render($0, exposureEV: 0, style: .off, maxSide: 900) }
-            let thumb = thumbSource.map { StillArchive.thumbnail(from: UIImage(cgImage: $0)) } ?? preview.map { StillArchive.thumbnail(from: $0) }
+            let thumbImage = base.map { UIImage(cgImage: $0) } ?? preview
+            let thumb = thumbImage.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
             let captureStatus = Self.captureStatus(
                 codec: spokenCodec,
@@ -352,7 +406,16 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 if let base {
                     self.hasDevelopBase = true
-                    self.present(base: base, recipe: recipe, isSample: false, status: captureStatus)
+                    self.present(
+                        base: base,
+                        recipe: recipe,
+                        isSample: false,
+                        status: captureStatus,
+                        sourceDNG: rawData,
+                        sourceMetadata: metadata,
+                        aspect: aspect,
+                        location: shotLocation
+                    )
                 }
                 guard files.isEmpty == false else {
                     self.camera.statusMessage = "照片没有留在 App 内。Couldn't keep the still in the app."
@@ -367,7 +430,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 UserDefaults.standard.set(false, forKey: StillArchive.lastSavedKey)
                 self.canRetryPhotoSave = true
                 Task {
-                    await self.saveToPhotos(payloads, skippedRaw: skippedRaw, croppedAspect: aspect != .threeByFour)
+                    await self.saveToPhotos(
+                        payloads,
+                        skippedRaw: skippedRaw,
+                        croppedAspect: aspect != .threeByFour,
+                        location: shotLocation,
+                        aspect: aspect,
+                        thumb: thumb
+                    )
                 }
             }
         }
@@ -381,7 +451,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return "这一档不能保存 RAW，已改存 \(codec)。Saved \(codec) instead."
         }
         if savedRaw && savedProcessed {
-            return "RAW 和 \(codec) 会一起写入相册。这里只改处理图，不覆盖原片。"
+            return "苹果的 HEIF 和 Bayer DNG 已写入相册。这里的画面从 DNG 显影，不是那张 HEIF。"
         }
         if savedRaw {
             return "RAW 原片单独保存，这里只改处理图。The RAW file stays as captured."
@@ -389,12 +459,22 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         return nil
     }
 
-    private func saveToPhotos(_ payloads: [LibraryPayload], skippedRaw: Bool, croppedAspect: Bool) async {
+    private func saveToPhotos(
+        _ payloads: [LibraryPayload],
+        skippedRaw: Bool,
+        croppedAspect: Bool,
+        location: CLLocation? = nil,
+        aspect: PhotoAspect = .threeByFour,
+        thumb: UIImage? = nil
+    ) async {
         do {
-            let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true)
+            let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true, location: location)
             if let identifier {
                 let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
-                PhiShotIndex.append(localIdentifier: identifier, hasRaw: hasRaw)
+                PhiShotIndex.append(localIdentifier: identifier, hasRaw: hasRaw, aspect: aspect.rawValue)
+                if let thumb {
+                    DevelopCache.store(thumb, identifier: identifier)
+                }
             }
             let note = Self.savedNote(payloads: payloads, skippedRaw: skippedRaw, croppedAspect: croppedAspect)
             await MainActor.run {
@@ -443,14 +523,27 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         return "已保存到相册。Saved to Photos."
     }
 
-    private func present(base: CGImage, recipe: StillRecipe, isSample: Bool, status: String?) {
+    private func present(
+        base: CGImage,
+        recipe: StillRecipe,
+        isSample: Bool,
+        status: String?,
+        sourceDNG: Data? = nil,
+        sourceMetadata: [String: Any]? = nil,
+        aspect: PhotoAspect = .threeByFour,
+        location: CLLocation? = nil
+    ) {
         let session = ProcessSession(
             base: base,
             exposureEV: recipe.exposureEV,
             style: recipe.style,
             isSample: isSample,
             originalWasRaw: recipe.originalWasRaw,
-            status: status
+            status: status,
+            sourceDNG: sourceDNG,
+            sourceMetadata: sourceMetadata,
+            framedAspect: aspect,
+            captureLocation: location
         )
         if isSample == false {
             session.onPreview = { [weak self] image in
@@ -512,4 +605,6 @@ private struct PendingCapture {
     var usedRaw = false
     var codec = "JPEG"
     var error: String?
+    var metadata: [String: Any]?
+    var location: CLLocation?
 }

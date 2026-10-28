@@ -5,7 +5,7 @@ import UIKit
 /// Grid and pager for stills PHI saved. Only the PHI album and assets this app recorded — not the rest of the library.
 struct AlbumBrowser: View {
     var onClose: () -> Void
-    var onProcess: (UIImage, Bool) -> Void
+    var onProcess: (PHAsset) -> Void
 
     @State private var assets: [PHAsset] = []
     @State private var phase: Phase = .checking
@@ -204,6 +204,10 @@ private struct AlbumThumb: View {
     }
 
     private func load() async {
+        if let cached = DevelopCache.image(for: asset.localIdentifier) {
+            image = cached
+            return
+        }
         let target = CGSize(width: 240, height: 240)
         image = await AlbumImage.load(asset, target: target, fast: true)
     }
@@ -213,7 +217,7 @@ private struct AlbumPager: View {
     var assets: [PHAsset]
     @State var index: Int
     var onClose: () -> Void
-    var onProcess: (UIImage, Bool) -> Void
+    var onProcess: (PHAsset) -> Void
 
     var body: some View {
         ZStack {
@@ -268,7 +272,7 @@ private struct AlbumPager: View {
 
 private struct AlbumPage: View {
     var asset: PHAsset
-    var onProcess: (UIImage, Bool) -> Void
+    var onProcess: (PHAsset) -> Void
     @State private var image: UIImage?
     @State private var share = false
 
@@ -300,17 +304,21 @@ private struct AlbumPage: View {
                     .disabled(image == nil)
                 Spacer()
                 Button("处理") {
-                    guard let image else { return }
-                    onProcess(image, asset.mediaSubtypes.contains(.photoRAW))
+                    onProcess(asset)
                 }
                 .font(CameraFont.interface(15, weight: .medium))
-                .foregroundStyle(image == nil ? CameraColor.border : CameraColor.accent)
-                .disabled(image == nil)
+                .foregroundStyle(CameraColor.accent)
             }
             .padding(.horizontal, 24)
             .frame(height: 64)
         }
-        .task { image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false) }
+        .task {
+            if let cached = DevelopCache.image(for: asset.localIdentifier) {
+                image = cached
+                return
+            }
+            image = await AlbumImage.load(asset, target: PHImageManagerMaximumSize, fast: false)
+        }
         .sheet(isPresented: $share) {
             if let image {
                 ActivityView(items: [image])
@@ -320,7 +328,7 @@ private struct AlbumPage: View {
     }
 }
 
-private enum AlbumImage {
+enum AlbumImage {
     static func load(_ asset: PHAsset, target: CGSize, fast: Bool) async -> UIImage? {
         await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()

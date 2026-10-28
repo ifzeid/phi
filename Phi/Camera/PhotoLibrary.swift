@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import ImageIO
 import Photos
@@ -17,6 +18,7 @@ enum PhiShotIndex {
     struct Entry: Codable, Equatable {
         var localIdentifier: String
         var hasRaw: Bool
+        var aspect: String?
     }
 
     static func load() -> [Entry] {
@@ -24,12 +26,17 @@ enum PhiShotIndex {
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
     }
 
-    static func append(localIdentifier: String, hasRaw: Bool) {
+    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?) {
         var entries = load()
         entries.removeAll { $0.localIdentifier == localIdentifier }
-        entries.append(Entry(localIdentifier: localIdentifier, hasRaw: hasRaw))
+        entries.append(Entry(localIdentifier: localIdentifier, hasRaw: hasRaw, aspect: aspect))
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+
+    static func aspect(for localIdentifier: String) -> PhotoAspect? {
+        guard let raw = load().first(where: { $0.localIdentifier == localIdentifier })?.aspect else { return nil }
+        return PhotoAspect(rawValue: raw)
     }
 }
 
@@ -94,16 +101,16 @@ enum PhotoLibrary {
     }
 
     @discardableResult
-    static func save(data: Data, typeIdentifier: String, filename: String) async throws -> String? {
+    static func save(data: Data, typeIdentifier: String, filename: String, location: CLLocation? = nil) async throws -> String? {
         try await save(payloads: [
             LibraryPayload(data: data, typeIdentifier: typeIdentifier, filename: filename, alternate: false)
-        ], fileInAlbum: false)
+        ], fileInAlbum: false, location: location)
     }
 
     /// One library asset. Pass the processed still first (`alternate == false`) and the DNG as `alternate`.
     /// Returns the new asset's local identifier. Album filing happens only when read access was already granted, so a shutter press does not raise a second permission prompt.
     @discardableResult
-    static func save(payloads: [LibraryPayload], fileInAlbum: Bool = false) async throws -> String? {
+    static func save(payloads: [LibraryPayload], fileInAlbum: Bool = false, location: CLLocation? = nil) async throws -> String? {
         guard payloads.isEmpty == false else { return nil }
         guard await canAddPhotos() else { throw PhotoSaveError.notAuthorized }
 
@@ -115,8 +122,10 @@ enum PhotoLibrary {
         }
         let box = IdentifierBox()
         let items = payloads
+        let shotLocation = location
         try await PHPhotoLibrary.shared().performChanges {
             let request = PHAssetCreationRequest.forAsset()
+            request.location = shotLocation
             for item in items {
                 let options = PHAssetResourceCreationOptions()
                 options.uniformTypeIdentifier = item.typeIdentifier
@@ -176,6 +185,30 @@ enum PhotoLibrary {
         }
     }
 
+    static func loadAlternateData(for asset: PHAsset) async -> Data? {
+        let resources = PHAssetResource.assetResources(for: asset)
+        guard let resource = resources.first(where: { $0.type == .alternatePhoto }) else { return nil }
+        return await loadResource(resource)
+    }
+
+    private static func loadResource(_ resource: PHAssetResource) async -> Data? {
+        await withCheckedContinuation { continuation in
+            let buffer = NSMutableData()
+            let options = PHAssetResourceRequestOptions()
+            options.isNetworkAccessAllowed = true
+            let resumed = ResourceResume()
+            PHAssetResourceManager.default().requestData(for: resource, options: options) { chunk in
+                buffer.append(chunk)
+            } completionHandler: { error in
+                if error != nil {
+                    resumed.resume(continuation, with: nil)
+                } else {
+                    resumed.resume(continuation, with: buffer as Data)
+                }
+            }
+        }
+    }
+
     /// Newest first. Indexed captures, plus anything already sitting in the PHI album.
     static func loadShots() -> [PHAsset] {
         let indexed = PhiShotIndex.load()
@@ -211,6 +244,42 @@ enum PhotoLibrary {
 
 private final class IdentifierBox: @unchecked Sendable {
     var localIdentifier: String?
+}
+
+private final class ResourceResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func resume(_ continuation: CheckedContinuation<Data?, Never>, with data: Data?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard didResume == false else { return }
+        didResume = true
+        continuation.resume(returning: data)
+    }
+}
+
+enum DevelopCache {
+    private static var directory: URL {
+        let url = StillArchive.directory.appendingPathComponent("develop-thumbs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static func store(_ image: UIImage, identifier: String) {
+        guard let data = image.jpegData(compressionQuality: 0.8) else { return }
+        try? data.write(to: fileURL(identifier), options: .atomic)
+    }
+
+    static func image(for identifier: String) -> UIImage? {
+        guard let data = try? Data(contentsOf: fileURL(identifier)) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func fileURL(_ identifier: String) -> URL {
+        let safe = identifier.replacingOccurrences(of: "/", with: "-")
+        return directory.appendingPathComponent("\(safe).jpg")
+    }
 }
 
 enum StillArchive {

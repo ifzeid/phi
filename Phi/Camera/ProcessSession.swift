@@ -1,11 +1,17 @@
+import CoreLocation
 import UIKit
 
-/// One developed still. Exposure and grain are applied from the clean base every time, so the preview and the export share the recipe.
+/// One developed still. When `sourceDNG` is set, exposure and grain re-develop that Bayer file.
+/// Otherwise exposure is applied to `base`. Preview and export share the recipe.
 final class ProcessSession: ObservableObject, Identifiable {
     let id = UUID()
     let base: CGImage
     let isSample: Bool
     let originalWasRaw: Bool
+    let sourceDNG: Data?
+    let sourceMetadata: [String: Any]?
+    let framedAspect: PhotoAspect
+    let captureLocation: CLLocation?
     @Published var exposureEV: Double
     @Published var style: GrainStyle
     @Published var preview: UIImage?
@@ -16,13 +22,28 @@ final class ProcessSession: ObservableObject, Identifiable {
 
     private var token = 0
 
-    init(base: CGImage, exposureEV: Double, style: GrainStyle, isSample: Bool, originalWasRaw: Bool, status: String? = nil) {
+    init(
+        base: CGImage,
+        exposureEV: Double,
+        style: GrainStyle,
+        isSample: Bool,
+        originalWasRaw: Bool,
+        status: String? = nil,
+        sourceDNG: Data? = nil,
+        sourceMetadata: [String: Any]? = nil,
+        framedAspect: PhotoAspect = .threeByFour,
+        captureLocation: CLLocation? = nil
+    ) {
         self.base = base
         self.exposureEV = exposureEV
         self.style = style
         self.isSample = isSample
         self.originalWasRaw = originalWasRaw
         self.status = status
+        self.sourceDNG = sourceDNG
+        self.sourceMetadata = sourceMetadata
+        self.framedAspect = framedAspect
+        self.captureLocation = captureLocation
     }
 
     func setExposure(_ value: Double) {
@@ -42,11 +63,16 @@ final class ProcessSession: ObservableObject, Identifiable {
         let base = base
         let ev = exposureEV
         let style = style
+        let dng = sourceDNG
+        let aspect = framedAspect
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 45_000_000)
             guard current == self.token else { return }
             let rendered = await Task.detached(priority: .userInitiated) {
-                StillPipeline.render(base, exposureEV: ev, style: style, maxSide: 1600)
+                if let dng {
+                    return RawDevelop.image(dng: dng, exposureEV: ev, style: style, aspect: aspect, maxSide: 1600, draft: false)
+                }
+                return StillPipeline.render(base, exposureEV: ev, style: style, maxSide: 1600)
             }.value
             guard current == self.token, let rendered else { return }
             let image = UIImage(cgImage: rendered)

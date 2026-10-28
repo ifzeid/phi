@@ -119,6 +119,7 @@ final class CameraSession: ObservableObject {
     }
 
     func start() {
+        CaptureLocation.shared.start()
         sessionQueue.async {
             do {
                 try self.configureIfNeeded()
@@ -156,6 +157,7 @@ final class CameraSession: ObservableObject {
     }
 
     func stop() {
+        CaptureLocation.shared.stop()
         sessionQueue.async {
             if self.session.isRunning {
                 self.session.stopRunning()
@@ -917,15 +919,23 @@ final class CameraSession: ObservableObject {
         }
     }
 
+    /// Bayer on this phone is the binned 12MP frame. The processed companion uses that size, not 48MP.
     private func alignPhotoDimensions() {
         guard let device else { return }
-        guard let largest = device.activeFormat.supportedMaxPhotoDimensions.max(by: { lhs, rhs in
-            Int(lhs.width) * Int(lhs.height) < Int(rhs.width) * Int(rhs.height)
-        }) else { return }
+        guard let match = Self.twelveMegapixelDimensions(device.activeFormat.supportedMaxPhotoDimensions) else { return }
         let current = photoOutput.maxPhotoDimensions
-        if current.width != largest.width || current.height != largest.height {
-            photoOutput.maxPhotoDimensions = largest
+        if current.width != match.width || current.height != match.height {
+            photoOutput.maxPhotoDimensions = match
         }
+    }
+
+    private static func twelveMegapixelDimensions(_ choices: [CMVideoDimensions]) -> CMVideoDimensions? {
+        let targetArea = 12_000_000
+        return choices.min(by: { lhs, rhs in
+            let leftArea = Int(lhs.width) * Int(lhs.height)
+            let rightArea = Int(rhs.width) * Int(rhs.height)
+            return abs(leftArea - targetArea) < abs(rightArea - targetArea)
+        })
     }
 
     private func publishLensesAndManualSupport() {
