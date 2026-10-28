@@ -436,8 +436,7 @@ final class CameraSession: ObservableObject {
 
     private func discover(_ device: AVCaptureDevice) -> Discovery {
         let raw = photoOutput.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
-        let heic = photoOutput.availablePhotoCodecTypes.contains(.heic)
-        let codec = heic ? "HEIC" : "JPEG"
+        let codec = processedPhotoCodec().name
         let dimensions = device.activeFormat.supportedMaxPhotoDimensions
         let largest = dimensions.max { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }
         let aspect = largest.map { AspectLabel.photo(width: Int($0.width), height: Int($0.height)) } ?? "—"
@@ -536,9 +535,8 @@ final class CameraSession: ObservableObject {
 
     private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String) {
         let bayer = photoOutput.availableRawPhotoPixelFormatTypes.first { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
-        let heic = photoOutput.availablePhotoCodecTypes.contains(.heic)
-        let codec: AVVideoCodecType = heic ? .heic : .jpeg
-        let processed: [String: Any] = [AVVideoCodecKey: codec]
+        let processedCodec = processedPhotoCodec()
+        let processed: [String: Any] = [AVVideoCodecKey: processedCodec.codec]
         let settings: AVCapturePhotoSettings
         if let bayer {
             settings = AVCapturePhotoSettings(rawPixelFormatType: bayer, processedFormat: processed)
@@ -549,18 +547,29 @@ final class CameraSession: ObservableObject {
         if photoOutput.supportedFlashModes.contains(flash) {
             settings.flashMode = flash
         }
-        if let preview = photoOutput.availablePreviewPhotoPixelFormatTypes.first {
+        // Preview formats belong to the settings object. The output no longer exposes them.
+        if let preview = settings.availablePreviewPhotoPixelFormatTypes.first {
             settings.previewPhotoFormat = [
                 kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: preview)
             ]
         }
         let usingRaw = bayer != nil
-        let codecName = heic ? "HEIC" : "JPEG"
+        let codecName = processedCodec.name
         let label = "\(usingRaw ? "RAW" : codecName) · \(cachedAspect)"
         DispatchQueue.main.async {
             if self.formatLabel != label { self.formatLabel = label }
         }
         return (settings, usingRaw, codecName)
+    }
+
+    /// HEIC stills use the HEVC photo codec. `AVVideoCodecType` has no `.heic` case; that name is `AVFileType.heic`.
+    /// JPEG is the fallback when HEVC is not in `availablePhotoCodecTypes`.
+    private func processedPhotoCodec() -> (codec: AVVideoCodecType, name: String) {
+        let codecs = photoOutput.availablePhotoCodecTypes
+        if let hevc = codecs.first(where: { $0 == .hevc || $0.rawValue.caseInsensitiveCompare("heic") == .orderedSame }) {
+            return (hevc, "HEIC")
+        }
+        return (.jpeg, "JPEG")
     }
 
     private func applyZoom(_ stop: FocalStop, ramp: Bool) throws {
