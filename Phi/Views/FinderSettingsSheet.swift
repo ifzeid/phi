@@ -90,11 +90,11 @@ struct FinderSettingsSheet: View {
     private var formatCaption: String {
         switch format {
         case .jpegAndRaw:
-            "默认。处理图和 RAW 作为同一张进相册。这一档如果不能出 RAW，就只存处理图。"
+            "默认。苹果的 HEIF/JPEG 和 RAW 作为同一张进相册。拍完不进入编辑。这一档如果不能出 RAW，就只存 HEIF/JPEG。"
         case .raw:
-            "只把 RAW 放进相册。这一档如果不能出 RAW，就改存处理图。"
+            "DNG 和苹果的 HEIF/JPEG 配成同一张。只存 DNG 时系统相册会拒收。编辑时才从 DNG 显影。"
         case .jpeg:
-            "不请求 RAW。这台设备能写 HEIC 时存成 HEIC，否则 JPEG。"
+            "不请求 RAW。这台设备能写 HEIC 时存成 HEIC，否则 JPEG。拍完不进入编辑。"
         }
     }
 

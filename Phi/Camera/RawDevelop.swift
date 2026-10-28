@@ -1,7 +1,7 @@
 import CoreImage
 
-/// Single-frame Bayer develop. Noise reduction and sharpening are forced off after scale,
-/// because changing scale or draft mode can restore the filter defaults.
+/// Single-frame Bayer develop. Noise reduction stays off after scale, because scale can restore defaults.
+/// A little sharpness and detail stay on. The film curve lives in `ColorLooks`, not in `contrastAmount`.
 /// The EV dial is `CIRAWFilter.exposure`. Apple's HEIF is not an input.
 enum RawDevelop {
     static let exportQuality: CGFloat = 0.98
@@ -56,9 +56,9 @@ enum RawDevelop {
         filter.localToneMapAmount = 0
         filter.luminanceNoiseReductionAmount = 0
         filter.colorNoiseReductionAmount = 0
-        filter.sharpnessAmount = 0
-        filter.detailAmount = 0
         filter.moireReductionAmount = 0
+        filter.sharpnessAmount = 0.3
+        filter.detailAmount = 0.4
         filter.boostAmount = 0
         filter.contrastAmount = 0
     }

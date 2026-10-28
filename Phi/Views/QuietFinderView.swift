@@ -65,14 +65,25 @@ struct QuietFinderView: View {
         .fullScreenCover(isPresented: $showAlbum, onDismiss: {
             guard let pending = pendingDevelop else { return }
             pendingDevelop = nil
-            capture.openLibraryShot(localIdentifier: pending.localIdentifier)
+            switch pending {
+            case .library(let localIdentifier):
+                capture.openLibraryShot(localIdentifier: localIdentifier)
+            case .local(let id):
+                capture.openLocalShot(id: id)
+            }
         }) {
             AlbumBrowser(
+                revision: capture.albumRevision,
                 onClose: { showAlbum = false },
-                onProcess: { asset in
-                    pendingDevelop = PendingDevelop(localIdentifier: asset.localIdentifier)
+                onEditLibrary: { asset in
+                    pendingDevelop = .library(asset.localIdentifier)
                     showAlbum = false
-                }
+                },
+                onEditLocal: { id in
+                    pendingDevelop = .local(id)
+                    showAlbum = false
+                },
+                onRetryLocal: { capture.retryLocalShot(id: $0) }
             )
         }
         .sheet(isPresented: $showSettings) {
@@ -189,7 +200,7 @@ struct QuietFinderView: View {
                         .foregroundStyle(CameraColor.textSecondary)
                         .multilineTextAlignment(.center)
                     if capture.hasDevelopBase == false, camera.statusMessage != nil {
-                        Button("处理样张") { capture.openSample() }
+                        Button("编辑样张") { capture.openSample() }
                             .buttonStyle(QuietButtonStyle())
                             .padding(.horizontal, 28)
                     }
@@ -392,8 +403,9 @@ struct QuietFinderView: View {
     }
 }
 
-private struct PendingDevelop {
-    var localIdentifier: String
+private enum PendingDevelop {
+    case library(String)
+    case local(String)
 }
 
 /// Vertical exposure scale. Drawn only while a viewfinder drag is in progress.
