@@ -55,10 +55,10 @@ enum StillPipeline {
     }
 
     static func encodeDeveloped(_ image: CGImage, metadata: [String: Any]? = nil) -> (data: Data, ext: String, uti: String)? {
-        if let heic = encode(image, type: UTType.heic, quality: 0.93, metadata: metadata) {
+        if let heic = encode(image, type: UTType.heic, quality: RawDevelop.exportQuality, metadata: metadata) {
             return (heic, "heic", UTType.heic.identifier)
         }
-        if let jpeg = encode(image, type: UTType.jpeg, quality: 0.93, metadata: metadata) {
+        if let jpeg = encode(image, type: UTType.jpeg, quality: RawDevelop.exportQuality, metadata: metadata) {
             return (jpeg, "jpg", UTType.jpeg.identifier)
         }
         return nil
@@ -96,7 +96,9 @@ enum StillPipeline {
             return nil
         }
         let options = PhotoMetadata.exportProperties(from: metadata, quality: quality)
-        CGImageDestinationAddImage(destination, image, options as CFDictionary)
+        var depthOptions = options
+        depthOptions[kCGImagePropertyDepth] = 10
+        CGImageDestinationAddImage(destination, image, depthOptions as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
     }

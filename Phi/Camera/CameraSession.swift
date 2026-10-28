@@ -412,11 +412,32 @@ final class CameraSession: ObservableObject {
                 }
                 return
             }
-            let prepared = self.makeSettings(flash: flash)
-            note(prepared.usingRaw, prepared.codecName)
-            self.photoOutput.capturePhoto(with: prepared.settings, delegate: delegate)
-            DispatchQueue.main.async {
-                completion(true)
+            let switching = self.needsPhysicalRawSwitch()
+            let shoot = {
+                self.settleRawCamera()
+                let prepared = self.makeSettings(flash: flash)
+                if prepared.usingRaw == false, self.captureFormat.wantsRaw, self.photoAspect.allowsRaw {
+                    DispatchQueue.main.async {
+                        self.statusMessage = "这一档没有 Bayer RAW，不会把系统成片当成 PHI 显影保存。"
+                    }
+                }
+                note(prepared.usingRaw, prepared.codecName)
+                self.photoOutput.capturePhoto(with: prepared.settings, delegate: delegate)
+                self.publishDeliveryLabel()
+                if switching {
+                    self.previewAnchor.resume(device: self.device)
+                }
+                DispatchQueue.main.async {
+                    completion(true)
+                }
+            }
+            if switching {
+                DispatchQueue.main.async {
+                    self.previewAnchor.suspend()
+                    self.sessionQueue.async(execute: shoot)
+                }
+            } else {
+                shoot()
             }
         }
     }
@@ -736,7 +757,7 @@ final class CameraSession: ObservableObject {
         try switchInput(to: target)
         let zoom = stop?.zoomFactor ?? 1
         try applyZoom(zoom, ramp: false)
-        rawSuppressed = abs(zoom - 1) > 0.05 || stop?.isOpticalStep == false
+        rawSuppressed = stop?.isOpticalStep == false
         publishDeliveryLabel()
     }
 
@@ -867,7 +888,7 @@ final class CameraSession: ObservableObject {
             zoom = stop.zoomFactor
             ramp = true
         }
-        rawSuppressed = !stop.isOpticalStep || abs(zoom - 1) > 0.05
+        rawSuppressed = !stop.isOpticalStep
         // Lock exposure before the zoom ramp. Locking again afterwards cancels the ramp.
         if !exposureIsAuto {
             try lockCustomExposure()
@@ -886,11 +907,47 @@ final class CameraSession: ObservableObject {
         publishDeliveryLabel()
     }
 
-    /// Bayer RAW is only requested at a native 1× optical stop.
-    /// A 2× crop (the ~50mm stop) still advertises RAW formats and then throws inside `capturePhoto`.
+    /// Optical tele on the virtual camera sits at a switch-over zoom, where Bayer RAW is often unavailable.
+    /// The physical camera at zoom 1 is the native delivery.
+    private func needsPhysicalRawSwitch() -> Bool {
+        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return false }
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), stop.isOpticalStep else { return false }
+        guard let device else { return false }
+        let onNative = device.uniqueID == stop.deviceID && abs(Double(device.videoZoomFactor) - 1) < 0.05
+        return onNative == false
+    }
+
+    private func settleRawCamera() {
+        guard captureFormat.wantsRaw, photoAspect.allowsRaw else { return }
+        guard let stop = lensStops.first(where: { $0.id == selectedStopID }), stop.isOpticalStep else {
+            rawSuppressed = true
+            activeStopOptical = false
+            return
+        }
+        activeStopOptical = true
+        if needsPhysicalRawSwitch(), let physical = AVCaptureDevice(uniqueID: stop.deviceID) {
+            do {
+                try switchInput(to: physical)
+                try applyZoom(1, ramp: false)
+            } catch {
+                rawSuppressed = true
+                return
+            }
+        }
+        if let device, isVirtual(device), abs(Double(device.videoZoomFactor) - 1) > 0.05 {
+            rawSuppressed = true
+            return
+        }
+        let listed = photoOutput.availableRawPhotoPixelFormatTypes.contains {
+            AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
+        }
+        rawSuppressed = listed == false
+    }
+
+    /// Bayer RAW is requested for an optical stop when the photo output lists a Bayer format.
+    /// A 2× crop still skips RAW. Optical tele is not skipped just because the virtual-camera zoom is above 1.
     private func bayerFormatIfDeliverable() -> OSType? {
-        guard rawSuppressed == false, activeStopOptical, let device else { return nil }
-        guard abs(Double(device.videoZoomFactor) - 1) < 0.05 else { return nil }
+        guard rawSuppressed == false, activeStopOptical else { return nil }
         return photoOutput.availableRawPhotoPixelFormatTypes.first {
             AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
         }

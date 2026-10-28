@@ -81,22 +81,42 @@ struct ProcessStillView: View {
                 .foregroundStyle(CameraColor.textSecondary)
                 .accessibilityLabel("这是成片曝光，不是相机测光")
 
+            Text("STYLE")
+                .font(CameraFont.interface(11, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(CameraColor.textSecondary)
+            ColorLookPicker(selection: session.colorLook) { session.setColorLook($0) }
+            Text("HALO")
+                .font(CameraFont.interface(11, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(CameraColor.textSecondary)
+            HaloToggle(enabled: session.halo) { session.setHalo($0) }
+            Text("只在处理页。正片、负片、黑白互斥。光晕可叠在任何一档上，包括无。没有强度。")
+                .font(CameraFont.interface(12))
+                .foregroundStyle(CameraColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Text("GRAIN")
                 .font(CameraFont.interface(11, weight: .medium))
                 .tracking(1.2)
                 .foregroundStyle(CameraColor.textSecondary)
             GrainStylePicker(selection: session.style) { session.setStyle($0) }
-            Text("只在这里。打开就是 FINE，没有强度。取景不加颗粒，也不加光晕。")
+            Text("颗粒在色貌之后。打开就是 FINE，没有强度。取景不加颗粒。")
                 .font(CameraFont.interface(12))
                 .foregroundStyle(CameraColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text(session.developInfo)
+                .font(CameraFont.parameter(11))
+                .foregroundStyle(CameraColor.textSecondary)
+                .accessibilityLabel(session.developInfo)
 
             Button(action: onExport) {
                 Text(session.isExporting ? "正在导出" : "保存处理图")
             }
             .buttonStyle(QuietButtonStyle())
-            .disabled(session.isExporting || session.preview == nil)
-            .accessibilityHint("导出 HEIC 或 JPEG。不改写 RAW 原片。")
+            .disabled(session.isExporting || session.preview == nil || (session.sourceDNG == nil && session.isSample == false))
+            .accessibilityHint("从 DNG 显影导出 HEIF。不改写相册里的原片。")
 
             if canRetryOriginal, session.isSample == false {
                 Button("重试保存原片", action: onRetryOriginal)
@@ -117,6 +137,69 @@ struct ProcessStillView: View {
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+struct ColorLookPicker: View {
+    var selection: ColorLook
+    var onSelect: (ColorLook) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(ColorLook.allCases) { look in
+                let selected = look == selection
+                Button {
+                    onSelect(look)
+                } label: {
+                    VStack(spacing: 5) {
+                        Text(look.title)
+                            .font(CameraFont.parameter(12, medium: selected))
+                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                            .lineLimit(1)
+                        Rectangle()
+                            .fill(selected ? CameraColor.accent : Color.clear)
+                            .frame(width: 14, height: 1.5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(look.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+    }
+}
+
+struct HaloToggle: View {
+    var enabled: Bool
+    var onChange: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            option("关", selected: enabled == false) { onChange(false) }
+            option("光晕", selected: enabled) { onChange(true) }
+        }
+    }
+
+    private func option(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(CameraFont.parameter(12, medium: selected))
+                    .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                Rectangle()
+                    .fill(selected ? CameraColor.accent : Color.clear)
+                    .frame(width: 14, height: 1.5)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
