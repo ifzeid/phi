@@ -62,6 +62,17 @@ enum PHIUITest {
         case effects
     }
 
+    /// UITest launches start from the defaults. A launch argument is the only override.
+    static func resetPersistedState() {
+        let defaults = UserDefaults.standard
+        defaults.set((aspect ?? .threeByFour).rawValue, forKey: PhotoAspect.storageKey)
+        defaults.set(showGrid, forKey: "phi.showGrid")
+        defaults.set(ProcessMode.bayer.rawValue, forKey: ProcessMode.storageKey)
+        defaults.set(true, forKey: ProcessMode.saveProcessedKey)
+        defaults.set(true, forKey: ProcessMode.saveHEIFKey)
+        defaults.set(ProcessedCodec.heic.rawValue, forKey: ProcessedCodec.storageKey)
+    }
+
     static var sample: UIImage? { UIImage(named: "SampleStill") }
 
     static var lensStops: [FocalStop] {
@@ -76,6 +87,11 @@ enum PHIUITest {
 
 struct PHIUITestHost: View {
     var screen: PHIUITest.Screen
+
+    init(screen: PHIUITest.Screen) {
+        PHIUITest.resetPersistedState()
+        self.screen = screen
+    }
 
     var body: some View {
         switch screen {

@@ -29,19 +29,19 @@ struct ProcessStillView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let home: CGFloat = max(geo.safeAreaInsets.bottom, ScreenEdge.windowBottom, 21)
-            // Title 52, tabs 48, toast 44, actions 44, and 12pt above the home inset.
-            let chrome: CGFloat = 200 + toolHeight + home
-            let ratio: CGFloat = PhotoAspect.finderWidthOverHeight
-            let ideal: CGFloat = geo.size.width / ratio
-            let photoHeight: CGFloat = min(ideal, max(160, geo.size.height - chrome))
+            let bottomPad: CGFloat = 12
+            let controls: CGFloat = 48 + toolHeight + 44 + 44
+            let available: CGFloat = geo.size.height - 52 - controls - bottomPad
+            let ideal: CGFloat = geo.size.width / PhotoAspect.finderWidthOverHeight
+            let photoHeight: CGFloat = min(ideal, max(160, available))
             ZStack {
-                CameraColor.background.ignoresSafeArea()
+                CameraColor.background
                 VStack(spacing: 0) {
                     titleBar
                     editorImage
                         .frame(height: photoHeight, alignment: .top)
                         .clipped()
+                    Spacer(minLength: 0)
                     tabBar
                         .frame(height: 48)
                     tool
@@ -50,15 +50,13 @@ struct ProcessStillView: View {
                         .frame(height: 44)
                     actions
                         .frame(height: 44)
-                    Color.clear.frame(height: home + 12)
                 }
+                .padding(.bottom, bottomPad)
                 if confirmDiscard {
                     discardDialog
                 }
             }
-            .ignoresSafeArea()
         }
-        .ignoresSafeArea(edges: .bottom)
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())

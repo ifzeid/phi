@@ -56,7 +56,13 @@ struct QuietFinderView: View {
     @State private var focusPoint: CGPoint?
     @State private var flashOpacity: Double = 0
     @State private var statusTicket = 0
-    @State private var openRuler: CaptureRuler?
+    @State private var openRuler: CaptureRuler? = {
+        #if DEBUG
+        return PHIUITest.showEVRuler ? .ev : nil
+        #else
+        return nil
+        #endif
+    }()
     @State private var flashMenu = false
     @State private var viewfinderSize = CGSize(width: 402, height: 536)
 
@@ -191,8 +197,8 @@ struct QuietFinderView: View {
                         viewfinderSize = CGSize(width: width, height: photoHeight)
                     }
                     .overlay(alignment: .bottom) {
-                        if let openRuler {
-                            activeRuler(openRuler)
+                        if let shownRuler {
+                            activeRuler(shownRuler)
                                 .padding(.horizontal, 24)
                                 .frame(height: 62)
                                 .allowsHitTesting(true)
@@ -251,10 +257,19 @@ struct QuietFinderView: View {
         return false
     }
 
-    /// Mode and aspect, plus the millimeters of the camera that is actually running.
+    /// Mode and the aspect that is actually selected, including a UITest override.
     private var finderLabel: String {
-        guard camera.activeLensMillimeters > 0, camera.formatLabel != "—" else { return camera.formatLabel }
-        return "\(camera.formatLabel) · \(camera.activeLensMillimeters)"
+        let base = ProcessMode.label(mode: capture.processMode, aspect: activeAspect.title)
+        guard camera.activeLensMillimeters > 0 else { return base }
+        return "\(base) · \(camera.activeLensMillimeters)"
+    }
+
+    /// Launch `-PHIUITestEVRuler` keeps the ruler up from the first frame.
+    private var shownRuler: CaptureRuler? {
+        #if DEBUG
+        if PHIUITest.showEVRuler { return .ev }
+        #endif
+        return openRuler
     }
 
     private var flashButton: some View {
@@ -584,7 +599,7 @@ struct QuietFinderView: View {
             }
             Spacer(minLength: 8)
             if camera.autoExposure {
-                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: openRuler == .ev, width: 94, height: 36, plate: CameraColor.surface) {
+                SelectPill(title: "\(ExposureFormat.signedDecimal(camera.exposureEV)) EV", selected: shownRuler == .ev, width: 94, height: 36, plate: CameraColor.surface) {
                     toggleRuler(.ev)
                 }
             } else {

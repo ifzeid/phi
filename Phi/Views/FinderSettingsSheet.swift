@@ -17,7 +17,7 @@ struct FinderSettingsSheet: View {
             let scale = geo.size.width / SettingsToken.designWidth
             column
                 .environment(\.settingsScale, scale)
-                .padding(.top, 49)
+                .padding(.top, 46)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 .ignoresSafeArea(edges: .top)
         }
