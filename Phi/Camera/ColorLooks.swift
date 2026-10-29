@@ -775,6 +775,7 @@ enum DevelopEffectCheck {
         notes.append(contentsOf: HaloOptics.spatialFailures())
         notes.append(contentsOf: RawDevelop.portraitOrientationFailures())
         notes.append(contentsOf: RawDevelop.baseToneFailures())
+        notes.append(contentsOf: RawDevelop.exposureMetricFailures())
         notes.append(contentsOf: EditorMatch.failures())
         return notes
     }

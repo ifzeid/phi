@@ -5,8 +5,8 @@ import os
 /// because scale can restore defaults. The 无 look does not grade the file. Other looks are the
 /// `LookRecipe` cubes. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
-/// The EV dial is a linear gain after the look, matching the HEIF preview cache.
-/// `CIRAWFilter.exposure` stays at the file baseline. Apple's HEIF is not an input.
+/// The EV dial is `pow(2, ev)` on the scene-referred linear output, then the highlight shoulder.
+/// `CIRAWFilter.exposure` stays at the file baseline so the demosaic can be cached. Apple's HEIF is not an input.
 enum RawDevelop {
     static let exportQuality: CGFloat = 0.98
     /// Last develop, for the on-screen line and the log. Not a user setting.
@@ -23,7 +23,7 @@ enum RawDevelop {
         maxSide: CGFloat?,
         draft: Bool
     ) -> CGImage? {
-        guard let filtered = linearBase(
+        guard let scene = linearBase(
             dng: dng,
             aspect: aspect,
             lensZoom: lensZoom,
@@ -32,16 +32,17 @@ enum RawDevelop {
         ) else {
             return nil
         }
+        let toned = exposeThenShoulder(scene, ev: exposureEV)
         return StillPipeline.renderLinear(
-            filtered,
-            exposureEV: exposureEV,
+            toned,
+            exposureEV: 0,
             style: style,
             look: look,
             halo: halo
         )
     }
 
-    /// Proxy-scale or full-size linear develop at baseline exposure. The dial is applied later.
+    /// Scene-referred linear develop at the file's baseline exposure. No shoulder, no dial.
     static func linearBase(
         dng: Data,
         aspect: PhotoAspect,
@@ -51,7 +52,6 @@ enum RawDevelop {
     ) -> CIImage? {
         filteredImage(
             dng: dng,
-            exposureEV: 0,
             aspect: aspect,
             lensZoom: lensZoom,
             maxSide: maxSide,
@@ -61,7 +61,6 @@ enum RawDevelop {
 
     private static func filteredImage(
         dng: Data,
-        exposureEV: Double,
         aspect: PhotoAspect,
         lensZoom: Double,
         maxSide: CGFloat?,
@@ -69,7 +68,6 @@ enum RawDevelop {
     ) -> CIImage? {
         guard let framed = developedFrame(
             dng: dng,
-            exposureEV: exposureEV,
             lensZoom: lensZoom,
             maxSide: maxSide,
             draft: draft
@@ -77,10 +75,15 @@ enum RawDevelop {
         return aspect.cropped(framed)
     }
 
+    /// `pow(2, ev)` while the data is still scene-linear, then the highlight shoulder.
+    /// Preview and export both call this. The shoulder must not run before the gain.
+    static func exposeThenShoulder(_ scene: CIImage, ev: Double) -> CIImage {
+        baseShoulder(StillPipeline.applyingExposure(scene, ev: ev))
+    }
+
     /// Filter output, scene lift, and lens crop. No second orientation pass, and no aspect crop.
     private static func developedFrame(
         dng: Data,
-        exposureEV: Double,
         lensZoom: Double,
         maxSide: CGFloat?,
         draft: Bool
@@ -105,11 +108,10 @@ enum RawDevelop {
         }
         filter.neutralTemperature = asShotTemperature
         filter.neutralTint = asShotTint
-        let baseline = silenceProcessing(filter, exposureEV: exposureEV)
-        guard var output = filter.outputImage else { return nil }
+        let baseline = silenceProcessing(filter)
+        guard let output = filter.outputImage else { return nil }
         Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline)
-        output = baseShoulder(output)
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) shoulder knee 0.62")
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) scene linear, shoulder after the dial")
         // `outputImage` is already upright: a 4032×3024 buffer tagged orientation 6 comes out 3024×4032.
         // Applying that EXIF tag again turns the portrait frame sideways.
         let framed = LensCrop.cropped(output, zoom: zoom)
@@ -126,7 +128,7 @@ enum RawDevelop {
         guard tagged == 6 else {
             return ["portrait probe DNG is missing orientation 6"]
         }
-        guard let framed = developedFrame(dng: dng, exposureEV: 0, lensZoom: 1, maxSide: nil, draft: false) else {
+        guard let framed = developedFrame(dng: dng, lensZoom: 1, maxSide: nil, draft: false) else {
             return ["portrait-orientation DNG did not develop"]
         }
         let size = framed.extent.integral.size
@@ -139,12 +141,11 @@ enum RawDevelop {
     }
 
     /// Applied after draft mode and scaleFactor so those changes cannot put noise reduction back.
-    /// `exposure` replaces the file's baseline. Callers pass 0 here; the dial is a gain after the look.
+    /// Exposure stays at the file baseline. The dial multiplies this linear output before the shoulder.
     @discardableResult
-    private static func silenceProcessing(_ filter: CIRAWFilter, exposureEV: Double) -> Float {
-        let bounded = Swift.min(5, Swift.max(-5, exposureEV))
+    private static func silenceProcessing(_ filter: CIRAWFilter) -> Float {
         let baseline = filter.baselineExposure
-        filter.exposure = baseline + Float(bounded)
+        filter.exposure = baseline
         filter.localToneMapAmount = 0
         filter.luminanceNoiseReductionAmount = 0
         filter.colorNoiseReductionAmount = 0
@@ -203,6 +204,120 @@ enum RawDevelop {
             return image
         }
         return output
+    }
+
+    /// EV 0, −1, and −2.8 on one scene-linear chart. Blacks must not lift and saturation must not fall.
+    static func exposureMetricFailures() -> [String] {
+        let scene = exposureProbe()
+        let stops: [Double] = [0, -1, -2.8]
+        var rows: [(Double, Float, Float, Float, Float, Float)] = []
+        for ev in stops {
+            let toned = exposeThenShoulder(scene, ev: ev)
+            guard let image = StillPipeline.displayImage(toned), let stats = probeStats(image, ev: ev) else {
+                return ["exposure probe did not render"]
+            }
+            let line = String(
+                format: "EDITOR EV METRICS ev=%.1f mean=%.3f p1=%.3f p99=%.3f sat=%.3f linearMid=%.4f",
+                ev, stats.mean, stats.p1, stats.p99, stats.sat, stats.linearMid
+            )
+            print(line)
+            Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
+            rows.append((ev, stats.mean, stats.p1, stats.p99, stats.sat, stats.linearMid))
+        }
+        guard let zero = rows.first else { return ["exposure probe did not render"] }
+        var notes: [String] = []
+        for row in rows.dropFirst() {
+            if row.2 > zero.2 + 0.004 {
+                notes.append(String(format: "EV %.1f black p1 rose from %.3f to %.3f", row.0, zero.2, row.2))
+            }
+            if row.4 + 0.03 < zero.4 {
+                notes.append(String(format: "EV %.1f saturation dropped from %.3f to %.3f", row.0, zero.4, row.4))
+            }
+            if row.1 >= zero.1 {
+                notes.append(String(format: "EV %.1f mean luma %.3f is not below %.3f", row.0, row.1, zero.1))
+            }
+        }
+        if let minusOne = rows.first(where: { abs($0.0 + 1) < 0.01 }), zero.5 > 0.001 {
+            let ratio = minusOne.5 / zero.5
+            if ratio < 0.42 || ratio > 0.58 {
+                notes.append(String(format: "EV -1 linear midtone ratio %.3f is not about 0.5", ratio))
+            }
+        }
+        return notes
+    }
+
+    private static func exposureProbe() -> CIImage {
+        func solid(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, _ rect: CGRect) -> CIImage {
+            let space = StillPipeline.linearP3
+            let color = CIColor(red: red, green: green, blue: blue, alpha: 1, colorSpace: space)
+                ?? CIColor(red: red, green: green, blue: blue)
+            return CIImage(color: color).cropped(to: rect)
+        }
+        let black = solid(0, 0, 0, CGRect(x: 0, y: 0, width: 32, height: 8))
+        let gray = solid(0.18, 0.18, 0.18, CGRect(x: 0, y: 8, width: 32, height: 8))
+        let red = solid(0.45, 0.08, 0.08, CGRect(x: 0, y: 16, width: 32, height: 8))
+        let hot = solid(1.6, 0.9, 0.3, CGRect(x: 0, y: 24, width: 32, height: 8))
+        return hot.composited(over: red.composited(over: gray.composited(over: black)))
+    }
+
+    private static func probeStats(_ image: CGImage, ev: Double) -> (mean: Float, p1: Float, p99: Float, sat: Float, linearMid: Float)? {
+        let width = image.width
+        let height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let space = StillPipeline.displayP3
+        let drew = bytes.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            guard let context = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: space,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drew, width > 0, height > 0 else { return nil }
+        var luma = [Float]()
+        luma.reserveCapacity(width * height)
+        var satSum = Float(0)
+        var satCount = 0
+        var midSum = Float(0)
+        var midCount = 0
+        for index in 0..<(width * height) {
+            let offset = index * 4
+            let red = Float(bytes[offset]) / 255
+            let green = Float(bytes[offset + 1]) / 255
+            let blue = Float(bytes[offset + 2]) / 255
+            let y = GrainField.rec709(red: red, green: green, blue: blue)
+            luma.append(y)
+            let peak = max(red, max(green, blue))
+            let floor = min(red, min(green, blue))
+            if peak > 0.08 {
+                satSum += (peak - floor) / peak
+                satCount += 1
+            }
+            if peak - floor < 0.04, y > 0.05 {
+                let linear = GrainField.rec709(
+                    red: GrainField.decoded(red),
+                    green: GrainField.decoded(green),
+                    blue: GrainField.decoded(blue)
+                )
+                midSum += linear
+                midCount += 1
+            }
+        }
+        luma.sort()
+        let p1 = luma[max(0, luma.count / 100)]
+        let p99 = luma[min(luma.count - 1, luma.count * 99 / 100)]
+        let mean = luma.reduce(0, +) / Float(luma.count)
+        let sat = satCount > 0 ? satSum / Float(satCount) : 0
+        let linearMid = midCount > 0 ? midSum / Float(midCount) : 0
+        _ = ev
+        return (mean, p1, p99, sat, linearMid)
     }
 }
 

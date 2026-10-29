@@ -88,15 +88,17 @@ enum StillPipeline {
         look: ColorLook,
         halo: HaloLevel
     ) -> CGImage? {
-        let graded = ColorLooks.graded(linear, look: look)
+        // Gain in linear light, before looks. A RAW caller has already applied this and passes 0.
+        let exposed = applyingExposure(linear, ev: exposureEV)
+        let graded = ColorLooks.graded(exposed, look: look)
         let glowed = applyHalo(graded, level: halo)
         let extent = glowed.extent.integral
         let count = extent.width * extent.height
         if let profile = style.profile, count > 6_000_000 {
-            return displayGrained(glowed, profile: profile, ev: exposureEV)
+            return displayGrained(glowed, profile: profile, ev: 0)
         }
         let grain = grained(glowed, style: style)
-        return displayImage(applyingExposure(grain, ev: exposureEV))
+        return displayImage(grain)
     }
 
     /// `pow(2, ev)` in linear light. The dial runs from −5 to +5.
@@ -771,9 +773,12 @@ final class PreviewCache {
         lock.lock()
         defer { lock.unlock() }
         for side in sides {
-            guard let base = linearBase(source: source, dng: dng, aspect: aspect, zoom: zoom, maxSide: side) else { continue }
+            guard var base = linearBase(source: source, dng: dng, aspect: aspect, zoom: zoom, maxSide: side) else { continue }
+            if dng != nil {
+                base = RawDevelop.exposeThenShoulder(base, ev: 0)
+            }
             for look in ColorLook.allCases {
-                _ = grade(base, look: look, halo: .off, style: .off)
+                _ = grade(base, look: look, halo: .off, style: .off, exposureEV: 0)
             }
         }
     }
@@ -791,11 +796,15 @@ final class PreviewCache {
     ) -> CIImage? {
         lock.lock()
         defer { lock.unlock() }
-        guard let base = linearBase(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
+        guard var base = linearBase(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
             return nil
         }
-        let developed = grade(base, look: look, halo: halo, style: style)
-        return StillPipeline.applyingExposure(developed, ev: exposureEV)
+        if dng != nil {
+            base = RawDevelop.exposeThenShoulder(base, ev: exposureEV)
+        } else {
+            base = StillPipeline.applyingExposure(base, ev: exposureEV)
+        }
+        return grade(base, look: look, halo: halo, style: style, exposureEV: exposureEV)
     }
 
     private func linearBase(
@@ -835,13 +844,17 @@ final class PreviewCache {
         return bakedProxy
     }
 
-    private func grade(_ base: CIImage, look: ColorLook, halo: HaloLevel, style: GrainStyle) -> CIImage {
+    private func grade(_ base: CIImage, look: ColorLook, halo: HaloLevel, style: GrainStyle, exposureEV: Double) -> CIImage {
+        if look == .none, halo == .off, style == .off {
+            return base
+        }
         let width = Int(base.extent.integral.width.rounded())
         let height = Int(base.extent.integral.height.rounded())
         let bakedLook = look
         let bakedHalo = halo
         let bakedStyle = style
-        let key = "\(width)x\(height)|\(bakedLook.rawValue)|\(bakedHalo.rawValue)|\(bakedStyle.rawValue)"
+        let evTag = Int((exposureEV * 10).rounded())
+        let key = "\(width)x\(height)|\(evTag)|\(bakedLook.rawValue)|\(bakedHalo.rawValue)|\(bakedStyle.rawValue)"
         if let cached = grades[key], bakedHalo == halo, bakedLook == look, bakedStyle == style {
             return cached
         }

@@ -682,6 +682,12 @@ def check_capture_path(failures):
         failures.append("mode 0 edits do not develop the DNG")
     if "baseShoulder" not in RAW_SWIFT:
         failures.append("mode 0 has no highlight shoulder")
+    if "exposeThenShoulder" not in RAW_SWIFT or "exposeThenShoulder" not in STILL:
+        failures.append("exposure is not a linear gain before the RAW shoulder")
+    if "return StillPipeline.applyingExposure(developed" in STILL:
+        failures.append("preview still multiplies exposure after the grade")
+    if "EDITOR EV METRICS" not in RAW_SWIFT:
+        failures.append("missing EV black-point and saturation log")
     if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:
         failures.append("missing portrait DNG orientation check")
 
