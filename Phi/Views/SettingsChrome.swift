@@ -26,14 +26,14 @@ enum SettingsToken {
     static let afterHeader: CGFloat = 24
     static let headerToControls: CGFloat = 11
     static let modeCaptionGap: CGFloat = 8
-    static let modeCaptionToDivider: CGFloat = 25
+    static let modeCaptionToDivider: CGFloat = 28
     static let dividerToToggle: CGFloat = 19
-    static let toggleToFormat: CGFloat = 8
+    static let toggleToFormat: CGFloat = 5
     static let formatCaptionGap: CGFloat = 10
-    static let formatCaptionToDivider: CGFloat = 30
-    static let dividerToAspect: CGFloat = 24
+    static let formatCaptionToDivider: CGFloat = 33
+    static let dividerToAspect: CGFloat = 21
     static let aspectCaptionGap: CGFloat = 13
-    static let aspectCaptionToCard: CGFloat = 62
+    static let aspectCaptionToCard: CGFloat = 65
 
     static func sectionFont() -> Font { CameraFont.fixed(13, weight: .regular) }
     static func rowFont() -> Font { CameraFont.fixed(16, weight: .regular) }

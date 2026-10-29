@@ -63,7 +63,13 @@ struct QuietFinderView: View {
         return nil
         #endif
     }()
-    @State private var flashMenu = false
+    @State private var flashMenu: Bool = {
+        #if DEBUG
+        return PHIUITest.screen == .flash
+        #else
+        return false
+        #endif
+    }()
     @State private var viewfinderSize = CGSize(width: 402, height: 536)
 
     private var camera: CameraSession { capture.camera }
@@ -230,7 +236,7 @@ struct QuietFinderView: View {
                 .frame(width: width)
                 .position(x: width / 2, y: clusterTop + cluster / 2)
 
-                if flashMenu {
+                if showsFlashMenu {
                     FlashChoiceMenu(
                         selection: camera.flashMode,
                         enabled: camera.flashAvailable,
@@ -262,6 +268,14 @@ struct QuietFinderView: View {
         let base = ProcessMode.label(mode: capture.processMode, aspect: activeAspect.title)
         guard camera.activeLensMillimeters > 0 else { return base }
         return "\(base) · \(camera.activeLensMillimeters)"
+    }
+
+    /// `-PHIUITestScreen flash` keeps the menu visible even if a later update clears the flag.
+    private var showsFlashMenu: Bool {
+        #if DEBUG
+        if PHIUITest.screen == .flash { return true }
+        #endif
+        return flashMenu
     }
 
     /// Launch `-PHIUITestEVRuler` keeps the ruler up from the first frame.
@@ -532,14 +546,7 @@ struct QuietFinderView: View {
                 .accessibilityLabel("\(stop.millimeters) 毫米")
             }
         }
-        .padding(.horizontal, 8)
-        .frame(width: 240, height: 40)
-        .background {
-            Capsule().fill(CameraColor.scrim)
-        }
-        .overlay {
-            Capsule().strokeBorder(CameraColor.border, lineWidth: 1)
-        }
+        .frame(height: 40)
         .frame(maxWidth: .infinity)
     }
 
