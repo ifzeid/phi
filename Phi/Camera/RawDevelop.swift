@@ -91,10 +91,17 @@ enum RawDevelop {
         // Full-resolution demosaic. A scaleFactor below 1 is a softer Bayer reconstruction.
         filter.scaleFactor = 1
         let baseline = silenceProcessing(filter)
-        filter.sharpnessAmount = min(max(asShotSharpness, Float(0)), Float(0.35))
-        // Other inputs reset the as-shot neutral. Put it back last so beams stay neutral.
-        filter.neutralTemperature = asShotTemperature
-        filter.neutralTint = asShotTint
+        // Very light. The camera default is often strong enough to smear a night beam.
+        _ = asShotSharpness
+        filter.sharpnessAmount = Float(0.1)
+        // AsShotNeutral through the camera matrix, once. Temperature after that would be a second white.
+        if let neutral = DNGAsShot.chromaticity(in: dng) {
+            filter.neutralChromaticity = CGPoint(x: CGFloat(neutral.x), y: CGFloat(neutral.y))
+            Logger(subsystem: "com.zeid.phi", category: "develop").info("AsShotNeutral xy \(neutral.x) \(neutral.y) once through ColorMatrix1")
+        } else {
+            filter.neutralTemperature = asShotTemperature
+            filter.neutralTint = asShotTint
+        }
         guard let output = filter.outputImage else { return nil }
         Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline)
         Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) as-shot WB \(asShotTemperature) tint \(asShotTint), full-res demosaic, filmic after 2^EV")
@@ -165,8 +172,9 @@ enum RawDevelop {
         return Float(pow(2, stops))
     }
 
-    /// Gentle filmic for mode 0. A toe pulls night sky toward black, a small S adds contrast, then the highlight shoulder.
-    /// The same curve on each channel, so a neutral beam stays neutral. EV 0 already includes BaselineExposure.
+    /// Gentle S for mode 0: a toe pins black at 0, the middle stays linear, then the highlight shoulder.
+    /// Mid-gray is not rescaled here. EV 0 brightness is BaselineExposure, applied once as `2^baseline`.
+    /// The same curve on each channel, so a neutral beam stays neutral.
     static func toneMapValue(_ linear: Float) -> Float {
         let x = max(linear, 0)
         let toeEnd: Float = 0.045
@@ -179,10 +187,7 @@ enum RawDevelop {
             let t = x / toeEnd
             toed = toeEnd * t * t
         }
-        let pivot: Float = 0.18
-        let contrast: Float = 1.2
-        let contrasted = toed <= 0 ? Float(0) : pivot * pow(toed / pivot, contrast)
-        return baseShoulderValue(contrasted)
+        return baseShoulderValue(toed)
     }
 
     /// Global shoulder. Midtones below the knee stay put, so a sunset is not lifted into a pale frame.
@@ -230,6 +235,16 @@ enum RawDevelop {
         let gain = sceneGain(baseline: 0.5, ev: -2)
         if abs(gain - Float(pow(2, 0.5 - 2))) > 0.0001 {
             notes.append("scene gain is not 2^(baseline+EV)")
+        }
+        if toneMapValue(0.4) != 0.4 {
+            notes.append("filmic slope moved a midtone")
+        }
+        if let white = DNGAsShot.chromaticity(neutral: (1, 1, 1), xyzToCamera: [1, 0, 0, 0, 1, 0, 0, 0, 1]) {
+            if abs(white.x - 1 / 3) > 0.01 || abs(white.y - 1 / 3) > 0.01 {
+                notes.append("AsShotNeutral identity white is not 1/3")
+            }
+        } else {
+            notes.append("AsShotNeutral identity white did not convert")
         }
         return notes
     }
@@ -380,6 +395,128 @@ enum RawDevelop {
         let linearMid = midCount > 0 ? midSum / Float(midCount) : 0
         _ = ev
         return (mean, p1, p99, sat, linearMid)
+    }
+}
+
+/// AsShotNeutral (tag 50728) through ColorMatrix1 (tag 50721), once. CIE xy for `neutralChromaticity`.
+private enum DNGAsShot {
+    static func chromaticity(in data: Data) -> (x: Float, y: Float)? {
+        guard let tags = tags(in: data), tags.neutral.count == 3, tags.matrix.count == 9 else { return nil }
+        return chromaticity(
+            neutral: (tags.neutral[0], tags.neutral[1], tags.neutral[2]),
+            xyzToCamera: tags.matrix
+        )
+    }
+
+    static func chromaticity(neutral: (Float, Float, Float), xyzToCamera: [Float]) -> (x: Float, y: Float)? {
+        guard xyzToCamera.count == 9, let inverse = inverse3(xyzToCamera) else { return nil }
+        let x = inverse[0] * neutral.0 + inverse[1] * neutral.1 + inverse[2] * neutral.2
+        let y = inverse[3] * neutral.0 + inverse[4] * neutral.1 + inverse[5] * neutral.2
+        let z = inverse[6] * neutral.0 + inverse[7] * neutral.1 + inverse[8] * neutral.2
+        let sum = x + y + z
+        guard sum > 0.0001 else { return nil }
+        let cx = x / sum
+        let cy = y / sum
+        guard cx > 0, cy > 0, cx < 1, cy < 1, cx + cy < 1 else { return nil }
+        return (cx, cy)
+    }
+
+    private static func inverse3(_ m: [Float]) -> [Float]? {
+        let a = m[0], b = m[1], c = m[2]
+        let d = m[3], e = m[4], f = m[5]
+        let g = m[6], h = m[7], i = m[8]
+        let aa = e * i - f * h
+        let bb = f * g - d * i
+        let cc = d * h - e * g
+        let det = a * aa + b * bb + c * cc
+        guard abs(det) > 0.00000001 else { return nil }
+        let inv = 1 / det
+        return [
+            aa * inv, (c * h - b * i) * inv, (b * f - c * e) * inv,
+            bb * inv, (a * i - c * g) * inv, (c * d - a * f) * inv,
+            cc * inv, (b * g - a * h) * inv, (a * e - b * d) * inv
+        ]
+    }
+
+    private static func tags(in data: Data) -> (neutral: [Float], matrix: [Float])? {
+        guard data.count > 8 else { return nil }
+        let little = data[0] == 0x49 && data[1] == 0x49
+        let big = data[0] == 0x4D && data[1] == 0x4D
+        guard little || big else { return nil }
+        func u16(_ offset: Int) -> Int {
+            guard offset + 1 < data.count else { return 0 }
+            if little { return Int(data[offset]) | (Int(data[offset + 1]) << 8) }
+            return (Int(data[offset]) << 8) | Int(data[offset + 1])
+        }
+        func u32(_ offset: Int) -> Int {
+            guard offset + 3 < data.count else { return 0 }
+            if little {
+                return Int(data[offset]) | (Int(data[offset + 1]) << 8) | (Int(data[offset + 2]) << 16) | (Int(data[offset + 3]) << 24)
+            }
+            return (Int(data[offset]) << 24) | (Int(data[offset + 1]) << 16) | (Int(data[offset + 2]) << 8) | Int(data[offset + 3])
+        }
+        func i32(_ offset: Int) -> Int {
+            let raw = u32(offset)
+            return raw >= 0x8000_0000 ? raw - 0x1_0000_0000 : raw
+        }
+        func rational(at offset: Int, signed: Bool) -> Float? {
+            guard offset >= 0, offset + 8 <= data.count else { return nil }
+            let numerator = signed ? Float(i32(offset)) : Float(u32(offset))
+            let denominator = signed ? Float(i32(offset + 4)) : Float(u32(offset + 4))
+            guard denominator != 0 else { return nil }
+            return numerator / denominator
+        }
+        func values(type: Int, count: Int, value: Int, signed: Bool) -> [Float]? {
+            guard type == 5 || type == 10, count > 0, count < 64 else { return nil }
+            let base = count * 8 > 4 ? value : value
+            var samples = [Float]()
+            samples.reserveCapacity(count)
+            for index in 0..<count {
+                guard let sample = rational(at: base + index * 8, signed: signed) else { return nil }
+                samples.append(sample)
+            }
+            return samples
+        }
+        var neutral: [Float]?
+        var matrix: [Float]?
+        var seen = Set<Int>()
+        func walk(_ ifd: Int, depth: Int) {
+            if depth > 4 || seen.contains(ifd) || ifd < 8 || ifd + 2 > data.count { return }
+            seen.insert(ifd)
+            let count = u16(ifd)
+            if count > 512 { return }
+            var cursor = ifd + 2
+            var subs: [Int] = []
+            for _ in 0..<count {
+                if cursor + 12 > data.count { return }
+                let tag = u16(cursor)
+                let type = u16(cursor + 2)
+                let number = u32(cursor + 4)
+                let value = u32(cursor + 8)
+                if tag == 50728, let samples = values(type: type, count: number, value: value, signed: false), samples.count == 3 {
+                    neutral = samples
+                }
+                if tag == 50721, let samples = values(type: type, count: number, value: value, signed: true), samples.count == 9 {
+                    matrix = samples
+                }
+                if tag == 330, number > 0, number < 8 {
+                    if number == 1 {
+                        subs.append(value)
+                    } else {
+                        for index in 0..<number {
+                            subs.append(u32(value + index * 4))
+                        }
+                    }
+                }
+                cursor += 12
+            }
+            for sub in subs {
+                walk(sub, depth: depth + 1)
+            }
+        }
+        walk(u32(4), depth: 0)
+        guard let neutral, let matrix else { return nil }
+        return (neutral, matrix)
     }
 }
 
