@@ -6,8 +6,8 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// Develops a still in 16-bit linear Display P3, then emits one 8-bit Display P3 image.
-/// Preview bakes a screen-sized proxy; export calls `render` at full resolution.
-/// Both use the same grade, highlight glow, grain, then exposure gain. Grain is FINE or off.
+/// Preview bakes a screen-sized linear plate; export calls `render` at full resolution.
+/// Exposure is `2^EV` on that plate, then the highlight shoulder, then grade, glow, and grain.
 ///
 /// The context working space is extended linear Display P3, so a tagged display image is
 /// decoded once on the way in and encoded once on the way out (`createCGImage` → Display P3).
@@ -61,7 +61,9 @@ enum StillPipeline {
         maxSide: CGFloat?
     ) -> CGImage? {
         guard let input = prepared(image, zoom: lensZoom, maxSide: maxSide) else { return nil }
-        return renderLinear(input, exposureEV: exposureEV, style: style, look: look, halo: halo)
+        // HEIF is display-encoded. `exposeThenShoulder` decodes it once, then applies `2^ev` and the shoulder.
+        let toned = RawDevelop.exposeThenShoulder(input, ev: exposureEV)
+        return renderLinear(toned, exposureEV: 0, style: style, look: look, halo: halo)
     }
 
     /// Crop and optional long-side scale. The result is still a lazy graph; preview bakes it once.
@@ -79,19 +81,18 @@ enum StillPipeline {
         return input.cropped(to: extent)
     }
 
-    /// Look, highlight glow, then grain, then the exposure dial as a linear gain.
-    /// The dial is last so a preview can cache the developed proxy and only multiply.
-    static func renderLinear(
-        _ linear: CIImage,
-        exposureEV: Double,
-        style: GrainStyle,
-        look: ColorLook,
-        halo: HaloLevel
-    ) -> CGImage? {
-        // Gain in linear light, before looks. A RAW caller has already applied this and passes 0.
-        let exposed = applyingExposure(linear, ev: exposureEV)
-        let graded = ColorLooks.graded(exposed, look: look)
-        let glowed = applyHalo(graded, level: halo)
+/// Look, highlight glow, then grain. Exposure is already in `linear` (`expose` / `exposeThenShoulder`).
+static func renderLinear(
+    _ linear: CIImage,
+    exposureEV: Double,
+    style: GrainStyle,
+    look: ColorLook,
+    halo: HaloLevel
+) -> CGImage? {
+    // Callers pass 0. A non-zero value is still only `2^ev`, and it does not run the shoulder again.
+    let exposed = applyingExposure(linear, ev: exposureEV)
+    let graded = ColorLooks.graded(exposed, look: look)
+    let glowed = applyHalo(graded, level: halo)
         let extent = glowed.extent.integral
         let count = extent.width * extent.height
         if let profile = style.profile, count > 6_000_000 {
@@ -101,11 +102,53 @@ enum StillPipeline {
         return displayImage(grain)
     }
 
-    /// `pow(2, ev)` in linear light. The dial runs from −5 to +5.
+    /// Scene-linear samples. `baseline` is the DNG BaselineExposure tag, in stops. HEIF uses 0.
+    struct LinearPlate {
+        var pixels: [Float]
+        var baseline: Float
+        var extent: CGRect
+    }
+
+    /// One decode into extended-linear Display P3. The dial does not render this plate again.
+    static func linearPlate(of image: CIImage, baseline: Float) -> LinearPlate? {
+        let bounds = image.extent.integral
+        guard let pixels = linearPixels(image, bounds: bounds) else { return nil }
+        return LinearPlate(pixels: pixels, baseline: baseline, extent: bounds)
+    }
+
+    /// `2^(baseline + ev)` on scene-linear RGB, then the highlight shoulder. Preview and export both call this.
+    /// The multiply is on these samples. Nothing after it rescales the frame to its own maximum.
+    static func expose(_ plate: LinearPlate, ev: Double, shoulder: Bool = true) -> CIImage {
+        var pixels = plate.pixels
+        let stops = Double(plate.baseline) + min(5, max(-5, ev))
+        let gain = Float(pow(2, stops))
+        let count = pixels.count / 4
+        var index = 0
+        while index < count {
+            let offset = index * 4
+            let red = pixels[offset] * gain
+            let green = pixels[offset + 1] * gain
+            let blue = pixels[offset + 2] * gain
+            if shoulder {
+                pixels[offset] = RawDevelop.baseShoulderValue(red)
+                pixels[offset + 1] = RawDevelop.baseShoulderValue(green)
+                pixels[offset + 2] = RawDevelop.baseShoulderValue(blue)
+            } else {
+                pixels[offset] = max(red, 0)
+                pixels[offset + 1] = max(green, 0)
+                pixels[offset + 2] = max(blue, 0)
+            }
+            index += 1
+        }
+        return bitmapImage(pixels, bounds: plate.extent)
+    }
+
+    /// `pow(2, ev)` in linear light, without the shoulder. The dial itself is `expose`.
     static func applyingExposure(_ source: CIImage, ev: Double) -> CIImage {
         let bounded = min(5.0, max(-5.0, ev))
         if abs(bounded) < 0.0001 { return source }
-        return source.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
+        guard let plate = linearPlate(of: source, baseline: 0) else { return source }
+        return expose(plate, ev: bounded, shoulder: false)
     }
 
     /// Bake a lazy graph to a linear bitmap so a later exposure pass does not rerun it.
@@ -757,7 +800,7 @@ enum StillPipeline {
     #endif
 }
 
-/// Screen-sized develop cache. Exposure is a gain on the baked bitmap.
+/// Screen-sized develop cache. The plate is scene-linear and is decoded once.
 /// Each long side and each look keeps its own bake. Full resolution is `StillPipeline.render`.
 final class PreviewCache {
     private let lock = NSLock()
@@ -765,7 +808,7 @@ final class PreviewCache {
     private var sourceZoom = 0.0
     private var sourceDNG = -1
     private var sourceAspect: PhotoAspect?
-    private var bases: [Int: CIImage] = [:]
+    private var plates: [Int: StillPipeline.LinearPlate] = [:]
     private var grades: [String: CIImage] = [:]
 
     /// Drag and idle proxies, and every look cube, so the first edit does not compile them.
@@ -773,10 +816,8 @@ final class PreviewCache {
         lock.lock()
         defer { lock.unlock() }
         for side in sides {
-            guard var base = linearBase(source: source, dng: dng, aspect: aspect, zoom: zoom, maxSide: side) else { continue }
-            if dng != nil {
-                base = RawDevelop.exposeThenShoulder(base, ev: 0)
-            }
+            guard let plate = plate(source: source, dng: dng, aspect: aspect, zoom: zoom, maxSide: side) else { continue }
+            let base = StillPipeline.expose(plate, ev: 0)
             for look in ColorLook.allCases {
                 _ = grade(base, look: look, halo: .off, style: .off, exposureEV: 0)
             }
@@ -796,52 +837,51 @@ final class PreviewCache {
     ) -> CIImage? {
         lock.lock()
         defer { lock.unlock() }
-        guard var base = linearBase(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
+        guard let plate = plate(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
             return nil
         }
-        if dng != nil {
-            base = RawDevelop.exposeThenShoulder(base, ev: exposureEV)
-        } else {
-            base = StillPipeline.applyingExposure(base, ev: exposureEV)
-        }
+        let base = StillPipeline.expose(plate, ev: exposureEV)
         return grade(base, look: look, halo: halo, style: style, exposureEV: exposureEV)
     }
 
-    private func linearBase(
+    /// DNG: sensor linear, with the file's baseline exposure stored beside the samples.
+    /// HEIF: one decode from the display transfer. Neither plate has the dial or the shoulder.
+    private func plate(
         source: CGImage,
         dng: Data?,
         aspect: PhotoAspect,
         zoom: Double,
         maxSide: CGFloat
-    ) -> CIImage? {
+    ) -> StillPipeline.LinearPlate? {
         let side = Int(maxSide.rounded())
         let dngCount = dng?.count ?? 0
         let identity = ObjectIdentifier(source)
         if sourceID != identity || sourceAspect != aspect || abs(sourceZoom - zoom) > 0.001 || sourceDNG != dngCount {
-            bases.removeAll()
+            plates.removeAll()
             grades.removeAll()
             sourceID = identity
             sourceAspect = aspect
             sourceZoom = zoom
             sourceDNG = dngCount
         }
-        if let cached = bases[side] { return cached }
-        let prepared: CIImage?
+        if let cached = plates[side] { return cached }
+        var loaded: StillPipeline.LinearPlate?
         if let dng {
-            prepared = RawDevelop.linearBase(
+            loaded = RawDevelop.scenePlate(
                 dng: dng,
                 aspect: aspect,
                 lensZoom: zoom,
                 maxSide: maxSide,
                 draft: false
             )
+        } else if let prepared = StillPipeline.prepared(source, zoom: zoom, maxSide: maxSide) {
+            loaded = StillPipeline.linearPlate(of: prepared, baseline: 0)
         } else {
-            prepared = StillPipeline.prepared(source, zoom: zoom, maxSide: maxSide)
+            loaded = nil
         }
-        guard let prepared else { return nil }
-        let bakedProxy = StillPipeline.materialize(prepared) ?? prepared
-        bases[side] = bakedProxy
-        return bakedProxy
+        guard let loaded else { return nil }
+        plates[side] = loaded
+        return loaded
     }
 
     private func grade(_ base: CIImage, look: ColorLook, halo: HaloLevel, style: GrainStyle, exposureEV: Double) -> CIImage {

@@ -521,6 +521,11 @@ enum EditorMatch {
         return sum / Float(pixels * 3)
     }
 
+    /// Display-encoded Rec.709 luma in 0...1. The editor EV sweep logs this.
+    static func displayMeanLuma(_ image: CGImage) -> Float {
+        meanLuma(image) / 255
+    }
+
     private static func meanLuma(_ image: CGImage) -> Float {
         guard let bytes = rgba(image), bytes.isEmpty == false else { return 0 }
         var sum = Float(0)

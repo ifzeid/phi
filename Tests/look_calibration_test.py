@@ -667,6 +667,9 @@ def check_capture_path(failures):
         "EDITOR RENDER LATENCY",
         "-PHIUITestEditorDrag",
         "EDITOR DRAG p50",
+        "-PHIUITestEditorEVSweep",
+        "EDITOR EV SWEEP",
+        "EDITOR EV SWEEP FAILED",
     ):
         if flag not in UITEST and flag not in SESSION:
             failures.append(f"editor uitest missing {flag}")
@@ -688,6 +691,18 @@ def check_capture_path(failures):
         failures.append("preview still multiplies exposure after the grade")
     if "EDITOR EV METRICS" not in RAW_SWIFT:
         failures.append("missing EV black-point and saturation log")
+    if "CIExposureAdjust" in STILL or "CIExposureAdjust" in RAW_SWIFT:
+        failures.append("exposure still goes through CIExposureAdjust")
+    if "filter.exposure = baseline" in RAW_SWIFT:
+        failures.append("RAW filter exposure is the baseline plus a later gain")
+    if "baselineExposure = 0" not in RAW_SWIFT or "filter.exposure = 0" not in RAW_SWIFT:
+        failures.append("RAW baseline is still applied inside CIRAWFilter")
+    if "isGamutMappingEnabled = false" not in RAW_SWIFT:
+        failures.append("RAW gamut map can refit highlights after the dial")
+    if "shadowBias = 0" not in RAW_SWIFT:
+        failures.append("RAW shadow bias is still the display pedestal")
+    if "StillPipeline.expose(" not in RAW_SWIFT or "StillPipeline.expose(" not in STILL:
+        failures.append("preview and export do not share the linear exposure multiply")
     if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:
         failures.append("missing portrait DNG orientation check")
 

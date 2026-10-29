@@ -17,6 +17,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestImport <dir>` copies each HEIC+DNG pair into the local shot store
 /// `-PHIUITestOpenEditor <basename>` opens that imported shot
 /// `-PHIUITestEditorEV <value>` and `-PHIUITestEditorLook <name>` apply after open
+/// `-PHIUITestEditorEVSweep` logs mean luma at −2, −1, −0.7, 0, +0.9, +2 for the open shot and fails if it rises as EV falls
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -155,6 +156,11 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorDrag")
     }
 
+    /// Mean luma at +2, +0.9, 0, −0.7, −1, −2. Mode 0 uses the open DNG editor. HEIF uses the imported still.
+    static var editorEVSweep: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorEVSweep")
+    }
+
     /// Copies each same-basename HEIC+DNG pair into the local shot store. Safe to call once per launch.
     static func importPairsIfRequested() {
         guard didImport == false else { return }
@@ -245,6 +251,10 @@ enum PHIUITest {
     }
 
     private static func applyLaunchEdits(_ session: ProcessSession) async {
+        if editorEVSweep {
+            await runEVSweep(session)
+            return
+        }
         if editorDrag {
             await runDrag(session)
             return
@@ -256,6 +266,306 @@ enum PHIUITest {
             _ = await session.measureEdit { $0.setExposure(editorEV, interactive: true) }
             await MainActor.run { session.refinePreview() }
         }
+    }
+
+    /// Stops from bright to dark. Each mean has to fall. EV 0 is the frame the editor shows at the detent.
+    private static let sweepStops: [Double] = [2, 0.9, 0, -0.7, -1, -2]
+
+    private static func runEVSweep(_ session: ProcessSession) async {
+        await MainActor.run {
+            if session.colorLook != .none { session.setColorLook(.none) }
+            if session.halo != .off { session.setHalo(.off) }
+            if session.style != .off { session.setStyle(.off) }
+        }
+        let name = openEditorBasename ?? "shot"
+        var failed = false
+        if session.rendersFromDNG {
+            let dngFailed = await sweepLive(session, mode: "0", file: name)
+            let heifFailed = sweepHEIF(file: name, aspect: session.framedAspect)
+            failed = dngFailed || heifFailed
+        } else {
+            let heifFailed = await sweepLive(session, mode: "heif", file: name)
+            let dngFailed = session.sourceDNG == nil ? false : sweepDNG(session, file: name)
+            failed = heifFailed || dngFailed
+        }
+        let peers = sweepImportedPeers(except: name)
+        failed = failed || peers
+        if failed {
+            assertionFailure("EDITOR EV SWEEP FAILED")
+        }
+    }
+
+    /// What the open editor draws: the original at EV 0, and the preview plate at every other stop.
+    private static func sweepLive(_ session: ProcessSession, mode: String, file: String) async -> Bool {
+        var rows: [(Double, Float)] = []
+        for ev in sweepStops {
+            _ = await session.measureEdit { $0.setExposure(ev, interactive: false) }
+            let mean = await MainActor.run { () -> Float? in
+                if abs(ev) < 0.0001 {
+                    let original = session.originalImage?.cgImage ?? session.base
+                    return EditorMatch.displayMeanLuma(original)
+                }
+                guard let frame = session.liveFrame?.image, let image = StillPipeline.displayImage(frame) else {
+                    return nil
+                }
+                return EditorMatch.displayMeanLuma(image)
+            }
+            guard let mean else {
+                logSweep("EDITOR EV SWEEP FAILED mode=\(mode) file=\(file) ev \(ev) did not render")
+                return true
+            }
+            rows.append((ev, mean))
+        }
+        return reportSweep(mode: mode, file: file, rows: rows)
+    }
+
+    /// Imported camera HEIF, through the same preview plate as a non-RAW editor. EV 0 is the file itself.
+    private static func sweepHEIF(file: String, aspect: PhotoAspect) -> Bool {
+        guard let image = importedHEIF(stem: file) else {
+            logSweep("EDITOR EV SWEEP FAILED mode=heif file=\(file) missing")
+            return true
+        }
+        let zero = EditorMatch.displayMeanLuma(image)
+        var rows: [(Double, Float)] = [(0, zero)]
+        let cache = PreviewCache()
+        for ev in sweepStops where abs(ev) > 0.0001 {
+            guard let rendered = cache.previewImage(
+                source: image,
+                dng: nil,
+                aspect: aspect,
+                exposureEV: ev,
+                style: .off,
+                look: .none,
+                halo: .off,
+                lensZoom: 1,
+                maxSide: EditorMatch.previewMaxSide
+            ), let cg = StillPipeline.displayImage(rendered) else {
+                logSweep("EDITOR EV SWEEP FAILED mode=heif file=\(file) ev \(ev) did not render")
+                return true
+            }
+            rows.append((ev, EditorMatch.displayMeanLuma(cg)))
+        }
+        rows.sort { $0.0 > $1.0 }
+        return reportSweep(mode: "heif", file: file, rows: rows)
+    }
+
+    /// DNG plate for a shot that was opened on its HEIF. EV 0 is the mode 0 develop the editor would show.
+    private static func sweepDNG(_ session: ProcessSession, file: String) -> Bool {
+        guard let dng = session.sourceDNG else {
+            logSweep("EDITOR EV SWEEP FAILED mode=0 file=\(file) missing")
+            return true
+        }
+        let source = session.originalImage?.cgImage ?? session.base
+        var rows: [(Double, Float)] = []
+        let cache = PreviewCache()
+        for ev in sweepStops {
+            let measured = dngMean(
+                ev: ev,
+                dng: dng,
+                source: source,
+                session: session,
+                cache: cache
+            )
+            guard let measured else {
+                logSweep(String(format: "EDITOR EV SWEEP FAILED mode=0 file=%@ ev %+.1f did not render", file, ev))
+                return true
+            }
+            rows.append((ev, measured))
+        }
+        return reportSweep(mode: "0", file: file, rows: rows)
+    }
+
+    private static func dngMean(
+        ev: Double,
+        dng: Data,
+        source: CGImage,
+        session: ProcessSession,
+        cache: PreviewCache
+    ) -> Float? {
+        if abs(ev) < 0.0001 {
+            guard let developed = RawDevelop.image(
+                dng: dng,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: .off,
+                aspect: session.framedAspect,
+                lensZoom: session.lensZoom,
+                maxSide: EditorMatch.previewMaxSide,
+                draft: false
+            ) else { return nil }
+            return EditorMatch.displayMeanLuma(developed)
+        }
+        guard let rendered = cache.previewImage(
+            source: source,
+            dng: dng,
+            aspect: session.framedAspect,
+            exposureEV: ev,
+            style: .off,
+            look: .none,
+            halo: .off,
+            lensZoom: session.lensZoom,
+            maxSide: EditorMatch.previewMaxSide
+        ), let cg = StillPipeline.displayImage(rendered) else { return nil }
+        return EditorMatch.displayMeanLuma(cg)
+    }
+
+    /// Every other imported still. The open shot is already measured on screen.
+    private static func sweepImportedPeers(except open: String) -> Bool {
+        let folder = StillArchive.directory
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        var stems = Set<String>()
+        for url in urls {
+            let stem = shotStem(url)
+            if stem.isEmpty == false, stem != open {
+                stems.insert(stem)
+            }
+        }
+        var failed = false
+        for stem in stems.sorted() {
+            let shot = PhiLocalShots.shot(id: stem)
+            let aspect = shot?.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? .threeByFour
+            let zoom = shot?.lensZoom ?? 1
+            let dngURL = folder.appendingPathComponent("\(stem).dng")
+            if FileManager.default.fileExists(atPath: dngURL.path), let dng = try? Data(contentsOf: dngURL) {
+                let source = importedHEIF(stem: stem) ?? sessionlessImage()
+                if let source {
+                    failed = sweepDNGData(
+                        dng: dng,
+                        source: source,
+                        aspect: aspect,
+                        zoom: zoom,
+                        file: stem
+                    ) || failed
+                }
+            }
+            if importedHEIF(stem: stem) != nil {
+                failed = sweepHEIF(file: stem, aspect: aspect) || failed
+            }
+        }
+        return failed
+    }
+
+    private static func sweepDNGData(
+        dng: Data,
+        source: CGImage,
+        aspect: PhotoAspect,
+        zoom: Double,
+        file: String
+    ) -> Bool {
+        var rows: [(Double, Float)] = []
+        let cache = PreviewCache()
+        for ev in sweepStops {
+            var measured: Float?
+            if abs(ev) < 0.0001 {
+                guard let developed = RawDevelop.image(
+                    dng: dng,
+                    exposureEV: 0,
+                    style: .off,
+                    look: .none,
+                    halo: .off,
+                    aspect: aspect,
+                    lensZoom: zoom,
+                    maxSide: EditorMatch.previewMaxSide,
+                    draft: false
+                ) else {
+                    logSweep("EDITOR EV SWEEP FAILED mode=0 file=\(file) ev +0.0 did not render")
+                    return true
+                }
+                measured = EditorMatch.displayMeanLuma(developed)
+            } else if let rendered = cache.previewImage(
+                source: source,
+                dng: dng,
+                aspect: aspect,
+                exposureEV: ev,
+                style: .off,
+                look: .none,
+                halo: .off,
+                lensZoom: zoom,
+                maxSide: EditorMatch.previewMaxSide
+            ), let cg = StillPipeline.displayImage(rendered) {
+                measured = EditorMatch.displayMeanLuma(cg)
+            } else {
+                measured = nil
+            }
+            guard let measured else {
+                logSweep(String(format: "EDITOR EV SWEEP FAILED mode=0 file=%@ ev %+.1f did not render", file, ev))
+                return true
+            }
+            rows.append((ev, measured))
+        }
+        return reportSweep(mode: "0", file: file, rows: rows)
+    }
+
+    private static func shotStem(_ url: URL) -> String {
+        var name = url.deletingPathExtension().lastPathComponent
+        if name.lowercased().hasSuffix(".apple") {
+            name = String(name.dropLast(".apple".count))
+        }
+        return name
+    }
+
+    private static func sessionlessImage() -> CGImage? {
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: 8,
+            height: 8,
+            bitsPerComponent: 8,
+            bytesPerRow: 32,
+            space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        return context.makeImage()
+    }
+
+    /// Camera HEIF for an imported pair. The develop, when present, is `stem.heic` and is not this file.
+    private static func importedHEIF(stem: String) -> CGImage? {
+        let names = [
+            "\(stem).apple.heic",
+            "\(stem).apple.HEIC",
+            "\(stem).heic",
+            "\(stem).HEIC",
+            "\(stem).heif",
+            "\(stem).HEIF"
+        ]
+        for name in names {
+            let url = StillArchive.directory.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let image = AlbumImage.fileImage(url: url, maxSide: nil)?.cgImage else { continue }
+            return image
+        }
+        return nil
+    }
+
+    private static func reportSweep(mode: String, file: String, rows: [(Double, Float)]) -> Bool {
+        for row in rows {
+            logSweep(String(format: "EDITOR EV SWEEP mode=%@ file=%@ ev=%+.1f mean=%.3f", mode, file, row.0, row.1))
+        }
+        var failed = false
+        var index = 1
+        while index < rows.count {
+            let darker = rows[index]
+            let brighter = rows[index - 1]
+            if darker.1 >= brighter.1 - 0.002 {
+                logSweep(String(
+                    format: "EDITOR EV SWEEP FAILED mode=%@ file=%@ ev %+.1f mean %.3f is not below ev %+.1f mean %.3f",
+                    mode, file, darker.0, darker.1, brighter.0, brighter.1
+                ))
+                failed = true
+            }
+            index += 1
+        }
+        return failed
+    }
+
+    private static func logSweep(_ line: String) {
+        print(line)
+        Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
     }
 
     /// Thirty EV steps on the warm 800 px proxy. Prints the median and the 95th percentile.

@@ -5,8 +5,9 @@ import os
 /// because scale can restore defaults. The 无 look does not grade the file. Other looks are the
 /// `LookRecipe` cubes. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
-/// The EV dial is `pow(2, ev)` on the scene-referred linear output, then the highlight shoulder.
-/// `CIRAWFilter.exposure` stays at the file baseline so the demosaic can be cached. Apple's HEIF is not an input.
+/// The EV dial is one `pow(2, baseline + ev)` multiply on scene-linear samples, then the highlight shoulder.
+/// The RAW filter's exposure, baseline, boost, and gamut map stay off so they cannot apply a second gain
+/// or refit a tone curve after the dial. Apple's HEIF is not an input.
 enum RawDevelop {
     static let exportQuality: CGFloat = 0.98
     /// Last develop, for the on-screen line and the log. Not a user setting.
@@ -23,7 +24,7 @@ enum RawDevelop {
         maxSide: CGFloat?,
         draft: Bool
     ) -> CGImage? {
-        guard let scene = linearBase(
+        guard let plate = scenePlate(
             dng: dng,
             aspect: aspect,
             lensZoom: lensZoom,
@@ -32,7 +33,7 @@ enum RawDevelop {
         ) else {
             return nil
         }
-        let toned = exposeThenShoulder(scene, ev: exposureEV)
+        let toned = StillPipeline.expose(plate, ev: exposureEV)
         return StillPipeline.renderLinear(
             toned,
             exposureEV: 0,
@@ -42,43 +43,29 @@ enum RawDevelop {
         )
     }
 
-    /// Scene-referred linear develop at the file's baseline exposure. No shoulder, no dial.
-    static func linearBase(
+    /// Sensor-linear samples. `baseline` is the DNG tag, applied later as one multiply with the dial.
+    static func scenePlate(
         dng: Data,
         aspect: PhotoAspect,
         lensZoom: Double,
         maxSide: CGFloat?,
         draft: Bool
-    ) -> CIImage? {
-        filteredImage(
-            dng: dng,
-            aspect: aspect,
-            lensZoom: lensZoom,
-            maxSide: maxSide,
-            draft: draft
-        )
-    }
-
-    private static func filteredImage(
-        dng: Data,
-        aspect: PhotoAspect,
-        lensZoom: Double,
-        maxSide: CGFloat?,
-        draft: Bool
-    ) -> CIImage? {
-        guard let framed = developedFrame(
+    ) -> StillPipeline.LinearPlate? {
+        guard let developed = developedFrame(
             dng: dng,
             lensZoom: lensZoom,
             maxSide: maxSide,
             draft: draft
         ) else { return nil }
-        return aspect.cropped(framed)
+        let cropped = aspect.cropped(developed.image)
+        return StillPipeline.linearPlate(of: cropped, baseline: developed.baseline)
     }
 
     /// `pow(2, ev)` while the data is still scene-linear, then the highlight shoulder.
-    /// Preview and export both call this. The shoulder must not run before the gain.
+    /// HEIF input is decoded once inside `linearPlate`. Preview and export both end in `StillPipeline.expose`.
     static func exposeThenShoulder(_ scene: CIImage, ev: Double) -> CIImage {
-        baseShoulder(StillPipeline.applyingExposure(scene, ev: ev))
+        guard let plate = StillPipeline.linearPlate(of: scene, baseline: 0) else { return scene }
+        return StillPipeline.expose(plate, ev: ev)
     }
 
     /// Filter output, scene lift, and lens crop. No second orientation pass, and no aspect crop.
@@ -87,7 +74,7 @@ enum RawDevelop {
         lensZoom: Double,
         maxSide: CGFloat?,
         draft: Bool
-    ) -> CIImage? {
+    ) -> (image: CIImage, baseline: Float)? {
         guard let filter = CIRAWFilter(imageData: dng, identifierHint: nil) else { return nil }
         filter.isDraftModeEnabled = draft
         let asShotTemperature = filter.neutralTemperature
@@ -111,12 +98,12 @@ enum RawDevelop {
         let baseline = silenceProcessing(filter)
         guard let output = filter.outputImage else { return nil }
         Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline)
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) scene linear, shoulder after the dial")
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) applied once as 2^baseline before the shoulder, filter exposure 0")
         // `outputImage` is already upright: a 4032×3024 buffer tagged orientation 6 comes out 3024×4032.
         // Applying that EXIF tag again turns the portrait frame sideways.
         let framed = LensCrop.cropped(output, zoom: zoom)
         Logger(subsystem: "com.zeid.phi", category: "develop").info("source DNG native \(Int(native.width))x\(Int(native.height)) scale \(filter.scaleFactor) zoom \(zoom)")
-        return framed
+        return (framed, baseline)
     }
 
     /// Landscape sensor buffer tagged orientation 6. `CIRAWFilter` already turns that into a portrait image.
@@ -128,7 +115,7 @@ enum RawDevelop {
         guard tagged == 6 else {
             return ["portrait probe DNG is missing orientation 6"]
         }
-        guard let framed = developedFrame(dng: dng, lensZoom: 1, maxSide: nil, draft: false) else {
+        guard let framed = developedFrame(dng: dng, lensZoom: 1, maxSide: nil, draft: false)?.image else {
             return ["portrait-orientation DNG did not develop"]
         }
         let size = framed.extent.integral.size
@@ -141,20 +128,28 @@ enum RawDevelop {
     }
 
     /// Applied after draft mode and scaleFactor so those changes cannot put noise reduction back.
-    /// Exposure stays at the file baseline. The dial multiplies this linear output before the shoulder.
+    /// The tag is returned and applied once, later, as `2^baseline`. The filter must not also apply it:
+    /// its exposure, boost, and gamut map sit on a curve that refits after a second gain.
     @discardableResult
     private static func silenceProcessing(_ filter: CIRAWFilter) -> Float {
         let baseline = filter.baselineExposure
-        filter.exposure = baseline
+        filter.baselineExposure = 0
+        filter.exposure = 0
+        filter.shadowBias = 0
+        filter.boostAmount = 0
         filter.localToneMapAmount = 0
+        filter.isGamutMappingEnabled = false
+        filter.extendedDynamicRangeAmount = 0
         filter.luminanceNoiseReductionAmount = 0
         filter.colorNoiseReductionAmount = 0
         filter.moireReductionAmount = 0
         filter.sharpnessAmount = 0
         filter.detailAmount = 0
-        filter.boostAmount = 0
         filter.contrastAmount = 0
         filter.isLensCorrectionEnabled = false
+        if filter.inputKeys.contains("inputBoostShadowAmount") {
+            filter.setValue(0.0, forKey: "inputBoostShadowAmount")
+        }
         return baseline
     }
 
@@ -187,61 +182,76 @@ enum RawDevelop {
         return notes
     }
 
-    private static let shoulderKernel: CIColorKernel? = CIColorKernel(source: """
-        kernel vec4 phiShoulder(__sample s) {
-            float knee = 0.62;
-            float softness = 0.55;
-            vec3 x = max(s.rgb, vec3(0.0));
-            vec3 span = max(x - vec3(knee), vec3(0.0));
-            vec3 compressed = vec3(knee) + vec3(1.0 - knee) * (span / (span + vec3(softness)));
-            vec3 y = mix(x, min(compressed, vec3(1.0)), step(vec3(knee), x));
-            return vec4(y, s.a);
-        }
-        """)
-
-    private static func baseShoulder(_ image: CIImage) -> CIImage {
-        guard let kernel = shoulderKernel, let output = kernel.apply(extent: image.extent, arguments: [image]) else {
-            return image
-        }
-        return output
-    }
-
-    /// EV 0, −1, and −2.8 on one scene-linear chart. Blacks must not lift and saturation must not fall.
+    /// Synthetic chart plus a white-wall sample. Mean luma falls as EV falls. Mid-gray tracks `2^EV` under the knee.
     static func exposureMetricFailures() -> [String] {
+        var notes = wallShoulderFailures()
         let scene = exposureProbe()
-        let stops: [Double] = [0, -1, -2.8]
+        let stops: [Double] = [2, 0.9, 0, -0.7, -1, -2]
         var rows: [(Double, Float, Float, Float, Float, Float)] = []
         for ev in stops {
             let toned = exposeThenShoulder(scene, ev: ev)
             guard let image = StillPipeline.displayImage(toned), let stats = probeStats(image, ev: ev) else {
-                return ["exposure probe did not render"]
+                return notes + ["exposure probe did not render"]
             }
             let line = String(
-                format: "EDITOR EV METRICS ev=%.1f mean=%.3f p1=%.3f p99=%.3f sat=%.3f linearMid=%.4f",
+                format: "EDITOR EV METRICS ev=%+.1f mean=%.3f p1=%.3f p99=%.3f sat=%.3f linearMid=%.4f",
                 ev, stats.mean, stats.p1, stats.p99, stats.sat, stats.linearMid
             )
             print(line)
             Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
             rows.append((ev, stats.mean, stats.p1, stats.p99, stats.sat, stats.linearMid))
         }
-        guard let zero = rows.first else { return ["exposure probe did not render"] }
-        var notes: [String] = []
-        for row in rows.dropFirst() {
-            if row.2 > zero.2 + 0.004 {
-                notes.append(String(format: "EV %.1f black p1 rose from %.3f to %.3f", row.0, zero.2, row.2))
+        guard let zero = rows.first(where: { abs($0.0) < 0.001 }) else { return notes + ["exposure probe did not render"] }
+        for index in 1..<rows.count where rows[index].1 >= rows[index - 1].1 - 0.002 {
+            notes.append(String(
+                format: "EV %+.1f mean luma %.3f is not below EV %+.1f %.3f",
+                rows[index].0, rows[index].1, rows[index - 1].0, rows[index - 1].1
+            ))
+        }
+        for row in rows {
+            if row.0 <= 0.001, row.2 > zero.2 + 0.004 {
+                notes.append(String(format: "EV %+.1f black p1 rose from %.3f to %.3f", row.0, zero.2, row.2))
             }
-            if row.4 + 0.03 < zero.4 {
-                notes.append(String(format: "EV %.1f saturation dropped from %.3f to %.3f", row.0, zero.4, row.4))
+            if row.0 < -0.05, row.4 + 0.03 < zero.4 {
+                notes.append(String(format: "EV %+.1f saturation dropped from %.3f to %.3f", row.0, zero.4, row.4))
             }
-            if row.1 >= zero.1 {
-                notes.append(String(format: "EV %.1f mean luma %.3f is not below %.3f", row.0, row.1, zero.1))
+            let expected = Float(pow(2, row.0))
+            let underKnee = Float(0.18) * expected <= 0.60
+            if underKnee, zero.5 > 0.001, abs(row.0) > 0.05 {
+                let ratio = row.5 / zero.5
+                let error = abs(ratio - expected) / expected
+                if error > 0.12 {
+                    notes.append(String(
+                        format: "EV %+.1f linear midtone ratio %.3f is not 2^EV (%.3f)",
+                        row.0, ratio, expected
+                    ))
+                }
             }
         }
-        if let minusOne = rows.first(where: { abs($0.0 + 1) < 0.01 }), zero.5 > 0.001 {
-            let ratio = minusOne.5 / zero.5
-            if ratio < 0.42 || ratio > 0.58 {
-                notes.append(String(format: "EV -1 linear midtone ratio %.3f is not about 0.5", ratio))
-            }
+        return notes
+    }
+
+    /// A wall that is comfortable at EV 0 must darken at −0.7 and must not clip at +0.9.
+    private static func wallShoulderFailures() -> [String] {
+        let wall: Float = 0.85
+        let neutral = baseShoulderValue(wall)
+        let dropped = baseShoulderValue(wall * Float(pow(2, -0.7)))
+        let lifted = baseShoulderValue(wall * Float(pow(2, 0.9)))
+        let line = String(
+            format: "EDITOR EV METRICS wall ev0=%.3f ev-0.7=%.3f ev+0.9=%.3f",
+            neutral, dropped, lifted
+        )
+        print(line)
+        Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
+        var notes: [String] = []
+        if dropped >= neutral {
+            notes.append(String(format: "EV -0.7 wall %.3f is not darker than %.3f", dropped, neutral))
+        }
+        if lifted <= neutral {
+            notes.append(String(format: "EV +0.9 wall %.3f is not brighter than %.3f", lifted, neutral))
+        }
+        if lifted >= 0.985 {
+            notes.append(String(format: "EV +0.9 clipped a white wall to %.3f", lifted))
         }
         return notes
     }
