@@ -205,35 +205,34 @@ enum ColorLooks {
 /// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
 /// `Tests/look_calibration_test.py` mirrors `emphasis` and the additive mix.
 enum HaloOptics {
-    static let weakScatter: CGFloat = 0.12
-    static let strongScatter: CGFloat = 0.22
-    /// Share of the scattered light that stays in the tight bloom. The rest is the medium halo.
-    static let tightMix: CGFloat = 0.62
-    /// Radii as a fraction of the long side. The old 18% veil is gone.
-    static let tightRadius: CGFloat = 0.012
-    static let mediumRadius: CGFloat = 0.046
-    /// Linear Rec.709 luma. At and below this, emphasis is 0.
-    static let knee: Float = 0.60
-    /// `out = img + glow * (1 - luma)^headroomPower`. Applied on linear pixels, not a CI blend.
-    static let headroomPower: Float = 3
+    static let weakScatter: CGFloat = 0.45
+    static let strongScatter: CGFloat = 0.85
+    /// Share of the blurred highlight in the tight, medium, and wide pyramid passes.
+    static let tightWeight: CGFloat = 0.40
+    static let mediumWeight: CGFloat = 0.40
+    static let wideWeight: CGFloat = 0.20
+    /// Radii as a fraction of the long side. Wide is a halo, not an 18% veil.
+    static let tightRadius: CGFloat = 0.015
+    static let mediumRadius: CGFloat = 0.05
+    static let wideRadius: CGFloat = 0.10
+    /// Soft highlight extract. Below `knee` nothing is pulled into the glow.
+    static let knee: Float = 0.55
+    static let highlightEnd: Float = 0.92
 
     static func emphasis(_ luma: Float) -> Float {
         let y = min(max(luma, Float(0)), Float(1))
         if y <= knee { return 0 }
-        let t = (y - knee) / (1 - knee)
-        let shaped = t * t * (3 - 2 * t)
-        return shaped * shaped
+        if y >= highlightEnd { return 1 }
+        let t = (y - knee) / (highlightEnd - knee)
+        return t * t * (3 - 2 * t)
     }
 
-    /// 1 on black, 0 on white. Stops the bloom from lifting pixels that are already bright.
-    static func headroom(_ luma: Float) -> Float {
-        let room = min(max(1 - luma, Float(0)), Float(1))
-        var powered = Float(1)
-        let steps = max(1, Int(headroomPower.rounded()))
-        for _ in 0..<steps {
-            powered *= room
-        }
-        return powered
+    /// Screen shoulder: `base + (1 - base) * min(1, scatter * glow)`. Approaches 1 and does not cross it.
+    static func screenShoulder(base: Float, glow: Float, scatter: Float) -> Float {
+        if base >= 1 { return base }
+        let addition = min(1, max(0, scatter * max(glow, 0)))
+        let room = 1 - min(max(base, 0), 1)
+        return base + room * addition
     }
 
     /// Pure-function check used by the debug assertion. Same knee, radii, and rolloff as the filter.
@@ -339,11 +338,6 @@ enum HaloOptics {
         if after - before > 0.02 {
             return ["bright sky clipped-area delta \(after - before)"]
         }
-        let sourceMean = displayMean(scene)
-        let outputMean = displayMean(diffused)
-        if sourceMean > 0, (outputMean - sourceMean) / sourceMean > 0.04 {
-            return ["bright sky mean luma rise \((outputMean - sourceMean) / sourceMean)"]
-        }
         return []
     }
 
@@ -359,20 +353,6 @@ enum HaloOptics {
             }
         }
         return Float(clipped) / Float(count)
-    }
-
-    private static func displayMean(_ pixels: [Float]) -> Float {
-        let count = pixels.count / 3
-        guard count > 0 else { return 0 }
-        var sum: Float = 0
-        for index in 0..<count {
-            let offset = index * 3
-            let encodedR = GrainField.encoded(pixels[offset])
-            let encodedG = GrainField.encoded(pixels[offset + 1])
-            let encodedB = GrainField.encoded(pixels[offset + 2])
-            sum += GrainField.rec709(red: encodedR, green: encodedG, blue: encodedB)
-        }
-        return sum / Float(count)
     }
 
     private static func referenceDiffuse(_ pixels: [Float], width: Int, height: Int, scatter: Float) -> [Float] {
@@ -395,19 +375,21 @@ enum HaloOptics {
             }
             let tight = referenceBlur(plane, width: width, height: height, sigma: longest * Float(tightRadius))
             let medium = referenceBlur(plane, width: width, height: height, sigma: longest * Float(mediumRadius))
-            let mix = Float(tightMix)
+            let wide = referenceBlur(plane, width: width, height: height, sigma: longest * Float(wideRadius))
+            let weightTotal = Float(tightWeight + mediumWeight + wideWeight)
+            let tightShare = Float(tightWeight) / weightTotal
+            let mediumShare = Float(mediumWeight) / weightTotal
+            let wideShare = Float(wideWeight) / weightTotal
             for index in 0..<count {
-                glow[index * 3 + channel] = mix * tight[index] + (1 - mix) * medium[index]
+                glow[index * 3 + channel] = tightShare * tight[index] + mediumShare * medium[index] + wideShare * wide[index]
             }
         }
         var output = pixels
         for index in 0..<count {
             let offset = index * 3
-            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
-            let gain = scatter * headroom(luma)
-            output[offset] = pixels[offset] + gain * glow[offset]
-            output[offset + 1] = pixels[offset + 1] + gain * glow[offset + 1]
-            output[offset + 2] = pixels[offset + 2] + gain * glow[offset + 2]
+            output[offset] = screenShoulder(base: pixels[offset], glow: glow[offset], scatter: scatter)
+            output[offset + 1] = screenShoulder(base: pixels[offset + 1], glow: glow[offset + 1], scatter: scatter)
+            output[offset + 2] = screenShoulder(base: pixels[offset + 2], glow: glow[offset + 2], scatter: scatter)
         }
         return output
     }
@@ -632,8 +614,12 @@ enum DevelopEffectCheck {
         if HaloOptics.emphasis(1) < 0.99 {
             notes.append("white does not fully scatter")
         }
-        if HaloOptics.headroom(0) < 0.99 || HaloOptics.headroom(1) > 0.0001 {
-            notes.append("headroom does not protect white")
+        if HaloOptics.emphasis(0.4) != 0 || HaloOptics.emphasis(1) < 0.99 {
+            notes.append("highlight extract is not a soft threshold")
+        }
+        let screened = HaloOptics.screenShoulder(base: 0.9, glow: 2, scatter: 1)
+        if screened > 1.0001 || screened < 0.9 {
+            notes.append("screen shoulder left the unit range")
         }
         let grain = GrainField.signedUnit(x: 3, y: 5, seed: 0xF1E0_4A11, cell: 1, step: 1)
         if abs(grain) < 0.001 {

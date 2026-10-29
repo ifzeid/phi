@@ -111,10 +111,8 @@ enum StillPipeline {
         return bitmapImage(pixels, bounds: bounds)
     }
 
-    /// Preview and export both call this. The blur is a finite CI pyramid; the gain and
-    /// `(1 - luma)^3` rolloff are applied on the rendered linear pixels. CI compositing
-    /// filters in the extended-linear working space were ignoring that weight, so 弱 and 强
-    /// added the same unscaled glow and bright skies clipped.
+    /// Preview and export both call this. Highlights are extracted, blurred with a finite
+    /// pyramid, then screened back so the halo can land on bright neighbours without clipping.
     static func applyHalo(_ base: CIImage, level: HaloLevel) -> CIImage {
         #if DEBUG
         _ = haloPipelineCheck
@@ -180,7 +178,8 @@ enum StillPipeline {
         let longest = max(extent.width, extent.height)
         let mediumSigma = longest * HaloOptics.mediumRadius
         let tightSigma = longest * HaloOptics.tightRadius
-        var scale: CGFloat = mediumSigma > 6 ? 6 / mediumSigma : 1
+        let wideSigma = longest * HaloOptics.wideRadius
+        var scale: CGFloat = wideSigma > 6 ? 6 / wideSigma : 1
         if longest > 0, longest * scale < 8 {
             scale = min(1, 8 / longest)
         }
@@ -200,16 +199,22 @@ enum StillPipeline {
               let mediumPixels = linearPixels(medium, bounds: small),
               tightPixels.count == reduced.count,
               mediumPixels.count == reduced.count else { return nil }
+        let wide = pyramidBlur(emphasized, sigma: max(wideSigma * scale, 0.5), extent: small)
+        guard let widePixels = linearPixels(wide, bounds: small), widePixels.count == reduced.count else { return nil }
         let count = smallW * smallH
         var glow = [Float](repeating: 0, count: count * 3)
-        let mix = Float(HaloOptics.tightMix)
+        let weightTotal = Float(HaloOptics.tightWeight + HaloOptics.mediumWeight + HaloOptics.wideWeight)
+        let tightShare = Float(HaloOptics.tightWeight) / weightTotal
+        let mediumShare = Float(HaloOptics.mediumWeight) / weightTotal
+        let wideShare = Float(HaloOptics.wideWeight) / weightTotal
         for index in 0..<count {
             let sourceOffset = index * 4
             let glowOffset = index * 3
             for channel in 0..<3 {
                 let tightSample = max(tightPixels[sourceOffset + channel], 0)
                 let mediumSample = max(mediumPixels[sourceOffset + channel], 0)
-                glow[glowOffset + channel] = mix * tightSample + (1 - mix) * mediumSample
+                let wideSample = max(widePixels[sourceOffset + channel], 0)
+                glow[glowOffset + channel] = tightShare * tightSample + mediumShare * mediumSample + wideShare * wideSample
             }
         }
         return GlowMap(
@@ -246,11 +251,9 @@ enum StillPipeline {
             for x in 0..<width {
                 let sample = sampleGlow(glow, x: x, y: y)
                 let offset = (y * width + x) * 4
-                let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
-                let gain = scatter * HaloOptics.headroom(luma)
-                pixels[offset] += gain * sample.0
-                pixels[offset + 1] += gain * sample.1
-                pixels[offset + 2] += gain * sample.2
+                pixels[offset] = HaloOptics.screenShoulder(base: pixels[offset], glow: sample.0, scatter: scatter)
+                pixels[offset + 1] = HaloOptics.screenShoulder(base: pixels[offset + 1], glow: sample.1, scatter: scatter)
+                pixels[offset + 2] = HaloOptics.screenShoulder(base: pixels[offset + 2], glow: sample.2, scatter: scatter)
             }
         }
     }
@@ -569,19 +572,25 @@ enum StillPipeline {
     }()
 
     private static func haloCIFailures() -> [String] {
-        let width = 96
-        let height = 64
+        let width = 128
+        let height = 80
+        let sky: (Float, Float, Float) = (0.3916, 0.5647, 0.7605)
+        let wall: (Float, Float, Float) = (0.8388, 0.7913, 0.7011)
+        let terra: (Float, Float, Float) = (0.4342, 0.1620, 0.0685)
+        let shadow: (Float, Float, Float) = (0.0194, 0.0144, 0.0116)
         var pixels = [Float](repeating: 0, count: width * height * 4)
         for y in 0..<height {
             for x in 0..<width {
                 let offset = (y * width + x) * 4
                 let sample: (Float, Float, Float)
-                if y < 40 {
-                    sample = (0.78, 0.84, 0.95)
-                } else if x >= 48 {
-                    sample = (0.94, 0.93, 0.90)
+                if y < Int(Float(height) * 0.38) {
+                    sample = sky
+                } else if x > Int(Float(width) * 0.42), y < Int(Float(height) * 0.82) {
+                    sample = wall
+                } else if x < 18, y > Int(Float(height) * 0.70) {
+                    sample = shadow
                 } else {
-                    sample = (0.12, 0.10, 0.08)
+                    sample = terra
                 }
                 pixels[offset] = sample.0
                 pixels[offset + 1] = sample.1
@@ -602,24 +611,26 @@ enum StillPipeline {
         var notes: [String] = []
         let plainClip = clipFraction(plainBytes)
         let strongClip = clipFraction(strongBytes)
-        let delta = strongClip - plainClip
-        if delta > 0.02 {
-            notes.append(String(format: "clipped-area delta %.3f (plain %.3f strong %.3f)", delta, plainClip, strongClip))
+        let weakClip = clipFraction(weakBytes)
+        if strongClip - plainClip > 0.02 || weakClip - plainClip > 0.02 {
+            notes.append(String(format: "clipped-area delta weak %.3f strong %.3f", weakClip - plainClip, strongClip - plainClip))
         }
+        let plainMean = byteMean(plainBytes)
         let weakMean = byteMean(weakBytes)
         let strongMean = byteMean(strongBytes)
-        var difference = 0
-        let limit = min(weakBytes.count, strongBytes.count)
-        for index in stride(from: 0, to: limit, by: 4) {
-            difference += abs(Int(weakBytes[index]) - Int(strongBytes[index]))
-            difference += abs(Int(weakBytes[index + 1]) - Int(strongBytes[index + 1]))
-            difference += abs(Int(weakBytes[index + 2]) - Int(strongBytes[index + 2]))
+        let weakRise = weakMean - plainMean
+        let strongRise = strongMean - plainMean
+        if weakRise < 1 || weakRise > 8 {
+            notes.append(String(format: "弱 mean rise %.2f levels", weakRise))
         }
-        if difference == 0 {
-            notes.append(String(format: "weak and strong render identically (means %.2f %.2f)", weakMean, strongMean))
+        if strongRise < 3 || strongRise > 14 {
+            notes.append(String(format: "强 mean rise %.2f levels", strongRise))
+        }
+        if strongRise < weakRise + 1 {
+            notes.append(String(format: "弱 and 强 too close (%.2f vs %.2f)", weakRise, strongRise))
         }
         if notes.isEmpty == false {
-            notes.append(String(format: "means plain %.2f weak %.2f strong %.2f", byteMean(plainBytes), weakMean, strongMean))
+            notes.append(String(format: "means plain %.2f weak %.2f strong %.2f", plainMean, weakMean, strongMean))
         }
         return notes
     }
