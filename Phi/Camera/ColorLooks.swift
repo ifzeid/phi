@@ -469,7 +469,7 @@ enum ColorLook: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .none: "无"
+        case .none: "原始"
         case .positive: "正片"
         case .negative: "负片"
         case .mono: "黑白"

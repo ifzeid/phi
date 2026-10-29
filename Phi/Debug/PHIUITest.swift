@@ -2,10 +2,12 @@ import SwiftUI
 
 #if DEBUG
 /// Simulator screenshots.
-/// `-PHIUITestScreen capture|album|editor|settings|flash`
+/// `-PHIUITestScreen capture|album|editor|settings|flash|discard|style`
 /// `-PHIUITestAspect 1:1|3:4|2:3|9:16` (also `4:3`, `3:2`, `16:9`)
-/// `-PHIUITestEVRuler` opens the exposure ruler on the capture screen
+/// `-PHIUITestEVRuler` kept so older capture launches still open the finder
 /// `-PHIUITestGrid` turns the crop grid on
+/// `-PHIUITestManual` shows the M / ISO ruler
+/// `-PHIUITestZoom 0.5|1|2|4` sets the zoom-cycle label
 /// `-PHIUITestEditorTab exposure|style|effects`
 enum PHIUITest {
     enum Screen: String {
@@ -14,6 +16,8 @@ enum PHIUITest {
         case editor
         case settings
         case flash
+        case discard
+        case style
     }
 
     static var screen: Screen? {
@@ -42,6 +46,24 @@ enum PHIUITest {
 
     static var showGrid: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestGrid")
+    }
+
+    /// Manual ruler. The capture ruler is always on; this chooses M / ISO instead of A / EV.
+    static var manual: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestManual")
+    }
+
+    static var zoom: CaptureZoom? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-PHIUITestZoom"),
+              arguments.indices.contains(flag + 1) else { return nil }
+        switch arguments[flag + 1] {
+        case "0.5", "0.5x", "0.5×": return .half
+        case "1", "1x", "1×": return .one
+        case "2", "2x", "2×": return .two
+        case "4", "4x", "4×": return .four
+        default: return nil
+        }
     }
 
     static var editorTab: EditorTabName? {
@@ -106,7 +128,7 @@ struct PHIUITestHost: View {
                 onRetryLocal: { _ in },
                 sampleGallery: true
             )
-        case .editor:
+        case .editor, .style, .discard:
             ProcessStillView(
                 session: PHIUITestHost.editorSession(),
                 canRetryOriginal: false,

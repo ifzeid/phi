@@ -40,7 +40,7 @@ struct FinderSettingsSheet: View {
                 captionGap: SettingsToken.modeCaptionGap
             ) {
                 SettingsPillGroup(
-                    titles: ProcessMode.allCases.map(\.mark),
+                    titles: ProcessMode.allCases.map(\.settingsTitle),
                     selection: ProcessMode.allCases.firstIndex(of: mode) ?? 0
                 ) { index in
                     onMode(ProcessMode.allCases[index])
@@ -74,8 +74,8 @@ struct FinderSettingsSheet: View {
             }
             Color.clear.frame(height: SettingsToken.aspectCaptionToCard)
             SettingsHelpCard(
-                title: "设备支持决定可选格式",
-                bodyText: "不支持的选项会说明原因。拍摄参数回到取景页直接调整。"
+                title: "处理方式 · 0 / Φ / 1",
+                bodyText: "0 · RAW：保留原始数据。\nΦ · ProRAW：保留 Apple ProRAW 数据。\n1 · 标准：只保存苹果处理后的成片。"
             )
             Color.clear.frame(height: 24)
         }
@@ -103,9 +103,9 @@ struct FinderSettingsSheet: View {
 
     private var modeCaption: String {
         switch mode {
-        case .bayer: "保留 RAW 数据，留给后期更多空间。"
-        case .proRaw: "Φ 没有 ProRAW 时改用 Bayer。"
-        case .standard: "只存苹果处理好的成片。"
+        case .bayer: "0 · 保留 RAW 原始数据，留给后期更多空间。"
+        case .proRaw: "Φ · 保留 Apple ProRAW 数据。"
+        case .standard: "1 · 只保存苹果处理后的成片。"
         }
     }
 }

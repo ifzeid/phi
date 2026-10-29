@@ -12,12 +12,30 @@ enum ProcessMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Short mark for the viewfinder. Not a product name.
+    /// Short mark for logs and the delivery label. Not the viewfinder pill.
     var mark: String {
         switch self {
         case .bayer: "0"
         case .proRaw: "Φ"
         case .standard: "1"
+        }
+    }
+
+    /// Word on the capture pill: `RAW · 3:4`.
+    var finderWord: String {
+        switch self {
+        case .bayer: "RAW"
+        case .proRaw: "ProRAW"
+        case .standard: "标准"
+        }
+    }
+
+    /// Settings pill. The digit stays so the help card can explain 0 / Φ / 1.
+    var settingsTitle: String {
+        switch self {
+        case .bayer: "0 RAW"
+        case .proRaw: "Φ ProRAW"
+        case .standard: "1 标准"
         }
     }
 

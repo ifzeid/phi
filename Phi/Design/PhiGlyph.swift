@@ -83,24 +83,24 @@ struct WhiteShutterButton: View {
     }
 }
 
-/// 76 pt brackets and a red centre. Locked state adds the AE/AF LOCK line.
+/// Red corner frame sized by its parent. On the 3:4 finder that parent is the centre thirds cell, 130×174.
+/// Locked state adds the AE/AF LOCK line. There is no centre circle.
 struct FocusBracket: View {
     var locked: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                BracketShape()
-                    .stroke(CameraColor.textPrimary, style: StrokeStyle(lineWidth: 1.3, lineCap: .round, lineJoin: .round))
-                Circle()
-                    .stroke(CameraColor.accent, lineWidth: 1.6)
-                    .frame(width: 14, height: 14)
-            }
-            .frame(width: 76, height: 76)
+        GeometryReader { geo in
+            let arm = min(CGFloat(29), geo.size.width * 0.24, geo.size.height * 0.18)
+            CornerBrackets(arm: arm)
+                .stroke(CameraColor.accent, style: StrokeStyle(lineWidth: 1.6, lineCap: .butt, lineJoin: .miter))
+                .padding(0.8)
+        }
+        .overlay(alignment: .bottom) {
             if locked {
                 Text("AE/AF LOCK")
                     .font(CameraFont.parameter(11))
                     .foregroundStyle(CameraColor.textPrimary)
+                    .offset(y: 18)
             }
         }
         .allowsHitTesting(false)
@@ -108,22 +108,25 @@ struct FocusBracket: View {
     }
 }
 
-private struct BracketShape: Shape {
+private struct CornerBrackets: Shape {
+    var arm: CGFloat
+
     func path(in rect: CGRect) -> Path {
-        let arm: CGFloat = 17
+        let inset = rect.insetBy(dx: 0.8, dy: 0.8)
+        let length = min(arm, inset.width / 2, inset.height / 2)
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + arm, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + arm))
-        path.move(to: CGPoint(x: rect.maxX - arm, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + arm))
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY - arm))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX + arm, y: rect.maxY))
-        path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - arm))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - arm, y: rect.maxY))
+        path.move(to: CGPoint(x: inset.minX + length, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.minX, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.minX, y: inset.minY + length))
+        path.move(to: CGPoint(x: inset.maxX - length, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.maxX, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.maxX, y: inset.minY + length))
+        path.move(to: CGPoint(x: inset.minX, y: inset.maxY - length))
+        path.addLine(to: CGPoint(x: inset.minX, y: inset.maxY))
+        path.addLine(to: CGPoint(x: inset.minX + length, y: inset.maxY))
+        path.move(to: CGPoint(x: inset.maxX, y: inset.maxY - length))
+        path.addLine(to: CGPoint(x: inset.maxX, y: inset.maxY))
+        path.addLine(to: CGPoint(x: inset.maxX - length, y: inset.maxY))
         return path
     }
 }

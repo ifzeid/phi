@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Tokens from Figma section 102:268. Red is selection, values, and the reticle centre. The shutter stays ivory.
+/// Tokens from Figma section 102:268. Red is selection, values, and the focus corners. The shutter stays ivory.
 enum CameraColor {
     static let background = Color(red: 9.0 / 255, green: 10.0 / 255, blue: 10.0 / 255)
     static let surface = Color(red: 25.0 / 255, green: 27.0 / 255, blue: 27.0 / 255)
