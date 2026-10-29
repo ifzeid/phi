@@ -28,28 +28,49 @@ struct ProcessStillView: View {
     private let toolHeight: CGFloat = 168
 
     var body: some View {
-        ZStack {
-            CameraColor.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                titleBar
-                editorImage
-                tabBar
-                    .frame(height: 48)
-                tool
-                    .frame(height: toolHeight)
-                toast
-                    .frame(height: 44)
-                actions
-                    .frame(height: 56)
-            }
-            if confirmDiscard {
-                discardDialog
+        GeometryReader { geo in
+            let bottomPad: CGFloat = 12
+            let controls: CGFloat = 48 + toolHeight + 44 + 44
+            let available: CGFloat = geo.size.height - 52 - controls - bottomPad
+            let ideal: CGFloat = geo.size.width / PhotoAspect.finderWidthOverHeight
+            let photoHeight: CGFloat = min(ideal, max(160, available))
+            ZStack {
+                CameraColor.background
+                VStack(spacing: 0) {
+                    titleBar
+                    editorImage
+                        .frame(height: photoHeight, alignment: .top)
+                        .clipped()
+                    Spacer(minLength: 0)
+                    tabBar
+                        .frame(height: 48)
+                    tool
+                        .frame(height: toolHeight)
+                    toast
+                        .frame(height: 44)
+                    actions
+                        .frame(height: 44)
+                }
+                .padding(.bottom, bottomPad)
+                if confirmDiscard {
+                    discardDialog
+                }
             }
         }
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
-        .statusBarHidden(true)
-        .onAppear(perform: captureBaseline)
+        .modifier(UnderIsland())
+        .onAppear {
+            #if DEBUG
+            switch PHIUITest.editorTab {
+            case .exposure: tab = .exposure
+            case .style: tab = .style
+            case .effects: tab = .effects
+            case nil: break
+            }
+            #endif
+            captureBaseline()
+        }
     }
 
     private var titleBar: some View {
@@ -71,33 +92,37 @@ struct ProcessStillView: View {
 
     @ViewBuilder
     private var editorImage: some View {
-        PhotoCanvas(widthOverHeight: session.framedAspect.widthOverHeight) {
+        PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
             ZStack {
                 CameraColor.background
                 if holdingOriginal {
                     Image(uiImage: session.originalImage ?? UIImage(cgImage: session.base))
                         .resizable()
-                        .scaledToFill()
+                        .scaledToFit()
                 } else if let preview = session.preview {
                     Image(uiImage: preview)
                         .resizable()
-                        .scaledToFill()
+                        .scaledToFit()
                 } else {
                     ProgressView().tint(CameraColor.accent)
                 }
             }
         }
-        Text(session.developInfo)
-            .font(CameraFont.parameter(11))
-            .foregroundStyle(CameraColor.textSecondary)
-            .lineLimit(2)
-            .padding(.horizontal, 20)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PHIShowDevelopInfo") {
+            Text(session.developInfo)
+                .font(CameraFont.parameter(11))
+                .foregroundStyle(CameraColor.textSecondary)
+                .lineLimit(2)
+                .padding(.horizontal, 20)
+        }
+        #endif
     }
 
     private var tabBar: some View {
         HStack(spacing: 8) {
             ForEach(EditorTab.allCases) { item in
-                SelectPill(title: item.rawValue, selected: tab == item, height: 36) {
+                SelectPill(title: item.rawValue, selected: tab == item, width: 104, height: 36) {
                     tab = item
                 }
             }
@@ -201,27 +226,29 @@ struct ProcessStillView: View {
     }
 
     private var actions: some View {
-        HStack {
+        HStack(spacing: 0) {
             PhiGlyphButton(glyph: .close, label: "离开编辑") { requestClose() }
-            Spacer()
+            Spacer(minLength: 0)
             PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
-            Spacer()
+            Spacer(minLength: 0)
             if canRetryOriginal, savedCopy == false {
                 Button("重试", action: onRetryOriginal)
-                    .font(CameraFont.interface(13, weight: .medium))
+                    .font(CameraFont.fixed(13, weight: .medium))
                     .foregroundStyle(CameraColor.textSecondary)
+                    .padding(.trailing, 8)
             }
             Button(action: onExport) {
                 Text(session.isExporting ? "保存中…" : "另存照片")
-                    .font(CameraFont.interface(13, weight: .medium))
+                    .font(CameraFont.fixed(13, weight: .medium))
                     .foregroundStyle(CameraColor.background)
-                    .frame(width: 120, height: 40)
-                    .background(CameraColor.textPrimary, in: Capsule())
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PillPlateStyle(fill: CameraColor.textPrimary, width: 120, height: 40))
             .disabled(session.isExporting || session.preview == nil)
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 16)
+        .padding(.trailing, 16)
+        .frame(height: 44)
     }
 
     private var discardDialog: some View {
