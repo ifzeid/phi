@@ -45,6 +45,10 @@ enum PhiShotIndex {
         /// `ProcessMode.rawValue`. Nil on rows written before mode 0 had its own develop.
         var processMode: String?
 
+        private enum CodingKeys: String, CodingKey {
+            case localIdentifier, hasRaw, aspect, lensZoom, processMode
+        }
+
         init(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double?, processMode: String? = nil) {
             self.localIdentifier = localIdentifier
             self.hasRaw = hasRaw
@@ -139,6 +143,10 @@ enum PhiLocalShots {
         var lensZoom: Double?
         /// `ProcessMode.rawValue`. Older records omit it.
         var processMode: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, files, hasRaw, savedToPhotos, photosIdentifier, saveFailed, aspect, lensZoom, processMode
+        }
 
         init(
             id: String,
