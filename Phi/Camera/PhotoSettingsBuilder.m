@@ -36,7 +36,7 @@ AVCapturePhotoSettings * _Nullable PHIMakePhotoSettings(
         }
         settings.photoQualityPrioritization = (AVCapturePhotoQualityPrioritization)qualityPrioritization;
         if (setFlash) {
-            settings.flashMode = (AVCaptureDeviceFlashMode)flashMode;
+            settings.flashMode = (AVCaptureFlashMode)flashMode;
         }
         NSArray<NSNumber *> *previews = settings.availablePreviewPhotoPixelFormatTypes;
         NSNumber *preview = previews.firstObject;
