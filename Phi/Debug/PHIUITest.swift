@@ -18,6 +18,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestOpenEditor <basename>` opens that imported shot
 /// `-PHIUITestEditorEV <value>` and `-PHIUITestEditorLook <name>` apply after open
 /// `-PHIUITestEditorEVSweep` logs mean luma at −2, −1, −0.7, 0, +0.9, +2 for the open shot and fails if it rises as EV falls
+/// `-PHIUITestEditorHalo` logs 关/弱/强 on imported shots: far sky must stay put, bloom near lights must rise
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -161,6 +162,11 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorEVSweep")
     }
 
+    /// 关 / 弱 / 强 on each imported still. Far pixels stay put; pixels near highlights get brighter.
+    static var editorHalo: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorHalo")
+    }
+
     /// Copies each same-basename HEIC+DNG pair into the local shot store. Safe to call once per launch.
     static func importPairsIfRequested() {
         guard didImport == false else { return }
@@ -253,6 +259,11 @@ enum PHIUITest {
     private static func applyLaunchEdits(_ session: ProcessSession) async {
         if editorEVSweep {
             await runEVSweep(session)
+        }
+        if editorHalo {
+            runHaloSweep(session)
+        }
+        if editorEVSweep || editorHalo {
             return
         }
         if editorDrag {
@@ -566,6 +577,294 @@ enum PHIUITest {
     private static func logSweep(_ line: String) {
         print(line)
         Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
+    }
+
+    /// 关 / 弱 / 强. Pixels farther than three wide-blur radii from a highlight must stay put.
+    private static func runHaloSweep(_ session: ProcessSession) {
+        let name = openEditorBasename ?? "shot"
+        var failed = false
+        if session.rendersFromDNG, let dng = session.sourceDNG {
+            failed = haloDNG(dng, aspect: session.framedAspect, zoom: session.lensZoom, file: name) || failed
+            if importedHEIF(stem: name) != nil {
+                failed = haloHEIF(file: name, aspect: session.framedAspect) || failed
+            }
+        } else {
+            let image = session.originalImage?.cgImage ?? session.base
+            failed = haloRendered(file: name, mode: "heif") { level in
+                StillPipeline.render(
+                    image,
+                    exposureEV: 0,
+                    style: .off,
+                    look: .none,
+                    halo: level,
+                    lensZoom: 1,
+                    maxSide: EditorMatch.previewMaxSide
+                )
+            } || failed
+            if let dng = session.sourceDNG {
+                failed = haloDNG(dng, aspect: session.framedAspect, zoom: session.lensZoom, file: name) || failed
+            }
+        }
+        failed = haloPeers(except: name) || failed
+        if failed {
+            assertionFailure("EDITOR HALO FAILED")
+        }
+    }
+
+    private static func haloPeers(except open: String) -> Bool {
+        let folder = StillArchive.directory
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        var stems = Set<String>()
+        for url in urls {
+            let stem = shotStem(url)
+            if stem.isEmpty == false, stem != open {
+                stems.insert(stem)
+            }
+        }
+        var failed = false
+        for stem in stems.sorted() {
+            let shot = PhiLocalShots.shot(id: stem)
+            let aspect = shot?.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? .threeByFour
+            let zoom = shot?.lensZoom ?? 1
+            let dngURL = folder.appendingPathComponent("\(stem).dng")
+            if FileManager.default.fileExists(atPath: dngURL.path), let dng = try? Data(contentsOf: dngURL) {
+                failed = haloDNG(dng, aspect: aspect, zoom: zoom, file: stem) || failed
+            }
+            if importedHEIF(stem: stem) != nil {
+                failed = haloHEIF(file: stem, aspect: aspect) || failed
+            }
+        }
+        return failed
+    }
+
+    private static func haloDNG(_ dng: Data, aspect: PhotoAspect, zoom: Double, file: String) -> Bool {
+        haloRendered(file: file, mode: "0") { level in
+            RawDevelop.image(
+                dng: dng,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: level,
+                aspect: aspect,
+                lensZoom: zoom,
+                maxSide: EditorMatch.previewMaxSide,
+                draft: false
+            )
+        }
+    }
+
+    private static func haloHEIF(file: String, aspect: PhotoAspect) -> Bool {
+        guard let image = importedHEIF(stem: file) else {
+            logSweep("EDITOR HALO mode=heif file=\(file) missing")
+            return false
+        }
+        return haloRendered(file: file, mode: "heif") { level in
+            StillPipeline.render(
+                image,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: level,
+                lensZoom: 1,
+                maxSide: EditorMatch.previewMaxSide
+            )
+        }
+    }
+
+    private static func haloRendered(file: String, mode: String, render: (HaloLevel) -> CGImage?) -> Bool {
+        let levels: [HaloLevel] = [.off, .weak, .strong]
+        var rendered: [(HaloLevel, [Float], Int, Int)] = []
+        for level in levels {
+            guard let image = render(level), let lumas = displayLumas(image) else {
+                logSweep("EDITOR HALO FAILED mode=\(mode) file=\(file) level=\(level.title) did not render")
+                return true
+            }
+            rendered.append((level, lumas, image.width, image.height))
+        }
+        guard let off = rendered.first else { return true }
+        let width = off.2
+        let height = off.3
+        if rendered.contains(where: { $0.2 != width || $0.3 != height || $0.1.count != off.1.count }) {
+            logSweep("EDITOR HALO FAILED mode=\(mode) file=\(file) frames differ in size")
+            return true
+        }
+        let longest = max(width, height)
+        let farRadius = max(1, Int((HaloOptics.wideRadius * CGFloat(longest) * 4).rounded(.up)))
+        let nearRadius = max(2, Int((HaloOptics.mediumRadius * CGFloat(longest) * 2).rounded(.up)))
+        let distance = haloDistance(lumas: off.1, width: width, height: height, limit: farRadius)
+        var farIndex: [Int] = []
+        var nearIndex: [Int] = []
+        let knee = HaloOptics.knee
+        for index in off.1.indices {
+            let steps = distance[index]
+            if steps < 0 {
+                farIndex.append(index)
+            } else if steps > 0, steps <= nearRadius, off.1[index] < knee {
+                nearIndex.append(index)
+            }
+        }
+        let offLumas = off.1
+        var rows: [(HaloLevel, HaloBand, HaloBand, Float)] = []
+        for item in rendered {
+            var peak = Float(0)
+            if item.0 != .off {
+                for index in farIndex {
+                    peak = max(peak, abs(item.1[index] - offLumas[index]))
+                }
+            }
+            rows.append((
+                item.0,
+                haloBand(item.1, indices: farIndex),
+                haloBand(item.1, indices: nearIndex),
+                peak
+            ))
+        }
+        for row in rows {
+            logSweep(String(
+                format: "EDITOR HALO mode=%@ file=%@ level=%@ R=%d farN=%d farP1=%.3f farP5=%.3f farMean=%.3f farMax=%.3f nearN=%d nearMean=%.3f",
+                mode,
+                file,
+                row.0.title,
+                farRadius,
+                farIndex.count,
+                row.1.p1,
+                row.1.p5,
+                row.1.mean,
+                row.3,
+                nearIndex.count,
+                row.2.mean
+            ))
+        }
+        guard let base = rows.first else { return true }
+        var failed = false
+        let slack = Float(1) / 255
+        if farIndex.isEmpty {
+            logSweep("EDITOR HALO mode=\(mode) file=\(file) far=none")
+        }
+        if nearIndex.isEmpty {
+            logSweep("EDITOR HALO mode=\(mode) file=\(file) near=none")
+        }
+        for row in rows.dropFirst() {
+            if farIndex.isEmpty == false {
+                let farMoved = abs(row.1.p1 - base.1.p1) >= slack
+                    || abs(row.1.p5 - base.1.p5) >= slack
+                    || abs(row.1.mean - base.1.mean) >= slack
+                    || row.3 >= slack
+                if farMoved {
+                    logSweep(String(
+                        format: "EDITOR HALO FAILED mode=%@ file=%@ level=%@ far sky moved p1 %.3f→%.3f p5 %.3f→%.3f mean %.3f→%.3f max %.3f",
+                        mode, file, row.0.title,
+                        base.1.p1, row.1.p1, base.1.p5, row.1.p5, base.1.mean, row.1.mean, row.3
+                    ))
+                    failed = true
+                }
+            }
+            if nearIndex.isEmpty == false, row.2.mean < base.2.mean + 0.01 {
+                logSweep(String(
+                    format: "EDITOR HALO FAILED mode=%@ file=%@ level=%@ near mean %.3f did not rise from %.3f",
+                    mode, file, row.0.title, row.2.mean, base.2.mean
+                ))
+                failed = true
+            }
+        }
+        if nearIndex.isEmpty == false, rows.count == 3, rows[2].2.mean <= rows[1].2.mean {
+            logSweep("EDITOR HALO FAILED mode=\(mode) file=\(file) 强 bloom is not above 弱")
+            failed = true
+        }
+        return failed
+    }
+
+    private struct HaloBand {
+        var p1: Float
+        var p5: Float
+        var mean: Float
+    }
+
+    private static func haloBand(_ lumas: [Float], indices: [Int]) -> HaloBand {
+        guard indices.isEmpty == false else {
+            return HaloBand(p1: 0, p5: 0, mean: 0)
+        }
+        var values = [Float]()
+        values.reserveCapacity(indices.count)
+        var sum = Float(0)
+        for index in indices {
+            let sample = lumas[index]
+            values.append(sample)
+            sum += sample
+        }
+        values.sort()
+        let p1 = values[min(values.count - 1, values.count / 100)]
+        let p5 = values[min(values.count - 1, values.count * 5 / 100)]
+        return HaloBand(p1: p1, p5: p5, mean: sum / Float(values.count))
+    }
+
+    private static func haloDistance(lumas: [Float], width: Int, height: Int, limit: Int) -> [Int] {
+        let count = width * height
+        var distance = [Int](repeating: -1, count: count)
+        var queue = [Int]()
+        queue.reserveCapacity(count / 8)
+        let knee = HaloOptics.knee
+        for index in 0..<count where lumas[index] >= knee {
+            distance[index] = 0
+            queue.append(index)
+        }
+        var head = 0
+        while head < queue.count {
+            let index = queue[head]
+            head += 1
+            let steps = distance[index]
+            if steps >= limit { continue }
+            let x = index % width
+            let y = index / width
+            if x > 0 { haloVisit(index - 1, steps: steps, distance: &distance, queue: &queue) }
+            if x + 1 < width { haloVisit(index + 1, steps: steps, distance: &distance, queue: &queue) }
+            if y > 0 { haloVisit(index - width, steps: steps, distance: &distance, queue: &queue) }
+            if y + 1 < height { haloVisit(index + width, steps: steps, distance: &distance, queue: &queue) }
+        }
+        return distance
+    }
+
+    private static func haloVisit(_ index: Int, steps: Int, distance: inout [Int], queue: inout [Int]) {
+        if distance[index] >= 0 { return }
+        distance[index] = steps + 1
+        queue.append(index)
+    }
+
+    private static func displayLumas(_ image: CGImage) -> [Float]? {
+        let width = image.width
+        let height = image.height
+        guard width > 1, height > 1 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        let drew = bytes.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            guard let context = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: space,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drew else { return nil }
+        var lumas = [Float](repeating: 0, count: width * height)
+        for index in 0..<(width * height) {
+            let offset = index * 4
+            let red = Float(bytes[offset]) / 255
+            let green = Float(bytes[offset + 1]) / 255
+            let blue = Float(bytes[offset + 2]) / 255
+            lumas[index] = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        }
+        return lumas
     }
 
     /// Thirty EV steps on the warm 800 px proxy. Prints the median and the 95th percentile.

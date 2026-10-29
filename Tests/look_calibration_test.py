@@ -6,8 +6,8 @@ Memory-color hue stays within 10°.
 Grain at FINE, 光晕, EV, and 无 are checked against the develop sources.
 Grain is zero-mean luminance: a gray patch stays neutral and its mean color stays
 within ΔE 1, and some pixels move. 无 is identity. Each look moves a red sample.
-光晕 is additive and highlight-only: a gray below the knee and a dark region far
-from a bright patch stay within 0.5%, and the pixels beside that patch gain glow.
+光晕 adds blurred highlight energy only: a gray below the display knee and a
+dark region far from a bright patch stay put, and the pixels beside that patch gain glow.
 EV does not rotate hue.
 Run: python3 Tests/look_calibration_test.py
 """
@@ -221,9 +221,9 @@ def grain_pixel(rgb, noise, amplitude):
     return tuple(srgb_decode(channel * factor) for channel in display)
 
 
-def emphasis(luma, knee, highlight_end):
-    """Soft threshold. Matches HaloOptics.emphasis."""
-    y = max(0.0, min(1.0, luma))
+def emphasis(display_luma, knee, highlight_end):
+    """Soft threshold on display luma. Matches HaloOptics.emphasis."""
+    y = max(0.0, min(1.0, display_luma))
     if y <= knee:
         return 0.0
     if y >= highlight_end:
@@ -232,17 +232,26 @@ def emphasis(luma, knee, highlight_end):
     return t * t * (3.0 - 2.0 * t)
 
 
-def screen_shoulder(base, glow, scatter):
-    """Matches HaloOptics.screenShoulder. Approaches 1 and does not cross it."""
+def highlight_gain(pixel, knee, highlight_end):
+    luma = rec709(pixel)
+    if luma <= 0:
+        return 0.0
+    return emphasis(srgb_encode(luma), knee, highlight_end)
+
+
+def add_bloom(base, glow, scatter):
+    """Matches HaloOptics.addBloom. A zero glow returns base unchanged."""
+    extra = scatter * glow
+    if extra <= 0.0001:
+        return base
     if base >= 1.0:
         return base
-    addition = max(0.0, min(1.0, scatter * max(glow, 0.0)))
-    room = 1.0 - max(0.0, min(base, 1.0))
-    return base + room * addition
+    total = base + extra
+    return 1.0 if total >= 1.0 else total
 
 
 def diffuse_pixel(rgb, glow, scatter):
-    return tuple(screen_shoulder(rgb[channel], glow[channel], scatter) for channel in range(3))
+    return tuple(add_bloom(rgb[channel], glow[channel], scatter) for channel in range(3))
 
 
 def gaussian_kernel(sigma):
@@ -277,46 +286,35 @@ def blur_plane(plane, width, height, sigma):
     return output
 
 
-def proximity_gate(reach, floor, ceil):
-    if reach <= floor:
-        return 0.0
-    if reach >= ceil:
-        return 1.0
-    t = (reach - floor) / (ceil - floor)
-    return t * t * (3.0 - 2.0 * t)
-
-
 def diffuse_image(pixels, width, height, scatter, optics):
-    weighted = []
-    mask = []
+    """Finite gaussian of highlight energy, then an add. No screen, no full-frame gate."""
+    count = width * height
+    energy = []
     for pixel in pixels:
-        gain = emphasis(rec709(pixel), optics["knee"], optics["highlight_end"])
-        mask.append(gain)
-        weighted.append(tuple(channel * gain for channel in pixel))
-    glow = []
+        gain = highlight_gain(pixel, optics["knee"], optics["highlight_end"])
+        energy.append(tuple(channel * gain for channel in pixel))
     longest = max(width, height)
+    glow = []
+    weights = (optics["tight_weight"], optics["medium_weight"], optics["wide_weight"])
+    total = sum(weights)
+    radii = (optics["tight"], optics["medium"], optics["wide"])
     for channel in range(3):
-        plane = [pixel[channel] for pixel in weighted]
-        tight = blur_plane(plane, width, height, longest * optics["tight"])
-        medium = blur_plane(plane, width, height, longest * optics["medium"])
-        wide = blur_plane(plane, width, height, longest * optics["wide"])
-        weights = (optics["tight_weight"], optics["medium_weight"], optics["wide_weight"])
-        total = sum(weights)
+        plane = [pixel[channel] for pixel in energy]
+        blurred = [blur_plane(plane, width, height, longest * radius) for radius in radii]
         glow.append(
             [
-                (weights[0] * tight[i] + weights[1] * medium[i] + weights[2] * wide[i]) / total
-                for i in range(width * height)
+                sum(weights[pass_index] * blurred[pass_index][index] for pass_index in range(3)) / total
+                for index in range(count)
             ]
         )
-    reach = blur_plane(mask, width, height, longest * optics["reach"])
-    gated = []
-    for index in range(width * height):
-        falloff = proximity_gate(reach[index], optics["gate_floor"], optics["gate_ceil"])
-        gated.append(tuple(glow[channel][index] * falloff for channel in range(3)))
-    return [
-        diffuse_pixel(pixels[index], gated[index], scatter)
-        for index in range(len(pixels))
-    ]
+    output = []
+    for index in range(count):
+        pixel = pixels[index]
+        if highlight_gain(pixel, optics["knee"], optics["highlight_end"]) > 0:
+            output.append(pixel)
+            continue
+        output.append(diffuse_pixel(pixel, tuple(glow[channel][index] for channel in range(3)), scatter))
+    return output
 
 
 def exposure_pixel(rgb, ev):
@@ -387,10 +385,7 @@ def parse_halo():
         values[name] = float(match.group(1))
     knee = re.search(r"static let knee: Float = ([0-9.]+)", LOOKS_SWIFT)
     highlight_end = re.search(r"static let highlightEnd: Float = ([0-9.]+)", LOOKS_SWIFT)
-    reach = re.search(r"static let reachRadius: CGFloat = ([0-9.]+)", LOOKS_SWIFT)
-    gate_floor = re.search(r"static let gateFloor: Float = ([0-9.]+)", LOOKS_SWIFT)
-    gate_ceil = re.search(r"static let gateCeil: Float = ([0-9.]+)", LOOKS_SWIFT)
-    if not knee or not highlight_end or not reach or not gate_floor or not gate_ceil:
+    if not knee or not highlight_end:
         return None
     return {
         "weak": values["weakScatter"],
@@ -403,9 +398,6 @@ def parse_halo():
         "wide": values["wideRadius"],
         "knee": float(knee.group(1)),
         "highlight_end": float(highlight_end.group(1)),
-        "reach": float(reach.group(1)),
-        "gate_floor": float(gate_floor.group(1)),
-        "gate_ceil": float(gate_ceil.group(1)),
     }
 
 
@@ -431,10 +423,12 @@ def check_halo(failures):
         failures.append("强 is not clearly stronger than 弱")
     if not (optics["tight"] < optics["medium"] < optics["wide"] <= 0.12):
         failures.append(f"halo radii {optics['tight']}, {optics['medium']}, {optics['wide']} are not a short pyramid")
-    if optics["knee"] < 0.66 or optics["knee"] > 0.74:
-        failures.append(f"halo knee {optics['knee']} is not near 0.70 linear")
+    if optics["knee"] < 0.78 or optics["knee"] > 0.84:
+        failures.append(f"halo knee {optics['knee']} is not near 0.80 display")
     if emphasis(0.45, optics["knee"], optics["highlight_end"]) != 0:
         failures.append("emphasis leaks below the knee")
+    if highlight_gain((0.45, 0.45, 0.45), optics["knee"], optics["highlight_end"]) != 0:
+        failures.append("linear mid-gray entered the highlight extract")
     if emphasis(1.0, optics["knee"], optics["highlight_end"]) < 0.99:
         failures.append("white does not fully enter the glow")
 
@@ -498,6 +492,7 @@ def check_halo(failures):
         failures.append("warm scene darkened a far pixel")
     check_bright_sky(failures, optics)
     print(f"halo neighbor gain 弱 {gains.get('弱', 0):.4f} 强 {gains.get('强', 0):.4f}")
+    check_night_sky(failures, optics)
 
 
 def display_luma(pixel):
@@ -550,8 +545,29 @@ def display_code(pixel):
     return 255.0 * display_luma(pixel)
 
 
+def check_night_sky(failures, optics):
+    """Black sky and two hot lamps. Far pixels stay put; the rim around a lamp rises."""
+    width, height = 96, 64
+    scene = [(0.008, 0.009, 0.012)] * (width * height)
+    scene = list(scene)
+    for lx, ly in ((24, 18), (70, 40)):
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                scene[(ly + dy) * width + (lx + dx)] = (2.8, 2.1, 1.4)
+    out = diffuse_image(scene, width, height, optics["weak"], optics)
+    corner = max(abs(out[0][channel] - scene[0][channel]) for channel in range(3))
+    if corner > 1e-6:
+        failures.append(f"night sky far from lamps moved {corner:.6f}")
+    beside = 18 * width + 20
+    gain = rec709(tuple(out[beside][channel] - scene[beside][channel] for channel in range(3)))
+    if gain < 0.01:
+        failures.append(f"night lamp rim did not gain bloom ({gain:.4f})")
+    if out[beside][0] - scene[beside][0] <= out[beside][2] - scene[beside][2]:
+        failures.append("night lamp bloom did not keep the warm hue")
+
+
 def check_bright_sky(failures, optics):
-    """Daylight frame. 弱 rises about 1.5–4 levels, 强 about 4–9, and clipping stays under 2%."""
+    """Daylight frame. Additive bloom rises the mean, and the far shadow stays put."""
     scene, width, height = daylight_scene()
     weak = diffuse_image(scene, width, height, optics["weak"], optics)
     strong = diffuse_image(scene, width, height, optics["strong"], optics)
@@ -562,19 +578,25 @@ def check_bright_sky(failures, optics):
 
     weak_rise = mean_code(weak) - mean_code(scene)
     strong_rise = mean_code(strong) - mean_code(scene)
-    if not (1.5 <= weak_rise <= 4.5):
-        failures.append(f"弱 mean rise {weak_rise:.2f} levels is outside 1.5–4")
-    if not (4.0 <= strong_rise <= 9.5):
-        failures.append(f"强 mean rise {strong_rise:.2f} levels is outside 4–9")
-    if strong_rise < weak_rise + 1.5:
+    if not (0.8 <= weak_rise <= 3.0):
+        failures.append(f"弱 mean rise {weak_rise:.2f} levels is outside 0.8–3")
+    if not (2.2 <= strong_rise <= 6.0):
+        failures.append(f"强 mean rise {strong_rise:.2f} levels is outside 2.2–6")
+    if strong_rise < weak_rise + 1.2:
         failures.append(f"强 mean rise {strong_rise:.2f} is not clearly above 弱 {weak_rise:.2f}")
+    shadow_index = [
+        y * width + x
+        for y in range(int(height * 0.70) + 1, height)
+        for x in range(18)
+    ]
     for name, diffused in (("弱", weak), ("强", strong)):
         after = sum(1 for pixel in diffused if is_clipped(pixel)) / len(diffused)
         if after - before > 0.02:
             failures.append(f"{name} clipped-area delta {after - before:.3%}")
-        shadow = darkest_mean_lift(scene, diffused)
-        if shadow > 1.0:
-            failures.append(f"{name} darkest decile lifted {shadow:.2f} levels")
+        if shadow_index:
+            shadow = sum(display_delta(scene[index], diffused[index]) for index in shadow_index) / len(shadow_index)
+            if shadow > 1.0:
+                failures.append(f"{name} far shadow lifted {shadow:.2f} levels")
     # Terracotta touching the left edge of the white wall.
     wall_x = int(width * 0.42) + 1
     band = []
@@ -582,7 +604,7 @@ def check_bright_sky(failures, optics):
         index = y * width + (wall_x - 3)
         band.append(display_delta(scene[index], strong[index]))
     band_gain = sum(band) / len(band)
-    if band_gain < 3:
+    if band_gain < 8:
         failures.append(f"halo beside the wall is not visible ({band_gain:.2f} levels)")
     weak_band = []
     for y in range(int(height * 0.45), int(height * 0.70)):
@@ -670,6 +692,9 @@ def check_capture_path(failures):
         "-PHIUITestEditorEVSweep",
         "EDITOR EV SWEEP",
         "EDITOR EV SWEEP FAILED",
+        "-PHIUITestEditorHalo",
+        "EDITOR HALO",
+        "EDITOR HALO FAILED",
     ):
         if flag not in UITEST and flag not in SESSION:
             failures.append(f"editor uitest missing {flag}")
@@ -743,14 +768,16 @@ def check_effects(failures):
         failures.append("halo still uses a CI composite for the glow gain")
     if "func applyHalo" not in STILL or "func renderHalo" not in STILL:
         failures.append("preview and export do not share applyHalo")
-    if "func screenShoulder" not in LOOKS_SWIFT or "screenShoulder" not in STILL:
-        failures.append("glow is not a screen shoulder")
+    if "func addBloom" not in LOOKS_SWIFT or "HaloOptics.bloom" not in STILL:
+        failures.append("glow is not an additive highlight bloom")
+    if "func screenShoulder" in LOOKS_SWIFT or "screenShoulder" in STILL:
+        failures.append("halo still screens the glow over the frame")
+    if "pyramidBlur" not in LOOKS_SWIFT:
+        failures.append("diffusion blur is not a pyramid")
     if "headroomPower" in LOOKS_SWIFT or "HaloOptics.headroom" in STILL:
         failures.append("halo still gates glow with (1-luma)^power")
     if "bakedHalo == halo" not in STILL:
         failures.append("preview cache ignores halo strength")
-    if "pyramidBlur" not in STILL:
-        failures.append("diffusion blur is not a pyramid")
     if "emphasisFloor" in LOOKS_SWIFT or "static let wideRadius: CGFloat = 0.18" in LOOKS_SWIFT:
         failures.append("frame-wide veil constants remain")
     if "CIColorCubeWithColorSpace" not in LOOKS_SWIFT or "inputColorSpace" not in LOOKS_SWIFT:

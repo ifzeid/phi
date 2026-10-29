@@ -158,8 +158,7 @@ static func renderLinear(
         return bitmapImage(pixels, bounds: bounds)
     }
 
-    /// Preview and export both call this. Highlights are extracted, blurred with a finite
-    /// pyramid, then screened back so the halo can land on bright neighbours without clipping.
+    /// Preview and export both call this. Highlight energy is blurred and added; the rest of the frame is unchanged.
     static func applyHalo(_ base: CIImage, level: HaloLevel) -> CIImage {
         #if DEBUG
         _ = haloPipelineCheck
@@ -171,205 +170,12 @@ static func renderLinear(
         guard level != .off, level.scatter > 0 else { return base }
         let extent = base.extent.integral
         guard extent.width > 2, extent.height > 2, extent.isInfinite == false else { return base }
-        guard let glow = highlightGlow(of: base, extent: extent) else { return base }
-        guard var pixels = linearPixels(base, bounds: extent) else { return base }
+        guard let pixels = linearPixels(base, bounds: extent) else { return base }
         let width = Int(extent.width)
         let height = Int(extent.height)
-        mixHalo(&pixels, width: width, height: height, glow: glow, scatter: Float(level.scatter))
-        return bitmapImage(pixels, bounds: extent)
-    }
-
-    /// Gaussian at `sigma`, evaluated on a reduced image and scaled back.
-    /// A full-frame sigma of hundreds of pixels never hits the full-res kernel.
-    static func pyramidBlur(_ source: CIImage, sigma: CGFloat, extent: CGRect) -> CIImage {
-        guard sigma > 0.35, extent.width > 2, extent.height > 2 else { return source.cropped(to: extent) }
-        let targetSigma: CGFloat = 6
-        let longest = max(extent.width, extent.height)
-        var scale: CGFloat = sigma > targetSigma ? targetSigma / sigma : 1
-        if longest > 0, longest * scale < 8 {
-            scale = min(1, 8 / longest)
-        }
-        scale = min(1, max(scale, 1 / 64))
-        let reduced = max(sigma * scale, 0.5)
-        let shift = CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
-        let shrink = CGAffineTransform(scaleX: scale, y: scale)
-        let down = shift.concatenating(shrink)
-        let smallW = max(CGFloat(2), (extent.width * scale).rounded(.up))
-        let smallH = max(CGFloat(2), (extent.height * scale).rounded(.up))
-        let small = CGRect(x: 0, y: 0, width: smallW, height: smallH)
-        let shrunk = source.transformed(by: down).cropped(to: small)
-        let pad = reduced * 3 + 2
-        let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 1))
-            .cropped(to: small.insetBy(dx: -pad, dy: -pad))
-        let blurred = shrunk.composited(over: black)
-            .applyingGaussianBlur(sigma: reduced)
-            .cropped(to: small)
-        let lifted = blurred.transformed(by: CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
-        let fix = CGAffineTransform(
-            translationX: extent.minX - lifted.extent.minX,
-            y: extent.minY - lifted.extent.minY
-        )
-        return lifted.transformed(by: fix).cropped(to: extent)
-    }
-
-    /// Finite downsample, emphasis on those pixels, then `pyramidBlur`. No infinite clamp.
-    private struct GlowMap {
-        var samples: [Float]
-        var width: Int
-        var height: Int
-        var scaleX: Float
-        var scaleY: Float
-    }
-
-    private static func highlightGlow(of source: CIImage, extent: CGRect) -> GlowMap? {
-        let longest = max(extent.width, extent.height)
-        let mediumSigma = longest * HaloOptics.mediumRadius
-        let tightSigma = longest * HaloOptics.tightRadius
-        let wideSigma = longest * HaloOptics.wideRadius
-        var scale: CGFloat = wideSigma > 6 ? 6 / wideSigma : 1
-        if longest > 0, longest * scale < 8 {
-            scale = min(1, 8 / longest)
-        }
-        scale = min(1, max(scale, 1 / 64))
-        let smallW = max(2, Int((extent.width * scale).rounded(.up)))
-        let smallH = max(2, Int((extent.height * scale).rounded(.up)))
-        let small = CGRect(x: 0, y: 0, width: smallW, height: smallH)
-        let shift = CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
-        let shrink = CGAffineTransform(scaleX: scale, y: scale)
-        let scaled = source.transformed(by: shift.concatenating(shrink)).cropped(to: small)
-        guard var reduced = linearPixels(scaled, bounds: small) else { return nil }
-        let mask = emphasisField(reduced, bounds: small)
-        emphasize(&reduced)
-        let emphasized = bitmapImage(reduced, bounds: small)
-        let tight = pyramidBlur(emphasized, sigma: max(tightSigma * scale, 0.5), extent: small)
-        let medium = pyramidBlur(emphasized, sigma: max(mediumSigma * scale, 0.5), extent: small)
-        guard let tightPixels = linearPixels(tight, bounds: small),
-              let mediumPixels = linearPixels(medium, bounds: small),
-              tightPixels.count == reduced.count,
-              mediumPixels.count == reduced.count else { return nil }
-        let wide = pyramidBlur(emphasized, sigma: max(wideSigma * scale, 0.5), extent: small)
-        guard let widePixels = linearPixels(wide, bounds: small), widePixels.count == reduced.count else { return nil }
-        let count = smallW * smallH
-        var glow = [Float](repeating: 0, count: count * 3)
-        let weightTotal = Float(HaloOptics.tightWeight + HaloOptics.mediumWeight + HaloOptics.wideWeight)
-        let tightShare = Float(HaloOptics.tightWeight) / weightTotal
-        let mediumShare = Float(HaloOptics.mediumWeight) / weightTotal
-        let wideShare = Float(HaloOptics.wideWeight) / weightTotal
-        for index in 0..<count {
-            let sourceOffset = index * 4
-            let glowOffset = index * 3
-            for channel in 0..<3 {
-                let tightSample = max(tightPixels[sourceOffset + channel], 0)
-                let mediumSample = max(mediumPixels[sourceOffset + channel], 0)
-                let wideSample = max(widePixels[sourceOffset + channel], 0)
-                glow[glowOffset + channel] = tightShare * tightSample + mediumShare * mediumSample + wideShare * wideSample
-            }
-        }
-        let reachSigma = longest * HaloOptics.reachRadius
-        let reached = pyramidBlur(mask, sigma: max(reachSigma * scale, 0.5), extent: small)
-        if let reachPixels = linearPixels(reached, bounds: small), reachPixels.count == reduced.count {
-            for index in 0..<count {
-                let sourceOffset = index * 4
-                let reachLuma = GrainField.rec709(
-                    red: reachPixels[sourceOffset],
-                    green: reachPixels[sourceOffset + 1],
-                    blue: reachPixels[sourceOffset + 2]
-                )
-                let falloff = HaloOptics.proximityGate(reachLuma)
-                let glowOffset = index * 3
-                glow[glowOffset] *= falloff
-                glow[glowOffset + 1] *= falloff
-                glow[glowOffset + 2] *= falloff
-            }
-        }
-        return GlowMap(
-            samples: glow,
-            width: smallW,
-            height: smallH,
-            scaleX: Float(smallW) / Float(extent.width),
-            scaleY: Float(smallH) / Float(extent.height)
-        )
-    }
-
-    private static func emphasisField(_ pixels: [Float], bounds: CGRect) -> CIImage {
-        var mask = [Float](repeating: 0, count: pixels.count)
-        let count = pixels.count / 4
-        for index in 0..<count {
-            let offset = index * 4
-            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
-            let gain = HaloOptics.emphasis(luma)
-            mask[offset] = gain
-            mask[offset + 1] = gain
-            mask[offset + 2] = gain
-            mask[offset + 3] = 1
-        }
-        return bitmapImage(mask, bounds: bounds)
-    }
-
-    private static func emphasize(_ pixels: inout [Float]) {
-        let count = pixels.count / 4
-        for index in 0..<count {
-            let offset = index * 4
-            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
-            let gain = HaloOptics.emphasis(luma)
-            pixels[offset] *= gain
-            pixels[offset + 1] *= gain
-            pixels[offset + 2] *= gain
-            pixels[offset + 3] = 1
-        }
-    }
-
-    private static func mixHalo(
-        _ pixels: inout [Float],
-        width: Int,
-        height: Int,
-        glow: GlowMap,
-        scatter: Float
-    ) {
-        guard scatter > 0, glow.width > 1, glow.height > 1 else { return }
-        for y in 0..<height {
-            for x in 0..<width {
-                let sample = sampleGlow(glow, x: x, y: y)
-                let offset = (y * width + x) * 4
-                pixels[offset] = HaloOptics.screenShoulder(base: pixels[offset], glow: sample.0, scatter: scatter)
-                pixels[offset + 1] = HaloOptics.screenShoulder(base: pixels[offset + 1], glow: sample.1, scatter: scatter)
-                pixels[offset + 2] = HaloOptics.screenShoulder(base: pixels[offset + 2], glow: sample.2, scatter: scatter)
-            }
-        }
-    }
-
-    private static func sampleGlow(_ glow: GlowMap, x: Int, y: Int) -> (Float, Float, Float) {
-        let fx = min(max((Float(x) + 0.5) * glow.scaleX - 0.5, 0), Float(glow.width - 1))
-        let fy = min(max((Float(y) + 0.5) * glow.scaleY - 0.5, 0), Float(glow.height - 1))
-        let x0 = Int(fx)
-        let y0 = Int(fy)
-        let x1 = min(x0 + 1, glow.width - 1)
-        let y1 = min(y0 + 1, glow.height - 1)
-        let tx = fx - Float(x0)
-        let ty = fy - Float(y0)
-        func at(_ px: Int, _ py: Int, _ channel: Int) -> Float {
-            glow.samples[(py * glow.width + px) * 3 + channel]
-        }
-        var rgb = (Float(0), Float(0), Float(0))
-        let channels = [
-            (1 - tx) * (1 - ty),
-            tx * (1 - ty),
-            (1 - tx) * ty,
-            tx * ty
-        ]
-        let points = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
-        for channel in 0..<3 {
-            var acc: Float = 0
-            for index in 0..<4 {
-                acc += channels[index] * at(points[index].0, points[index].1, channel)
-            }
-            switch channel {
-            case 0: rgb.0 = acc
-            case 1: rgb.1 = acc
-            default: rgb.2 = acc
-            }
-        }
-        return rgb
+        // HaloOptics.pyramidBlur runs on highlight energy only. A CI gaussian was screening a floor over the sky.
+        let bloomed = HaloOptics.bloom(pixels, width: width, height: height, scatter: Float(level.scatter), stride: 4)
+        return bitmapImage(bloomed, bounds: extent)
     }
 
     static func grained(_ image: CIImage, style: GrainStyle) -> CIImage {
@@ -709,10 +515,10 @@ static func renderLinear(
         let strongMean = byteMean(strongBytes)
         let weakRise = weakMean - plainMean
         let strongRise = strongMean - plainMean
-        if weakRise < 1 || weakRise > 8 {
+        if weakRise < 0.5 || weakRise > 4 {
             notes.append(String(format: "弱 mean rise %.2f levels", weakRise))
         }
-        if strongRise < 3 || strongRise > 14 {
+        if strongRise < 1.5 || strongRise > 8 {
             notes.append(String(format: "强 mean rise %.2f levels", strongRise))
         }
         if strongRise < weakRise + 1 {

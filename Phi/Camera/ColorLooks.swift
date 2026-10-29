@@ -205,8 +205,8 @@ enum ColorLooks {
 /// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
 /// `Tests/look_calibration_test.py` mirrors `emphasis` and the additive mix.
 enum HaloOptics {
-    static let weakScatter: CGFloat = 1.0
-    static let strongScatter: CGFloat = 2.05
+    static let weakScatter: CGFloat = 0.42
+    static let strongScatter: CGFloat = 1.05
     /// Share of the blurred highlight in the tight, medium, and wide pyramid passes.
     static let tightWeight: CGFloat = 0.45
     static let mediumWeight: CGFloat = 0.40
@@ -215,36 +215,36 @@ enum HaloOptics {
     static let tightRadius: CGFloat = 0.015
     static let mediumRadius: CGFloat = 0.035
     static let wideRadius: CGFloat = 0.055
-    /// Soft highlight extract. Below `knee` nothing is pulled into the glow.
-    static let knee: Float = 0.70
-    static let highlightEnd: Float = 0.92
-    /// Blur of the highlight mask. The added light is multiplied by this falloff, so it dies a short way from a real highlight.
-    static let reachRadius: CGFloat = 0.032
-    static let gateFloor: Float = 0.045
-    static let gateCeil: Float = 0.34
+    /// Soft knee on display luma. Below 0.8 of display white, nothing is extracted.
+    /// Scene-linear values above 1 encode past this end and enter fully.
+    static let knee: Float = 0.80
+    static let highlightEnd: Float = 0.96
 
-    static func emphasis(_ luma: Float) -> Float {
-        let y = min(max(luma, Float(0)), Float(1))
+    /// `displayLuma` is the encoded Rec.709 of the linear pixel. Below `knee` the gain is 0.
+    static func emphasis(_ displayLuma: Float) -> Float {
+        let y = min(max(displayLuma, Float(0)), Float(1))
         if y <= knee { return 0 }
         if y >= highlightEnd { return 1 }
         let t = (y - knee) / (highlightEnd - knee)
         return t * t * (3 - 2 * t)
     }
 
-    /// 0 far from a highlight, 1 on the highlight. The gaussian tail below `gateFloor` is cut off.
-    static func proximityGate(_ reach: Float) -> Float {
-        if reach <= gateFloor { return 0 }
-        if reach >= gateCeil { return 1 }
-        let t = (reach - gateFloor) / (gateCeil - gateFloor)
-        return t * t * (3 - 2 * t)
+    /// Same weight on every channel, so the extracted light keeps the source hue.
+    static func highlightGain(red: Float, green: Float, blue: Float) -> Float {
+        let luma = GrainField.rec709(red: red, green: green, blue: blue)
+        if luma <= 0 { return 0 }
+        return emphasis(GrainField.encoded(luma))
     }
 
-    /// Screen shoulder: `base + (1 - base) * min(1, scatter * glow)`. Approaches 1 and does not cross it.
-    static func screenShoulder(base: Float, glow: Float, scatter: Float) -> Float {
+    /// `base + scatter * glow`. A zero or dust-level glow returns `base` unchanged. Values already at 1 stay put.
+    static func addBloom(base: Float, glow: Float, scatter: Float) -> Float {
+        let extra = scatter * glow
+        // Below this, display code moves by less than 1/255, so the pixel stays bit-identical.
+        if extra <= 0.0001 { return base }
         if base >= 1 { return base }
-        let addition = min(1, max(0, scatter * max(glow, 0)))
-        let room = 1 - min(max(base, 0), 1)
-        return base + room * addition
+        let sum = base + extra
+        if sum >= 1 { return 1 }
+        return sum
     }
 
     /// Pure-function check used by the debug assertion. Same knee, radii, and rolloff as the filter.
@@ -323,7 +323,55 @@ enum HaloOptics {
         if dRed <= dBlue {
             notes.append("warm glow did not keep source hue")
         }
+        notes.append(contentsOf: nightSkyFailures())
         notes.append(contentsOf: brightSkyFailures())
+        return notes
+    }
+
+    /// Black sky and two hot lamps. Pixels outside the blur stay identical; the rim around a lamp rises.
+    private static func nightSkyFailures() -> [String] {
+        let width = 96
+        let height = 64
+        var scene = [Float](repeating: 0, count: width * height * 3)
+        for index in 0..<(width * height) {
+            let offset = index * 3
+            scene[offset] = 0.008
+            scene[offset + 1] = 0.009
+            scene[offset + 2] = 0.012
+        }
+        let lamps = [(24, 18), (70, 40)]
+        for lamp in lamps {
+            for dy in -1...1 {
+                for dx in -1...1 {
+                    let x = lamp.0 + dx
+                    let y = lamp.1 + dy
+                    let offset = (y * width + x) * 3
+                    scene[offset] = 2.8
+                    scene[offset + 1] = 2.1
+                    scene[offset + 2] = 1.4
+                }
+            }
+        }
+        let diffused = referenceDiffuse(scene, width: width, height: height, scatter: Float(weakScatter))
+        var notes: [String] = []
+        let corner = abs(diffused[0] - scene[0]) + abs(diffused[1] - scene[1]) + abs(diffused[2] - scene[2])
+        if corner > 0.000001 {
+            notes.append("night sky far from lamps moved \(corner)")
+        }
+        let beside = (18 * width + 20) * 3
+        let gain = GrainField.rec709(
+            red: diffused[beside] - scene[beside],
+            green: diffused[beside + 1] - scene[beside + 1],
+            blue: diffused[beside + 2] - scene[beside + 2]
+        )
+        if gain < 0.01 {
+            notes.append("night lamp rim did not gain bloom \(gain)")
+        }
+        let redGain = diffused[beside] - scene[beside]
+        let blueGain = diffused[beside + 2] - scene[beside + 2]
+        if redGain <= blueGain {
+            notes.append("night lamp bloom did not keep the warm hue")
+        }
         return notes
     }
 
@@ -341,13 +389,13 @@ enum HaloOptics {
         var notes: [String] = []
         let weakRise = meanDisplayLevel(weak) - meanDisplayLevel(scene)
         let strongRise = meanDisplayLevel(strong) - meanDisplayLevel(scene)
-        if weakRise < Float(1.5) || weakRise > Float(4.5) {
-            notes.append("bright sky 弱 mean rise \(weakRise) levels is outside 1.5–4")
+        if weakRise < Float(0.8) || weakRise > Float(3) {
+            notes.append("bright sky 弱 mean rise \(weakRise) levels is outside 0.8–3")
         }
-        if strongRise < Float(4) || strongRise > Float(9.5) {
-            notes.append("bright sky 强 mean rise \(strongRise) levels is outside 4–9")
+        if strongRise < Float(2.2) || strongRise > Float(6) {
+            notes.append("bright sky 强 mean rise \(strongRise) levels is outside 2.2–6")
         }
-        if strongRise < weakRise + Float(1.5) {
+        if strongRise < weakRise + Float(1.2) {
             notes.append("bright sky 强 mean rise \(strongRise) is not clearly above 弱 \(weakRise)")
         }
         let pair: [(String, [Float])] = [("弱", weak), ("强", strong)]
@@ -356,9 +404,9 @@ enum HaloOptics {
             if after - before > Float(0.02) {
                 notes.append("bright sky \(name) clipped-area delta \(after - before)")
             }
-            let shadow = displayDecileLift(before: scene, after: diffused)
+            let shadow = shadowRectangleLift(before: scene, after: diffused, width: width, height: height)
             if shadow > Float(1) {
-                notes.append("bright sky \(name) darkest decile lifted \(shadow) levels")
+                notes.append("bright sky \(name) far shadow lifted \(shadow) levels")
             }
         }
         let wallX = Int(Float(width) * 0.42) + 1
@@ -374,7 +422,7 @@ enum HaloOptics {
                 weakBand += displayLevel(weak, index: index) - displayLevel(scene, index: index)
             }
             let bandGain = band / Float(rows)
-            if bandGain < Float(3) {
+            if bandGain < Float(8) {
                 notes.append("bright sky halo beside the wall is not visible (\(bandGain) levels)")
             }
             if weakBand / Float(rows) > bandGain * Float(0.75) {
@@ -457,23 +505,20 @@ enum HaloOptics {
         return sum / Float(count)
     }
 
-    /// Mean display-level change of the darkest tenth, matching `darkest_mean_lift`.
-    private static func displayDecileLift(before: [Float], after: [Float]) -> Float {
-        let count = before.count / 3
-        guard count > 0, after.count == before.count else { return 0 }
-        var levels = [(Float, Float)]()
-        levels.reserveCapacity(count)
-        for index in 0..<count {
-            let source = displayLevel(before, index: index)
-            levels.append((source, displayLevel(after, index: index) - source))
-        }
-        levels.sort { $0.0 < $1.0 }
-        let take = max(1, count / 10)
+    /// The bottom-left shadow in `daylightScene`, away from the white wall.
+    private static func shadowRectangleLift(before: [Float], after: [Float], width: Int, height: Int) -> Float {
+        let y0 = Int(Float(height) * 0.70) + 1
         var sum = Float(0)
-        for index in 0..<take {
-            sum += levels[index].1
+        var count = 0
+        for y in y0..<height {
+            for x in 0..<min(18, width) {
+                let index = y * width + x
+                sum += displayLevel(after, index: index) - displayLevel(before, index: index)
+                count += 1
+            }
         }
-        return sum / Float(take)
+        guard count > 0 else { return 0 }
+        return sum / Float(count)
     }
 
     /// Mean display-level change of the darkest tenth of the frame.
@@ -500,50 +545,128 @@ enum HaloOptics {
     }
 
     private static func referenceDiffuse(_ pixels: [Float], width: Int, height: Int, scatter: Float) -> [Float] {
-        var weighted = [Float](repeating: 0, count: pixels.count)
+        bloom(pixels, width: width, height: height, scatter: scatter, stride: 3)
+    }
+
+    /// Highlight energy only, blurred with a finite gaussian, then added. A zero glow leaves the pixel untouched.
+    static func bloom(_ pixels: [Float], width: Int, height: Int, scatter: Float, stride: Int) -> [Float] {
         let count = width * height
-        var mask = [Float](repeating: 0, count: count)
-        for index in 0..<count {
-            let offset = index * 3
-            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
-            let gain = emphasis(luma)
-            mask[index] = gain
-            weighted[offset] = pixels[offset] * gain
-            weighted[offset + 1] = pixels[offset + 1] * gain
-            weighted[offset + 2] = pixels[offset + 2] * gain
+        let factor = pyramidFactor(width: width, height: height)
+        let smallW = max(1, (width + factor - 1) / factor)
+        let smallH = max(1, (height + factor - 1) / factor)
+        var energy = [Float](repeating: 0, count: smallW * smallH * 3)
+        var coverage = [Int](repeating: 0, count: smallW * smallH)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * stride
+                let red = pixels[offset]
+                let green = pixels[offset + 1]
+                let blue = pixels[offset + 2]
+                let sx = min(smallW - 1, x / factor)
+                let sy = min(smallH - 1, y / factor)
+                let bin = sy * smallW + sx
+                coverage[bin] += 1
+                let gain = highlightGain(red: red, green: green, blue: blue)
+                if gain == 0 { continue }
+                let dest = bin * 3
+                energy[dest] += red * gain
+                energy[dest + 1] += green * gain
+                energy[dest + 2] += blue * gain
+            }
         }
-        let longest = Float(max(width, height))
-        var glow = [Float](repeating: 0, count: pixels.count)
+        for bin in coverage.indices where coverage[bin] > 0 {
+            let scale = 1 / Float(coverage[bin])
+            let dest = bin * 3
+            energy[dest] *= scale
+            energy[dest + 1] *= scale
+            energy[dest + 2] *= scale
+        }
+        let glowSmall = pyramidBlur(
+            energy,
+            width: smallW,
+            height: smallH,
+            fullWidth: width,
+            fullHeight: height
+        )
+        let glow = factor == 1 ? glowSmall : upsample(glowSmall, smallW: smallW, smallH: smallH, width: width, height: height)
+        var output = pixels
+        for index in 0..<count {
+            let offset = index * stride
+            let red = pixels[offset]
+            let green = pixels[offset + 1]
+            let blue = pixels[offset + 2]
+            // The lamp stays as exposed. Only the surrounding pixels receive its blurred energy.
+            if highlightGain(red: red, green: green, blue: blue) > 0 { continue }
+            let source = index * 3
+            output[offset] = addBloom(base: red, glow: glow[source], scatter: scatter)
+            output[offset + 1] = addBloom(base: green, glow: glow[source + 1], scatter: scatter)
+            output[offset + 2] = addBloom(base: blue, glow: glow[source + 2], scatter: scatter)
+        }
+        return output
+    }
+
+    /// Box average down to a short side, then a finite gaussian. Zeros stay zero, so a black sky does not gain a floor.
+    static func pyramidBlur(_ energy: [Float], width: Int, height: Int, fullWidth: Int, fullHeight: Int) -> [Float] {
+        let longest = Float(max(fullWidth, fullHeight))
+        let sigmaScale = Float(width) / Float(max(fullWidth, 1))
+        let weightTotal = Float(tightWeight + mediumWeight + wideWeight)
+        let shares = [
+            Float(tightWeight) / weightTotal,
+            Float(mediumWeight) / weightTotal,
+            Float(wideWeight) / weightTotal
+        ]
+        let radii = [Float(tightRadius), Float(mediumRadius), Float(wideRadius)]
+        let count = width * height
+        var glow = [Float](repeating: 0, count: count * 3)
         for channel in 0..<3 {
             var plane = [Float](repeating: 0, count: count)
             for index in 0..<count {
-                plane[index] = weighted[index * 3 + channel]
+                plane[index] = energy[index * 3 + channel]
             }
-            let tight = referenceBlur(plane, width: width, height: height, sigma: longest * Float(tightRadius))
-            let medium = referenceBlur(plane, width: width, height: height, sigma: longest * Float(mediumRadius))
-            let wide = referenceBlur(plane, width: width, height: height, sigma: longest * Float(wideRadius))
-            let weightTotal = Float(tightWeight + mediumWeight + wideWeight)
-            let tightShare = Float(tightWeight) / weightTotal
-            let mediumShare = Float(mediumWeight) / weightTotal
-            let wideShare = Float(wideWeight) / weightTotal
-            for index in 0..<count {
-                glow[index * 3 + channel] = tightShare * tight[index] + mediumShare * medium[index] + wideShare * wide[index]
+            for pass in 0..<3 {
+                let sigma = longest * radii[pass] * sigmaScale
+                let blurred = referenceBlur(plane, width: width, height: height, sigma: sigma)
+                let share = shares[pass]
+                for index in 0..<count {
+                    glow[index * 3 + channel] += share * blurred[index]
+                }
             }
         }
-        let reach = referenceBlur(mask, width: width, height: height, sigma: longest * Float(reachRadius))
-        for index in 0..<count {
-            let falloff = proximityGate(reach[index])
-            let offset = index * 3
-            glow[offset] *= falloff
-            glow[offset + 1] *= falloff
-            glow[offset + 2] *= falloff
-        }
-        var output = pixels
-        for index in 0..<count {
-            let offset = index * 3
-            output[offset] = screenShoulder(base: pixels[offset], glow: glow[offset], scatter: scatter)
-            output[offset + 1] = screenShoulder(base: pixels[offset + 1], glow: glow[offset + 1], scatter: scatter)
-            output[offset + 2] = screenShoulder(base: pixels[offset + 2], glow: glow[offset + 2], scatter: scatter)
+        return glow
+    }
+
+    private static func pyramidFactor(width: Int, height: Int) -> Int {
+        let longest = max(width, height)
+        let limit = 160
+        if longest <= limit { return 1 }
+        return max(1, (longest + limit - 1) / limit)
+    }
+
+    private static func upsample(_ small: [Float], smallW: Int, smallH: Int, width: Int, height: Int) -> [Float] {
+        var output = [Float](repeating: 0, count: width * height * 3)
+        let scaleX = Float(smallW) / Float(width)
+        let scaleY = Float(smallH) / Float(height)
+        for y in 0..<height {
+            for x in 0..<width {
+                let fx = min(max((Float(x) + 0.5) * scaleX - 0.5, 0), Float(smallW - 1))
+                let fy = min(max((Float(y) + 0.5) * scaleY - 0.5, 0), Float(smallH - 1))
+                let x0 = Int(fx)
+                let y0 = Int(fy)
+                let x1 = min(x0 + 1, smallW - 1)
+                let y1 = min(y0 + 1, smallH - 1)
+                let tx = fx - Float(x0)
+                let ty = fy - Float(y0)
+                let dest = (y * width + x) * 3
+                for channel in 0..<3 {
+                    let a = small[(y0 * smallW + x0) * 3 + channel]
+                    let b = small[(y0 * smallW + x1) * 3 + channel]
+                    let c = small[(y1 * smallW + x0) * 3 + channel]
+                    let d = small[(y1 * smallW + x1) * 3 + channel]
+                    let top = a + (b - a) * tx
+                    let bottom = c + (d - c) * tx
+                    output[dest + channel] = top + (bottom - top) * ty
+                }
+            }
         }
         return output
     }
@@ -780,7 +903,7 @@ enum DevelopEffectCheck {
         return notes
     }
 
-    /// The glow curve starts at 0.55, rises smoothly, and the screen mix stays inside 0...1.
+    /// The glow curve starts at the display knee, and the added bloom stays inside 0...1.
     private static func haloRampFailures() -> [String] {
         var notes: [String] = []
         let knee = HaloOptics.knee
@@ -809,15 +932,20 @@ enum DevelopEffectCheck {
         let bases: [Float] = [0, 0.25, 0.55, 0.9, 1]
         let glows: [Float] = [0, 0.4, 1, 2, 6]
         let scatters: [Float] = [0, Float(HaloOptics.weakScatter), Float(HaloOptics.strongScatter), 1.5]
-        var screenBroke = false
-        let screenSlack = Float(0.0001)
-        for base in bases where screenBroke == false {
-            for glow in glows where screenBroke == false {
+        var bloomBroke = false
+        let bloomSlack = Float(0.0001)
+        for base in bases where bloomBroke == false {
+            for glow in glows where bloomBroke == false {
                 for scatter in scatters {
-                    let screened = HaloOptics.screenShoulder(base: base, glow: glow, scatter: scatter)
-                    if screened > Float(1) + screenSlack || screened + unitSlack < base {
-                        notes.append("screen composite left the unit range")
-                        screenBroke = true
+                    let added = HaloOptics.addBloom(base: base, glow: glow, scatter: scatter)
+                    if added > Float(1) + bloomSlack || added + unitSlack < base {
+                        notes.append("bloom add left the unit range")
+                        bloomBroke = true
+                        break
+                    }
+                    if glow == 0, added != base {
+                        notes.append("zero glow changed a pixel")
+                        bloomBroke = true
                         break
                     }
                 }
