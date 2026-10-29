@@ -1,26 +1,30 @@
 import CoreImage
 
 /// Fixed develop looks. No brand names, no intensity controls.
-/// Input and output are in the linear working space. Curves run in a temporary gamma so they are not crushed.
+/// Input and output are in the linear working space. 无 is identity: no base curve.
+/// A selected look's cube runs in a temporary gamma so it is not crushed, then the image is linear again.
 enum ColorLooks {
-    static func apply(_ image: CIImage, look: ColorLook, halo: Bool, includeBase: Bool = true) -> CIImage {
-        var current = toPerceptual(image)
-        if includeBase {
-            current = baseFilm(current)
+    /// How much of the blurred highlight luminance is added back. Not a slider.
+    static let haloMix: CGFloat = 0.30
+
+    static func apply(_ image: CIImage, look: ColorLook, halo: Bool) -> CIImage {
+        var current = image
+        if look != .none {
+            current = toPerceptual(current)
+            switch look {
+            case .none:
+                break
+            case .positive:
+                current = grade(current, LookCubes.positive)
+            case .negative:
+                current = grade(current, LookCubes.negative)
+            case .mono:
+                current = grade(current, LookCubes.mono)
+            case .ccd:
+                current = ccd(current)
+            }
+            current = toLinear(current)
         }
-        switch look {
-        case .none:
-            break
-        case .positive:
-            current = grade(current, LookCubes.positive)
-        case .negative:
-            current = grade(current, LookCubes.negative)
-        case .mono:
-            current = grade(current, LookCubes.mono)
-        case .ccd:
-            current = ccd(current)
-        }
-        current = toLinear(current)
         if halo {
             current = highlightDiffusion(current)
         }
@@ -29,22 +33,6 @@ enum ColorLooks {
 
     private static func toPerceptual(_ image: CIImage) -> CIImage {
         image.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 0.4545])
-    }
-
-    /// Global film curve. The toe lifts shadows instead of crushing them. No local tone mapping.
-    private static func baseFilm(_ image: CIImage) -> CIImage {
-        let curved = tone(image, points: [
-            (0.00, 0.02),
-            (0.12, 0.18),
-            (0.40, 0.44),
-            (0.72, 0.76),
-            (1.00, 0.98)
-        ])
-        return curved.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 1.12,
-            kCIInputBrightnessKey: 0,
-            kCIInputContrastKey: 1.04
-        ])
     }
 
     private static func toLinear(_ image: CIImage) -> CIImage {
@@ -146,8 +134,9 @@ enum ColorLooks {
         return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
-    /// Ricoh-style highlight diffusion. Linear light, source color, no vignette and no tint.
-    /// Runs after the look is back in linear light, and before grain.
+    /// Ricoh-style highlight diffusion. Linear light, source chromaticity, no vignette and no tint.
+    /// The blurred highlight is added as luminance (`haloMix`), so a neutral stays neutral and a
+    /// flat tone below the knee is unchanged. Runs after the look is back in linear light, before grain.
     private static func highlightDiffusion(_ image: CIImage) -> CIImage {
         let extent = image.extent
         let longest = Swift.max(extent.width, extent.height)
@@ -167,20 +156,7 @@ enum ColorLooks {
         scales.setValue(wide, forKey: kCIInputTargetImageKey)
         scales.setValue(0.5, forKey: kCIInputTimeKey)
         let glow = (scales.outputImage ?? wide).cropped(to: extent)
-        guard let screen = CIFilter(name: "CIScreenBlendMode") else { return image }
-        screen.setValue(glow, forKey: kCIInputImageKey)
-        screen.setValue(image, forKey: kCIInputBackgroundImageKey)
-        guard let bloomed = screen.outputImage?.cropped(to: extent) else { return image }
-        guard let mix = CIFilter(name: "CIDissolveTransition") else { return image }
-        mix.setValue(image, forKey: kCIInputImageKey)
-        mix.setValue(bloomed, forKey: kCIInputTargetImageKey)
-        mix.setValue(0.30, forKey: kCIInputTimeKey)
-        let mixed = (mix.outputImage ?? image).cropped(to: extent)
-        return mixed.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 1,
-            kCIInputBrightnessKey: 0,
-            kCIInputContrastKey: 0.95
-        ])
+        return StillPipeline.applyingHighlight(image, glow: glow, amount: haloMix)
     }
 
     private static func tone(_ image: CIImage, points: [(CGFloat, CGFloat)]) -> CIImage {
@@ -247,21 +223,35 @@ private enum CCDTexture {
                 pixels[index + 2] = byte(sample.2)
             }
         }
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmap = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
         let cg = pixels.withUnsafeMutableBytes { raw -> CGImage? in
-            guard let context = CGContext(
-                data: raw.baseAddress,
+            guard let base = raw.baseAddress else { return nil }
+            let linear = CGColorSpace(name: CGColorSpace.linearDisplayP3)
+            let device = CGColorSpaceCreateDeviceRGB()
+            let context = (linear.flatMap { space in
+                CGContext(
+                    data: base,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: width * 4,
+                    space: space,
+                    bitmapInfo: bitmap
+                )
+            }) ?? CGContext(
+                data: base,
                 width: width,
                 height: height,
                 bitsPerComponent: 8,
                 bytesPerRow: width * 4,
-                space: colorSpace,
+                space: device,
                 bitmapInfo: bitmap
-            ) else { return nil }
-            return context.makeImage()
+            )
+            return context?.makeImage()
         }
-        return CIImage(cgImage: cg ?? fallback())
+        // Code 128 is the overlay pivot in the manual-gamma grade. Tag extended-linear so Core Image
+        // does not run a display decode (128 would become ~0.21 and the overlay would darken shadows).
+        return CIImage(cgImage: cg ?? fallback(), options: [CIImageOption.colorSpace: StillPipeline.linearP3])
     }
 
     private static func byte(_ value: Double) -> UInt8 {

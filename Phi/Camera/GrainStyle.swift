@@ -20,7 +20,7 @@ enum GrainStyle: String, CaseIterable, Identifiable {
         case .off:
             return nil
         case .fine:
-            return GrainProfile(seed: 0xF1E0_4A11, cell: 1, chroma: 0, contrast: 1.05, mix: 0.18, tileFraction: 0.16)
+            return GrainProfile(seed: 0xF1E0_4A11, cell: 1, amplitude: 0.06, tileFraction: 0.16)
         }
     }
 }
@@ -39,16 +39,14 @@ extension GrainStyle: Codable {
     }
 }
 
-/// Hardcoded FINE grain. `mix` is how much of the baked grain is dissolved onto the still. It is not a slider.
+/// Hardcoded FINE grain. `amplitude` is the peak linear-luma deviation at |noise| = 1. It is not a slider.
 struct GrainProfile {
     var seed: UInt32
-    /// Noise cell in the 256px tile. 1 is the finest baked pattern.
+    /// Hash cell inside one tile. 1 is the finest pattern.
     var cell: Int
-    /// 0 is luminance only.
-    var chroma: Double
-    var contrast: Double
-    var mix: Double
-    /// How much of the image width one tile covers.
+    /// Peak added luminance in display-referred (Display P3) code values. Zero-mean, luminance only.
+    var amplitude: Double
+    /// How much of the image width one 256px tile covers.
     var tileFraction: Double
 }
 

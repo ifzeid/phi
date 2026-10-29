@@ -5,6 +5,12 @@ import UniformTypeIdentifiers
 
 /// Develops a still in 16-bit linear Display P3, then emits one 8-bit Display P3 image.
 /// Preview and export both call `render` so they share one recipe. Grain is FINE or off.
+///
+/// The context working space is extended linear Display P3, so a tagged display image is
+/// decoded once on the way in and encoded once on the way out (`createCGImage` → Display P3).
+/// That Display P3 CGImage is the profile ImageIO writes into the HEIF. Do not add a second
+/// gamma, and do not blend a display-encoded tile in this working space: code 128 would be
+/// decoded to about 0.21 and an overlay pivot of 0.5 would darken and recolor the frame.
 enum StillPipeline {
     private static let renderLock = NSLock()
     static let linearP3 = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) ?? CGColorSpaceCreateDeviceRGB()
@@ -18,13 +24,16 @@ enum StillPipeline {
 
     static func normalizedCGImage(from image: UIImage) -> CGImage? {
         let scale = image.scale == 0 ? 1 : image.scale
-        let pixel = CGSize(width: max(1, image.size.width * scale), height: max(1, image.size.height * scale))
-        let format = UIGraphicsImageRendererFormat.default()
+        let width = max(1, (image.size.width * scale).rounded())
+        let height = max(1, (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let renderer = UIGraphicsImageRenderer(size: pixel, format: format)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format)
+        // Renderer output is a named display space, kept upright.
+        // `displayEncoded` tags a nameless bitmap as Display P3 without resampling.
         return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: pixel))
+            image.draw(in: CGRect(x: 0, y: 0, width: width, height: height))
         }.cgImage
     }
 
@@ -37,7 +46,7 @@ enum StillPipeline {
         lensZoom: Double = 1,
         maxSide: CGFloat?
     ) -> CGImage? {
-        var input = CIImage(cgImage: image)
+        var input = displayEncoded(image)
         let zoom = lensZoom > 1 ? lensZoom : 1
         input = LensCrop.cropped(input, zoom: zoom)
         let longest = max(input.extent.width, input.extent.height)
@@ -45,22 +54,53 @@ enum StillPipeline {
             let scale = maxSide / longest
             input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-        // Display-encoded HEIF. Exposure runs in linear light. The global tone curve stays on the DNG path.
-        input = input.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
         let bounded = Swift.min(2, Swift.max(-2, exposureEV))
-        let exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
-        let looked: CIImage
-        if look != .none || halo {
-            looked = ColorLooks.apply(exposed, look: look, halo: halo, includeBase: false)
+        let exposed: CIImage
+        if abs(bounded) < 0.0001 {
+            exposed = input
         } else {
-            looked = exposed
+            exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
         }
+        let looked = ColorLooks.apply(exposed, look: look, halo: halo)
         let developed = grained(looked, style: style)
         return displayImage(developed)
     }
 
     static func grained(_ image: CIImage, style: GrainStyle) -> CIImage {
-        applyGrain(to: image, style: style)
+        guard let profile = style.profile else { return image }
+        return applyingGrain(image, profile: profile)
+    }
+
+    /// Adds `amount` of the glow's luminance. Chromaticity is unchanged. A flat tone below the
+    /// highlight knee (glow 0) stays put, so 光晕 alone does not retint a neutral frame.
+    static func applyingHighlight(_ image: CIImage, glow: CIImage, amount: CGFloat) -> CIImage {
+        let bounds = image.extent.integral
+        guard let base = linearPixels(image, bounds: bounds),
+              let glowPixels = linearPixels(glow, bounds: bounds),
+              base.count == glowPixels.count else { return image }
+        var pixels = base
+        let mix = Float(amount)
+        let count = pixels.count / 4
+        for index in 0..<count {
+            let offset = index * 4
+            let red = pixels[offset]
+            let green = pixels[offset + 1]
+            let blue = pixels[offset + 2]
+            let y = GrainField.rec709(red: red, green: green, blue: blue)
+            let glowLuma = GrainField.rec709(
+                red: glowPixels[offset],
+                green: glowPixels[offset + 1],
+                blue: glowPixels[offset + 2]
+            )
+            var delta = mix * max(glowLuma, 0) * max(0, 1 - y)
+            let room = max(0, 1 - y)
+            if delta > room { delta = room }
+            let factor: Float = y > 0.0001 ? (y + delta) / y : 1
+            pixels[offset] = red * factor
+            pixels[offset + 1] = green * factor
+            pixels[offset + 2] = blue * factor
+        }
+        return image(pixels, bounds: bounds)
     }
 
     /// Mean Rec.709 luma of a linear image. Used only to decide a global night lift.
@@ -85,7 +125,7 @@ enum StillPipeline {
             )
         }
         renderLock.unlock()
-        let luma = 0.2126 * bitmap[0] + 0.7152 * bitmap[1] + 0.0722 * bitmap[2]
+        let luma = GrainField.rec709(red: bitmap[0], green: bitmap[1], blue: bitmap[2])
         return luma.isFinite ? luma : nil
     }
 
@@ -108,30 +148,94 @@ enum StillPipeline {
         return nil
     }
 
-    private static func applyGrain(to image: CIImage, style: GrainStyle) -> CIImage {
-        guard let profile = style.profile else { return image }
-        let tile = GrainTiles.image(for: style)
-        let tileWidth = max(tile.extent.width, 1)
-        let target = max(image.extent.width * profile.tileFraction, tileWidth)
-        let scale = target / tileWidth
-        let scaled = tile.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let tiled = scaled
-            .applyingFilter("CIAffineTile")
-            .cropped(to: image.extent)
-        let speckled = tiled.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: profile.chroma,
-            kCIInputContrastKey: profile.contrast,
-            kCIInputBrightnessKey: 0
-        ])
-        guard let overlay = CIFilter(name: "CIOverlayBlendMode") else { return image }
-        overlay.setValue(speckled, forKey: kCIInputImageKey)
-        overlay.setValue(image, forKey: kCIInputBackgroundImageKey)
-        guard let overlaid = overlay.outputImage?.cropped(to: image.extent) else { return image }
-        guard let dissolve = CIFilter(name: "CIDissolveTransition") else { return image }
-        dissolve.setValue(image, forKey: kCIInputImageKey)
-        dissolve.setValue(overlaid, forKey: kCIInputTargetImageKey)
-        dissolve.setValue(min(1, max(0, profile.mix)), forKey: kCIInputTimeKey)
-        return (dissolve.outputImage ?? image).cropped(to: image.extent)
+    /// A calibrated display profile is kept. Device RGB is tagged Display P3 so the linear
+    /// working space decodes it once. Pixels are display-encoded; this does not mark them linear.
+    private static func displayEncoded(_ image: CGImage) -> CIImage {
+        if let space = image.colorSpace, space.name != nil {
+            return CIImage(cgImage: image)
+        }
+        return CIImage(cgImage: image, options: [CIImageOption.colorSpace: displayP3])
+    }
+
+    private static func applyingGrain(_ image: CIImage, profile: GrainProfile) -> CIImage {
+        let bounds = image.extent.integral
+        guard var pixels = linearPixels(image, bounds: bounds) else { return image }
+        let width = Int(bounds.width)
+        let height = Int(bounds.height)
+        let step = GrainField.step(width: width, tileFraction: profile.tileFraction)
+        var noise = [Float](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                noise[y * width + x] = GrainField.signedUnit(
+                    x: x,
+                    y: y,
+                    seed: profile.seed,
+                    cell: profile.cell,
+                    step: step
+                )
+            }
+        }
+        noise = GrainField.balanced(noise)
+        let amplitude = Float(profile.amplitude)
+        for index in noise.indices {
+            let offset = index * 4
+            let red = pixels[offset]
+            let green = pixels[offset + 1]
+            let blue = pixels[offset + 2]
+            // Display P3 uses the IEC 61966-2-1 transfer. Noise is zero-mean in that space so the
+            // 8-bit HEIF mean does not shift when the encode curve bends a linear deviation.
+            let redD = GrainField.encoded(red)
+            let greenD = GrainField.encoded(green)
+            let blueD = GrainField.encoded(blue)
+            let y = GrainField.rec709(red: redD, green: greenD, blue: blueD)
+            let peak = max(redD, max(greenD, blueD))
+            // Brightest channel, not just luma, so a later 8-bit clamp cannot eat only the positive half.
+            let high: Float = peak > 0.0001 ? y * (1 - peak) / peak : 0
+            let room = min(y, max(high, 0))
+            let delta = noise[index] * min(amplitude, max(room, 0))
+            let factor: Float = y > 0.0001 ? (y + delta) / y : 1
+            pixels[offset] = GrainField.decoded(redD * factor)
+            pixels[offset + 1] = GrainField.decoded(greenD * factor)
+            pixels[offset + 2] = GrainField.decoded(blueD * factor)
+        }
+        return image(pixels, bounds: bounds)
+    }
+
+    private static func linearPixels(_ image: CIImage, bounds: CGRect) -> [Float]? {
+        let width = Int(bounds.width)
+        let height = Int(bounds.height)
+        guard width > 1, height > 1, bounds.isInfinite == false else { return nil }
+        var pixels = [Float](repeating: 0, count: width * height * 4)
+        let rowBytes = width * MemoryLayout<Float>.size * 4
+        renderLock.lock()
+        let wrote = pixels.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            context.render(
+                image,
+                toBitmap: base,
+                rowBytes: rowBytes,
+                bounds: bounds,
+                format: .RGBAf,
+                colorSpace: linearP3
+            )
+            return true
+        }
+        renderLock.unlock()
+        return wrote ? pixels : nil
+    }
+
+    private static func image(_ pixels: [Float], bounds: CGRect) -> CIImage {
+        let width = Int(bounds.width)
+        let rowBytes = width * MemoryLayout<Float>.size * 4
+        let data = pixels.withUnsafeBufferPointer { Data(buffer: $0) }
+        let bitmap = CIImage(
+            bitmapData: data,
+            bytesPerRow: rowBytes,
+            size: CGSize(width: bounds.width, height: bounds.height),
+            format: .RGBAf,
+            colorSpace: linearP3
+        )
+        return bitmap.transformed(by: CGAffineTransform(translationX: bounds.origin.x, y: bounds.origin.y))
     }
 
     private static func encode(_ image: CGImage, type: UTType, quality: CGFloat, metadata: [String: Any]?) -> Data? {
@@ -146,82 +250,68 @@ enum StillPipeline {
     }
 }
 
-enum GrainTiles {
-    private static let lock = NSLock()
-    private static var cache: [GrainStyle: CIImage] = [:]
-    private static let side = 256
+/// Luminance grain. The deviation is zero-mean in Display P3 code values.
+/// `Tests/look_calibration_test.py` mirrors this math.
+enum GrainField {
+    static let tileSide = 256
 
-    static func image(for style: GrainStyle) -> CIImage {
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached = cache[style] { return cached }
-        let image = CIImage(cgImage: makeTile(style))
-        cache[style] = image
-        return image
+    static func rec709(red: Float, green: Float, blue: Float) -> Float {
+        0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
 
-    private static func makeTile(_ style: GrainStyle) -> CGImage {
-        let profile = style.profile
-        let cell = max(profile?.cell ?? 1, 1)
-        let chroma = (profile?.chroma ?? 0) > 0.12
-        let bytes = side * side * 4
-        var pixels = [UInt8](repeating: 255, count: bytes)
-        for y in 0..<side {
-            for x in 0..<side {
-                let cx = x / cell
-                let cy = y / cell
-                let n = unitHash(x: cx, y: cy, seed: profile?.seed ?? 1)
-                let centered = (n - 0.5) * 0.9
-                let gray = UInt8(clamping: Int((0.5 + centered) * 255))
-                var red = gray
-                var blue = gray
-                if chroma {
-                    let shift = Int((unitHash(x: cx, y: cy, seed: (profile?.seed ?? 1) ^ 0xA5A5_5A5A) - 0.5) * 36)
-                    red = UInt8(clamping: Int(gray) + shift)
-                    blue = UInt8(clamping: Int(gray) - shift)
-                }
-                let index = (y * side + x) * 4
-                pixels[index] = red
-                pixels[index + 1] = gray
-                pixels[index + 2] = blue
-                pixels[index + 3] = 255
+    /// Display P3 opto-electronic transfer (IEC 61966-2-1), extended above 1. Inverse of `decoded`.
+    static func encoded(_ linear: Float) -> Float {
+        if linear <= 0.0031308 { return 12.92 * linear }
+        return 1.055 * pow(linear, 1 / Float(2.4)) - 0.055
+    }
+
+    /// Display P3 electro-optical transfer (IEC 61966-2-1), extended above 1.
+    static func decoded(_ display: Float) -> Float {
+        if display <= 0.04045 { return display / 12.92 }
+        return pow((display + 0.055) / 1.055, Float(2.4))
+    }
+
+    /// How many source pixels share one hash cell. One 256px tile covers `tileFraction` of the width.
+    static func step(width: Int, tileFraction: Double) -> Int {
+        let raw = Double(max(width, 1)) * tileFraction / Double(tileSide)
+        let whole = Int(raw)
+        let step = raw - Double(whole) >= 0.5 ? whole + 1 : whole
+        return max(step, 1)
+    }
+
+    static func signedUnit(x: Int, y: Int, seed: UInt32, cell: Int, step: Int) -> Float {
+        let safeStep = max(step, 1)
+        let safeCell = max(cell, 1)
+        let unit = unitHash(x: (x / safeStep) / safeCell, y: (y / safeStep) / safeCell, seed: seed)
+        return Float((unit - 0.5) * 2)
+    }
+
+    /// Subtracts the mean, then if anything falls outside [-1, 1] scales it back. Mean stays 0.
+    static func balanced(_ noise: [Float]) -> [Float] {
+        guard noise.isEmpty == false else { return noise }
+        var sum = 0.0
+        for sample in noise {
+            sum += Double(sample)
+        }
+        let mean = Float(sum / Double(noise.count))
+        var balanced = noise
+        var peak: Float = 0
+        for index in balanced.indices {
+            balanced[index] -= mean
+            peak = max(peak, abs(balanced[index]))
+        }
+        if peak > 1 {
+            let scale = 1 / peak
+            for index in balanced.indices {
+                balanced[index] *= scale
             }
         }
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
-        let image: CGImage? = pixels.withUnsafeMutableBytes { raw in
-            guard let context = CGContext(
-                data: raw.baseAddress,
-                width: side,
-                height: side,
-                bitsPerComponent: 8,
-                bytesPerRow: side * 4,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo
-            ) else { return nil }
-            return context.makeImage()
-        }
-        return image ?? grayFallback()
+        return balanced
     }
 
-    private static func unitHash(x: Int, y: Int, seed: UInt32) -> Double {
+    static func unitHash(x: Int, y: Int, seed: UInt32) -> Double {
         var n = UInt32(truncatingIfNeeded: x &* 374761393 &+ y &* 668265263) &+ seed
         n = (n ^ (n >> 13)) &* 1274126177
         return Double(n & 0x00FF_FFFF) / Double(0x00FF_FFFF)
-    }
-
-    private static func grayFallback() -> CGImage {
-        let context = CGContext(
-            data: nil,
-            width: 1,
-            height: 1,
-            bitsPerComponent: 8,
-            bytesPerRow: 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
-        )!
-        context.setFillColor(CGColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
-        return context.makeImage()!
     }
 }

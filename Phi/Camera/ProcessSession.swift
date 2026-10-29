@@ -173,7 +173,7 @@ final class ProcessSession: ObservableObject, Identifiable {
             height: 1066,
             bitsPerComponent: 8,
             bytesPerRow: 800 * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         for y in 0..<1066 {

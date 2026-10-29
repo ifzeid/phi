@@ -2,7 +2,8 @@ import CoreImage
 import os
 
 /// Bayer develop. Noise reduction, sharpness, detail, and moiré stay at 0 after scale,
-/// because scale can restore defaults. The global curve lives in `ColorLooks`. Only the CCD look resamples and sharpens.
+/// because scale can restore defaults. The 无 look does not grade the file. Other looks are the
+/// `LookRecipe` cubes. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
 /// The EV dial is `CIRAWFilter.exposure`. Apple's HEIF is not an input.
 enum RawDevelop {
@@ -31,7 +32,7 @@ enum RawDevelop {
         ) else {
             return nil
         }
-        let looked = ColorLooks.apply(filtered, look: look, halo: halo, includeBase: true)
+        let looked = ColorLooks.apply(filtered, look: look, halo: halo)
         let grained = StillPipeline.grained(looked, style: style)
         return StillPipeline.displayImage(grained)
     }
