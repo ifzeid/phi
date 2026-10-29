@@ -373,6 +373,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         PhiLocalShots.remember(localShot)
         let payload = LibraryPayload(
             data: saved.data,
+            fileURL: url,
             typeIdentifier: saved.uti,
             filename: filename,
             alternate: false
@@ -632,6 +633,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 files.append(file)
                 payloads.append(LibraryPayload(
                     data: processedBox.data,
+                    fileURL: url,
                     typeIdentifier: processedBox.typeIdentifier,
                     filename: file.filename,
                     alternate: false
@@ -649,6 +651,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 files.append(file)
                 payloads.append(LibraryPayload(
                     data: rawBox.data,
+                    fileURL: url,
                     typeIdentifier: rawBox.typeIdentifier,
                     filename: file.filename,
                     alternate: alternate

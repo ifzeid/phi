@@ -773,6 +773,7 @@ enum DevelopEffectCheck {
             notes.append("grain hash is flat")
         }
         notes.append(contentsOf: HaloOptics.spatialFailures())
+        notes.append(contentsOf: RawDevelop.portraitOrientationFailures())
         return notes
     }
 

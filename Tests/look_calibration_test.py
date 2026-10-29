@@ -25,6 +25,8 @@ RAW_SWIFT = (ROOT / "Phi/Camera/RawDevelop.swift").read_text()
 META_SWIFT = (ROOT / "Phi/Camera/PhotoMetadata.swift").read_text()
 CAPTURE = (ROOT / "Phi/Camera/CaptureService.swift").read_text()
 CAMERA = (ROOT / "Phi/Camera/CameraSession.swift").read_text()
+LIBRARY = (ROOT / "Phi/Camera/PhotoLibrary.swift").read_text()
+META = (ROOT / "Phi/Camera/PhotoMetadata.swift").read_text()
 SESSION = (ROOT / "Phi/Camera/ProcessSession.swift").read_text()
 
 
@@ -637,6 +639,18 @@ def check_capture_path(failures):
         failures.append("Bayer RAW must set photoQualityPrioritization to .speed")
     if "PHIMakePhotoSettings" not in CAMERA or "PHICapturePhoto" not in CAMERA:
         failures.append("photo settings exceptions are not caught")
+    if "fileURL: url" not in LIBRARY or "addResource(with: kind, fileURL: url, options: options)" not in LIBRARY:
+        failures.append("Photos save still passes the DNG as data")
+    if "shouldMoveFile = false" not in LIBRARY:
+        failures.append("Photos file resource must not move the local still")
+    if "fileURL: url" not in CAPTURE:
+        failures.append("capture finish does not pass the written still URLs")
+    if "Rewriting a HEIF" in META or "pixels don't match the DNG is what Photos reports" in LIBRARY:
+        failures.append("3300 comments still blame HEIF rewrite or pixel mismatch")
+    if "ImageOrientation.upright" in RAW_SWIFT:
+        failures.append("CIRAWFilter output is rotated a second time")
+    if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:
+        failures.append("missing portrait DNG orientation check")
 
 
 def check_effects(failures):

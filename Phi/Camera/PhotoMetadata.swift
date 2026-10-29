@@ -29,9 +29,8 @@ enum PhiVersion {
 }
 
 enum PhotoMetadata {
-    /// Apple's container bytes, unchanged.
-    /// Rewriting a HEIF (gain map and all) with ImageIO makes Photos reject the RAW pair as invalidResource (3300).
-    /// GPS is stored on the Photos asset. The dictionary is kept for a later PHI develop.
+    /// Apple's container bytes, unchanged. GPS is stored on the Photos asset, not written back into the file.
+    /// The dictionary is kept for a later PHI develop.
     static func fileData(from photo: AVCapturePhoto, location: CLLocation?) -> (data: Data?, metadata: [String: Any]) {
         let metadata = merged(photo.metadata, location: location)
         return (photo.fileDataRepresentation(), metadata)

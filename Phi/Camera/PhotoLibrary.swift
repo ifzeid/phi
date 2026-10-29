@@ -186,8 +186,10 @@ enum PhiLocalShots {
 }
 
 /// One file inside a Photos asset. A JPEG+RAW pair uses `.photo` for the processed still and `.alternatePhoto` for the DNG.
+/// Photos rejects a DNG passed as `data` for `.alternatePhoto` (PHPhotosErrorDomain 3300). A file URL is accepted.
 struct LibraryPayload {
     var data: Data
+    var fileURL: URL? = nil
     var typeIdentifier: String
     var filename: String
     var alternate: Bool
@@ -210,6 +212,7 @@ struct LibraryRecord: Codable, Equatable {
                   let data = try? Data(contentsOf: url) else { return nil }
             items.append(LibraryPayload(
                 data: data,
+                fileURL: url,
                 typeIdentifier: file.typeIdentifier,
                 filename: file.filename.isEmpty ? url.lastPathComponent : file.filename,
                 alternate: file.alternate
@@ -276,7 +279,8 @@ enum PhotoLibrary {
         for item in items {
             let container = CapturedContainer.inspect(item.data)
             let kind = item.alternate ? "alternatePhoto" : "photo"
-            log.info("resource \(kind, privacy: .public) \(container.logLine, privacy: .public) file \(item.filename, privacy: .public)")
+            let via = item.fileURL == nil ? "data" : "file"
+            log.info("resource \(kind, privacy: .public) via \(via, privacy: .public) \(container.logLine, privacy: .public) file \(item.filename, privacy: .public)")
         }
         do {
             try await PHPhotoLibrary.shared().performChanges {
@@ -284,11 +288,15 @@ enum PhotoLibrary {
                 request.location = shotLocation
                 for item in items {
                     let options = PHAssetResourceCreationOptions()
-                    options.shouldMoveFile = false
                     options.uniformTypeIdentifier = item.typeIdentifier
                     options.originalFilename = item.filename
                     let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
-                    request.addResource(with: kind, data: item.data, options: options)
+                    if let url = item.fileURL {
+                        options.shouldMoveFile = false
+                        request.addResource(with: kind, fileURL: url, options: options)
+                    } else {
+                        request.addResource(with: kind, data: item.data, options: options)
+                    }
                 }
                 if let placeholder = request.placeholderForCreatedAsset {
                     box.localIdentifier = placeholder.localIdentifier
@@ -305,8 +313,8 @@ enum PhotoLibrary {
         return box.localIdentifier
     }
 
-    /// Primary `.photo` is Apple's HEIF or JPEG. The DNG is `.alternatePhoto` only beside a real primary from the same capture.
-    /// A lone DNG, an empty file, or a HEIF whose pixels don't match the DNG is what Photos reports as invalidResource (3300).
+    /// Primary `.photo` is Apple's HEIF or JPEG. The DNG is `.alternatePhoto` only beside that primary.
+    /// invalidResource (3300) here is Photos refusing the DNG when `addResource` is given bytes. The file on disk is the resource that succeeds.
     private static func normalizedForPhotos(_ payloads: [LibraryPayload]) -> [LibraryPayload] {
         let inspected = payloads.map { item in
             (item, CapturedContainer.inspect(item.data))
@@ -332,6 +340,7 @@ enum PhotoLibrary {
         let filename = stem.isEmpty ? "PHI.\(ext)" : "\(stem).\(ext)"
         return LibraryPayload(
             data: item.data,
+            fileURL: item.fileURL,
             typeIdentifier: container.typeIdentifier,
             filename: filename,
             alternate: alternate
