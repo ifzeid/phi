@@ -9,8 +9,8 @@ final class ProcessSession: ObservableObject, Identifiable {
     let base: CGImage
     let isSample: Bool
     let originalWasRaw: Bool
-    let sourceDNG: Data?
-    let sourceMetadata: [String: Any]?
+    private(set) var sourceDNG: Data?
+    private(set) var sourceMetadata: [String: Any]?
     let framedAspect: PhotoAspect
     /// 1 is the full sensor. A crop stop such as 2× keeps the center of the full-frame DNG.
     let lensZoom: Double
@@ -31,10 +31,14 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// What the Metal preview draws. Ticket 0 is the framed HEIF, before any edit.
     @Published var liveFrame: LiveFrame?
     @Published var isExporting = false
+    /// 0...1 while a full-res export is on the background queue.
+    @Published var exportProgress: Double = 0
     @Published var status: String?
     @Published var developInfo: String
 
     var onPreview: ((UIImage) -> Void)?
+    /// First pixels are on screen. Plate builds wait for this so open stays on the cached JPEG.
+    var onFirstPresented: (() -> Void)?
     #if DEBUG
     var onFirstDrawn: ((CGImage) -> Void)?
     #endif
@@ -245,9 +249,25 @@ final class ProcessSession: ObservableObject, Identifiable {
         }
     }
 
+    /// DNG bytes arrived after the cached JPEG was already on screen. The plate build stays off the main thread.
+    func installSource(dng: Data, metadata: [String: Any]?) {
+        sourceDNG = dng
+        sourceMetadata = metadata
+        developInfo = "来源 DNG"
+        warmPreview()
+        if isNeutral == false {
+            schedule()
+        }
+    }
+
+    func setExportProgress(_ value: Double) {
+        exportProgress = min(1, max(0, value))
+    }
+
     /// Called from the Metal view once that ticket's drawable has been presented.
     func notePresented(ticket: Int) {
         presentedTicket = max(presentedTicket, ticket)
+        finishFirstFrame()
         #if DEBUG
         logRenderLatency(ticket: ticket)
         let ready = presentWaiters.filter { $0.0 <= ticket }
@@ -257,10 +277,17 @@ final class ProcessSession: ObservableObject, Identifiable {
     }
 
     func deliverFirstPixels(_ image: CGImage) {
+        finishFirstFrame()
         #if DEBUG
         onFirstDrawn?(image)
         onFirstDrawn = nil
         #endif
+    }
+
+    private func finishFirstFrame() {
+        let callback = onFirstPresented
+        onFirstPresented = nil
+        callback?()
     }
 
     #if DEBUG
@@ -320,8 +347,9 @@ final class ProcessSession: ObservableObject, Identifiable {
     #endif
 
     /// Bake the 800 px and 1280 px proxies, and every look cube, before the first edit.
+    /// A full-res plate follows on a utility queue so save does not demosaic a second time.
     func warmPreview() {
-        guard warmTask == nil else { return }
+        warmTask?.cancel()
         let source = upright(originalImage, fallback: base)
         let aspect = framedAspect
         let cache = previewCache
@@ -334,6 +362,14 @@ final class ProcessSession: ObservableObject, Identifiable {
                 aspect: aspect,
                 zoom: zoom,
                 sides: [EditorMatch.dragSide, EditorMatch.previewMaxSide]
+            )
+            guard Task.isCancelled == false, let dng else { return }
+            _ = RawDevelop.scenePlate(
+                dng: dng,
+                aspect: aspect,
+                lensZoom: zoom,
+                maxSide: nil,
+                draft: false
             )
         }
     }

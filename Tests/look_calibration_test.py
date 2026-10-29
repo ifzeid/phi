@@ -29,6 +29,7 @@ LIBRARY = (ROOT / "Phi/Camera/PhotoLibrary.swift").read_text()
 META = (ROOT / "Phi/Camera/PhotoMetadata.swift").read_text()
 SESSION = (ROOT / "Phi/Camera/ProcessSession.swift").read_text()
 UITEST = (ROOT / "Phi/Debug/PHIUITest.swift").read_text()
+PERF = (ROOT / "Phi/Camera/PerfTrace.swift").read_text()
 
 
 def clamp(value):
@@ -703,8 +704,16 @@ def check_capture_path(failures):
         "-PHIUITestEditorFinderEV",
         "EDITOR FINDER EV",
         "EDITOR FINDER EV FAILED",
+        "-PHIUITestPerf",
+        "PERF LAUNCH",
+        "PERF ALBUM",
+        "PERF SWIPE",
+        "PERF EDIT",
+        "PERF SAVE",
+        "PERF HANGS",
+        "PERF FAILED",
     ):
-        if flag not in UITEST and flag not in SESSION:
+        if flag not in UITEST and flag not in SESSION and flag not in PERF:
             failures.append(f"editor uitest missing {flag}")
     if "MTKView" not in (ROOT / "Phi/Views/EditorMetalPreview.swift").read_text():
         failures.append("editor preview does not draw with MTKView")
@@ -742,6 +751,24 @@ def check_capture_path(failures):
         failures.append("mode 0 EV 0 is missing the filmic curve after BaselineExposure")
     if "processZeroBaselineTrim: Float = 1.5" not in RAW_SWIFT or "appliedBaseline" not in RAW_SWIFT:
         failures.append("EV 0 still multiplies the full JPEG BaselineExposure")
+    if "RawPlateCache" not in RAW_SWIFT or "inflight" not in RAW_SWIFT:
+        failures.append("CIRAWFilter is rebuilt on every develop")
+    cache = (ROOT / "Phi/Camera/ShotCache.swift").read_text()
+    if "CGImageSourceCreateThumbnailAtIndex" not in cache:
+        failures.append("thumbnails are not ImageIO downsamples")
+    browser = (ROOT / "Phi/Views/AlbumBrowser.swift").read_text()
+    if "TabView" in browser:
+        failures.append("album viewer still builds every page in a TabView")
+    if "prefetchNeighbors" not in browser:
+        failures.append("album viewer does not prefetch neighbors")
+    if "static let albumMs = 300" not in PERF or "static let editMs = 300" not in PERF:
+        failures.append("album and edit budgets are not 300 ms")
+    if "static let hangMs = 250" not in PERF:
+        failures.append("hang budget is not 250 ms")
+    if "static let saveMs = 2000" not in PERF:
+        failures.append("12MP save budget is not 2 s")
+    if "lock(before:" not in STILL:
+        failures.append("Metal CIContext render waits out a RAW develop")
     if "tag > 0" not in RAW_SWIFT:
         failures.append("a zero baseline is trimmed with the DNG tag")
     if "shadowBias = 0" not in RAW_SWIFT:

@@ -243,6 +243,7 @@ enum PhiLocalShots {
         guard dropping.isEmpty == false else { return }
         let shots = load()
         for shot in shots where dropping.contains(shot.id) {
+            ShotCache.remove(stem: shot.id)
             for file in shot.files {
                 if let url = StillArchive.resolve(file.path) {
                     try? FileManager.default.removeItem(at: url)

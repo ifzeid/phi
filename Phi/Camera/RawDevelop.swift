@@ -45,7 +45,21 @@ enum RawDevelop {
     }
 
     /// Sensor-linear samples. `baseline` is the DNG tag, applied later as one multiply with the dial.
+    /// One plate per file and size. Exposure changes reuse it and do not build another CIRAWFilter.
     static func scenePlate(
+        dng: Data,
+        aspect: PhotoAspect,
+        lensZoom: Double,
+        maxSide: CGFloat?,
+        draft: Bool
+    ) -> StillPipeline.LinearPlate? {
+        let key = RawPlateCache.key(dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide)
+        return RawPlateCache.coalesce(key) {
+            buildScenePlate(dng: dng, aspect: aspect, lensZoom: lensZoom, maxSide: maxSide, draft: draft)
+        }
+    }
+
+    private static func buildScenePlate(
         dng: Data,
         aspect: PhotoAspect,
         lensZoom: Double,
@@ -657,5 +671,68 @@ private enum PortraitProbeDNG {
 
     private static func int32(_ data: Data, _ offset: Int) -> Int {
         int16(data, offset) | (int16(data, offset + 2) << 16)
+    }
+}
+
+/// One CIRAWFilter result per DNG and long side. A second request waits for the first instead of demosaicing again.
+enum RawPlateCache {
+    private static let lock = NSLock()
+    private static var plates: [String: StillPipeline.LinearPlate] = [:]
+    private static var inflight: [String: [(StillPipeline.LinearPlate?) -> Void]] = [:]
+
+    static func key(dng: Data, aspect: PhotoAspect, zoom: Double, maxSide: CGFloat?) -> String {
+        var hasher = Hasher()
+        hasher.combine(dng.count)
+        hasher.combine(dng.prefix(32))
+        hasher.combine(dng.suffix(32))
+        let side = maxSide.map { Int($0.rounded()) } ?? 0
+        return "\(hasher.finalize())|\(aspect.rawValue)|\(String(format: "%.3f", zoom))|\(side)"
+    }
+
+    static func coalesce(_ key: String, build: () -> StillPipeline.LinearPlate?) -> StillPipeline.LinearPlate? {
+        lock.lock()
+        if let hit = plates[key] {
+            lock.unlock()
+            return hit
+        }
+        let leader = inflight[key] == nil
+        if leader {
+            inflight[key] = []
+            lock.unlock()
+            let built = build()
+            lock.lock()
+            if let built {
+                remember(key, built)
+            }
+            let waiters = inflight.removeValue(forKey: key) ?? []
+            lock.unlock()
+            waiters.forEach { $0(built) }
+            return built
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: StillPipeline.LinearPlate?
+        inflight[key, default: []].append { plate in
+            result = plate
+            semaphore.signal()
+        }
+        lock.unlock()
+        semaphore.wait()
+        return result
+    }
+
+    private static func remember(_ key: String, _ plate: StillPipeline.LinearPlate) {
+        plates[key] = plate
+        let full = plates.keys.filter { $0.hasSuffix("|0") }
+        if full.count > 1 {
+            for old in full where old != key {
+                plates[old] = nil
+            }
+        }
+        if plates.count > 4 {
+            for old in plates.keys where old != key && old.hasSuffix("|0") == false {
+                plates[old] = nil
+                if plates.count <= 4 { break }
+            }
+        }
     }
 }

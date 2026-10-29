@@ -21,6 +21,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestEditorHalo` logs 关/弱/强 on imported shots: far sky must stay put, bloom near lights must rise
 /// `-PHIUITestEditorNight` renders an imported night DNG at EV −2 and checks sky, beam neutrality, and sharpness
 /// `-PHIUITestEditorFinderEV` checks a finder-bias develop at EV 0 against the same file edited by that bias
+/// `-PHIUITestPerf` logs launch, album, swipe, edit, save, and main-thread hangs
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -177,6 +178,10 @@ enum PHIUITest {
     /// 关 / 弱 / 强 on each imported still. Far pixels stay put; pixels near highlights get brighter.
     static var editorHalo: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorHalo")
+    }
+
+    static var perf: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestPerf")
     }
 
     /// Copies each same-basename HEIC+DNG pair into the local shot store. Safe to call once per launch.
@@ -1442,10 +1447,141 @@ enum PHIUITest {
     }
 }
 
+extension PHIUITest {
+    /// Cached thumbs, a screen JPEG open, and a 12MP render. Logs the budgets the device run compares.
+    static func runPerf(openShot: @MainActor @escaping (String) -> Void) async {
+        PerfTrace.startWatchdog()
+        let first = "perf-a"
+        let second = "perf-b"
+        await Task.detached(priority: .userInitiated) {
+            preparePerfShot(first)
+            preparePerfShot(second)
+        }.value
+        PerfTrace.beginAlbum()
+        _ = await Task.detached(priority: .userInitiated) {
+            ShotCache.gridImage(stem: first)
+        }.value
+        PerfTrace.noteAlbumThumbnail()
+        PerfTrace.beginSwipe()
+        _ = await Task.detached(priority: .userInitiated) {
+            ShotCache.screenImage(stem: second)
+        }.value
+        PerfTrace.endSwipe()
+        await MainActor.run { openShot(first) }
+        await PerfTrace.waitForFirstFrame(timeout: 1)
+        let saveMs = await Task.detached(priority: .userInitiated) {
+            benchmarkTwelveMegapixel()
+        }.value
+        let saveLine = String(format: "PERF SAVE %.1f", saveMs)
+        print(saveLine)
+        Logger(subsystem: "com.zeid.phi", category: "perf").notice("\(saveLine, privacy: .public)")
+        let hangs = PerfTrace.hangSnapshot()
+        let hangLine = String(format: "PERF HANGS count=%d over250=%d", hangs.over100, hangs.over250)
+        print(hangLine)
+        Logger(subsystem: "com.zeid.phi", category: "perf").notice("\(hangLine, privacy: .public)")
+        let times = PerfTrace.intervals()
+        var failed: [String] = []
+        if times.album < 0 || times.album >= PerfTrace.albumMs {
+            failed.append(String(format: "album %.1f", times.album))
+        }
+        if times.edit < 0 || times.edit >= PerfTrace.editMs {
+            failed.append(String(format: "edit %.1f", times.edit))
+        }
+        if saveMs < 0 || saveMs >= PerfTrace.saveMs {
+            failed.append(String(format: "save %.1f", saveMs))
+        }
+        if hangs.over250 > 0 {
+            failed.append("hangs \(hangs.over250)")
+        }
+        if failed.isEmpty == false {
+            let line = "PERF FAILED \(failed.joined(separator: ", "))"
+            print(line)
+            Logger(subsystem: "com.zeid.phi", category: "perf").error("\(line, privacy: .public)")
+            assertionFailure(line)
+        }
+    }
+
+    private static func preparePerfShot(_ stem: String) {
+        let url = StillArchive.directory.appendingPathComponent("PHI-\(stem).jpg")
+        writeSolidJPEG(url, side: 640)
+        ShotCache.storeIfNeeded(stem: stem, fromFile: url)
+        let file = LibraryRecord.File(
+            path: url.lastPathComponent,
+            typeIdentifier: UTType.jpeg.identifier,
+            filename: url.lastPathComponent,
+            alternate: false
+        )
+        PhiLocalShots.remember(PhiLocalShots.Shot(
+            id: stem,
+            files: [file],
+            hasRaw: false,
+            savedToPhotos: true,
+            photosIdentifier: nil,
+            saveFailed: false,
+            aspect: PhotoAspect.threeByFour.rawValue,
+            lensZoom: 1,
+            processMode: ProcessMode.standard.rawValue
+        ))
+    }
+
+    /// Full-res render and HEIF encode of a 12MP frame. This is the save budget.
+    private static func benchmarkTwelveMegapixel() -> Double {
+        let width = 4032
+        let height = 3024
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return -1 }
+        context.setFillColor(CGColor(srgbRed: 0.25, green: 0.22, blue: 0.18, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let image = context.makeImage() else { return -1 }
+        let started = CFAbsoluteTimeGetCurrent()
+        let rendered = StillPipeline.render(
+            image,
+            exposureEV: 0,
+            style: .off,
+            look: .none,
+            halo: .off,
+            lensZoom: 1,
+            maxSide: nil
+        )
+        guard let rendered, StillPipeline.encodeDeveloped(rendered) != nil else { return -1 }
+        return (CFAbsoluteTimeGetCurrent() - started) * 1000
+    }
+
+    private static func writeSolidJPEG(_ url: URL, side: Int) {
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bytesPerRow: side * 4,
+            space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+        context.setFillColor(CGColor(srgbRed: 0.2, green: 0.2, blue: 0.2, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        guard let image = context.makeImage() else { return }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return }
+        try? (data as Data).write(to: url, options: .atomic)
+    }
+}
+
 struct PHIUITestHost: View {
     var screen: PHIUITest.Screen
 
     init(screen: PHIUITest.Screen) {
+        PerfTrace.noteFirstFrame()
         PHIUITest.resetPersistedState()
         self.screen = screen
     }

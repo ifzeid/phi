@@ -232,9 +232,15 @@ static func renderLinear(
         return luma.isFinite ? luma : nil
     }
 
+    /// The Metal view is on the main thread. A RAW plate may hold `renderLock` for a long render,
+    /// so this waits only a frame and asks the view to try again instead of stalling the main thread.
+    struct ContextBusy: Error {}
+
     /// Encode a preview into a Metal texture. Callers present the command buffer.
     static func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer) throws {
-        renderLock.lock()
+        guard renderLock.lock(before: Date().addingTimeInterval(0.02)) else {
+            throw ContextBusy()
+        }
         defer { renderLock.unlock() }
         let destination = CIRenderDestination(mtlTexture: texture, commandBuffer: commandBuffer)
         destination.colorSpace = displayP3

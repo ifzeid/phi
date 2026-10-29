@@ -78,6 +78,9 @@ final class EditorCanvas: MTKView, MTKViewDelegate {
         let fitted = Self.aspectFit(image, in: pixelSize)
         do {
             try StillPipeline.render(fitted, to: drawable.texture, commandBuffer: commandBuffer)
+        } catch is StillPipeline.ContextBusy {
+            DispatchQueue.main.async { self.setNeedsDisplay() }
+            return
         } catch {
             DispatchQueue.main.async { self.onPresented?(ticket) }
             return

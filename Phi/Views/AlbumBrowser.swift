@@ -295,26 +295,35 @@ struct AlbumBrowser: View {
             phase = .ready
             return
         }
-        let locals = PhiLocalShots.load().reversed()
+        PerfTrace.beginAlbum()
+        let locals = await Task.detached(priority: .userInitiated) {
+            PhiLocalShots.load().reversed().map { AlbumShot.local($0) }
+        }.value
+        shots = Array(locals)
+        phase = .ready
         let status = await PhotoLibrary.requestReadWrite()
         guard PhotoLibrary.canReadLibrary(status) else {
             limited = false
             libraryDenied = true
-            shots = locals.map { AlbumShot.local($0) }
             phase = shots.isEmpty ? .denied : .ready
             return
         }
         libraryDenied = false
         limited = status == .limited
+        let indexed = PhiShotIndex.load().map(\.localIdentifier)
         if let album = try? await PhotoLibrary.ensureAlbum() {
-            await PhotoLibrary.fileIntoAlbum(PhiShotIndex.load().map(\.localIdentifier), album: album)
+            await PhotoLibrary.fileIntoAlbum(indexed, album: album)
         }
-        let assets = PhotoLibrary.loadShots()
+        let assets = await Task.detached(priority: .utility) {
+            PhotoLibrary.loadShots()
+        }.value
         let known = Set(assets.map(\.localIdentifier))
         var items = assets.map { AlbumShot.library($0) }
         for shot in locals {
-            if let identifier = shot.photosIdentifier, known.contains(identifier) { continue }
-            items.append(AlbumShot.local(shot))
+            if case .local(let local) = shot.source, let identifier = local.photosIdentifier, known.contains(identifier) {
+                continue
+            }
+            items.append(shot)
         }
         shots = items.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         phase = .ready
@@ -444,6 +453,23 @@ private struct AlbumShot: Identifiable {
         )
     }
 
+    var cacheStem: String {
+        switch source {
+        case .local(let shot):
+            return shot.id
+        case .library(let asset):
+            return ShotCache.stem(forLibrary: asset.localIdentifier)
+        }
+    }
+
+    /// Display still on disk. A DNG is not used for the grid or the viewer.
+    var stillURL: URL? {
+        guard case .local(let shot) = source else { return nil }
+        guard let file = PhiLocalShots.displayFile(of: shot) else { return nil }
+        if file.filename.lowercased().hasSuffix(".dng") { return nil }
+        return StillArchive.resolve(file.path)
+    }
+
     private static func date(fromStamp id: String) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -567,24 +593,42 @@ private struct AlbumThumb: View {
     private func load() async {
         if shot.id.hasPrefix("sample-") {
             image = AlbumBrowser.sampleStill(framed: shot.framed, missing: shot.missing)
+            if image != nil { PerfTrace.noteAlbumThumbnail() }
             return
         }
-        switch shot.source {
-        case .library(let asset):
-            if image == nil {
-                image = DevelopCache.image(for: asset.localIdentifier)
+        let stem = shot.cacheStem
+        let aspect = shot.framed
+        let zoom = shot.lensZoom
+        let still = shot.stillURL
+        let asset: PHAsset? = {
+            if case .library(let asset) = shot.source { return asset }
+            return nil
+        }()
+        let loaded = await Task.detached(priority: .utility) { () -> UIImage? in
+            if let cached = ShotCache.gridImage(stem: stem) {
+                return AlbumImage.framed(cached, aspect: aspect, zoom: zoom)
             }
-            if let sharp = await AlbumImage.load(asset, target: AlbumImage.gridTarget, fast: false) {
-                image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
+            if let still {
+                ShotCache.storeIfNeeded(stem: stem, fromFile: still)
+                if let cached = ShotCache.gridImage(stem: stem) {
+                    return AlbumImage.framed(cached, aspect: aspect, zoom: zoom)
+                }
             }
-        case .local(let local):
-            let maxSide = AlbumImage.gridTarget.width
-            let aspect = shot.framed
-            let zoom = shot.lensZoom
-            if let preview = await Task.detached(priority: .utility, operation: {
-                AlbumImage.localPreview(local, maxSide: maxSide)
-            }).value {
-                image = AlbumImage.framed(preview, aspect: aspect, zoom: zoom)
+            return nil
+        }.value
+        if let loaded {
+            image = loaded
+            PerfTrace.noteAlbumThumbnail()
+            return
+        }
+        if let asset, let sharp = await AlbumImage.load(asset, target: CGSize(width: ShotCache.gridSide, height: ShotCache.gridSide), fast: true) {
+            let framed = AlbumImage.framed(sharp, aspect: aspect, zoom: zoom)
+            image = framed
+            PerfTrace.noteAlbumThumbnail()
+            if let cg = sharp.cgImage {
+                Task.detached(priority: .utility) {
+                    ShotCache.store(stem: stem, image: cg)
+                }
             }
         }
     }
@@ -604,21 +648,50 @@ private struct AlbumPager: View {
             CameraColor.background.ignoresSafeArea()
             VStack(spacing: 0) {
                 pagerHeader
-                TabView(selection: $index) {
-                    ForEach(Array(shots.enumerated()), id: \.element.id) { offset, shot in
-                        AlbumPage(
-                            shot: shot,
-                            onEditLibrary: onEditLibrary,
-                            onEditLocal: onEditLocal,
-                            onRetryLocal: onRetryLocal,
-                            onDelete: onDelete
-                        )
-                        .tag(offset)
-                    }
+                if shots.indices.contains(index) {
+                    AlbumPage(
+                        shot: shots[index],
+                        onEditLibrary: onEditLibrary,
+                        onEditLocal: onEditLocal,
+                        onRetryLocal: onRetryLocal,
+                        onDelete: onDelete
+                    )
+                    .id(shots[index].id)
+                    .gesture(swipe)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
             }
         }
+        .task(id: index) {
+            await prefetchNeighbors()
+        }
+        .onChange(of: index) { _, _ in
+            PerfTrace.beginSwipe()
+        }
+    }
+
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 24).onEnded { value in
+            let horizontal = value.translation.width
+            guard abs(horizontal) > abs(value.translation.height) else { return }
+            if horizontal < -40, index + 1 < shots.count {
+                index += 1
+            } else if horizontal > 40, index > 0 {
+                index -= 1
+            }
+        }
+    }
+
+    /// Decode the screen JPEG for the pages beside the current one. The pager only builds the visible page.
+    private func prefetchNeighbors() async {
+        let neighbors = [index - 1, index + 1].filter { shots.indices.contains($0) }
+        let shots = neighbors.map { self.shots[$0] }
+        await Task.detached(priority: .utility) {
+            for shot in shots {
+                if ViewerCache.image(id: shot.id) != nil { continue }
+                guard let image = AlbumImage.screenStill(shot) else { continue }
+                ViewerCache.store(image, id: shot.id)
+            }
+        }.value
     }
 
     private var pagerHeader: some View {
@@ -741,26 +814,57 @@ private struct AlbumPage: View {
     private func load() async {
         if shot.id.hasPrefix("sample-") {
             image = AlbumBrowser.sampleStill(framed: shot.framed, missing: shot.missing)
+            PerfTrace.endSwipe()
             return
         }
-        switch shot.source {
-        case .library(let asset):
-            if image == nil {
-                image = DevelopCache.image(for: asset.localIdentifier)
-            }
-            if let sharp = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: false) {
-                image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
-            }
-        case .local(let local):
-            let maxSide = AlbumImage.viewerTarget.width
-            let aspect = shot.framed
-            let zoom = shot.lensZoom
-            if let preview = await Task.detached(priority: .userInitiated, operation: {
-                AlbumImage.localPreview(local, maxSide: maxSide)
-            }).value {
-                image = AlbumImage.framed(preview, aspect: aspect, zoom: zoom)
+        if let cached = ViewerCache.image(id: shot.id) {
+            image = cached
+            PerfTrace.endSwipe()
+            return
+        }
+        let shot = shot
+        if let preview = await Task.detached(priority: .userInitiated, operation: {
+            AlbumImage.screenStill(shot)
+        }).value {
+            ViewerCache.store(preview, id: shot.id)
+            image = preview
+        } else if case .library(let asset) = shot.source,
+                  let sharp = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: true) {
+            let framed = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
+            ViewerCache.store(framed, id: shot.id)
+            image = framed
+            if let cg = sharp.cgImage {
+                let stem = shot.cacheStem
+                Task.detached(priority: .utility) {
+                    ShotCache.store(stem: stem, image: cg)
+                }
             }
         }
+        PerfTrace.endSwipe()
+    }
+}
+
+/// Screen JPEGs for the page on screen and its two neighbors.
+enum ViewerCache {
+    private static let lock = NSLock()
+    private static var images: [String: UIImage] = [:]
+    private static var order: [String] = []
+
+    static func image(id: String) -> UIImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return images[id]
+    }
+
+    static func store(_ image: UIImage, id: String) {
+        lock.lock()
+        images[id] = image
+        order.removeAll { $0 == id }
+        order.append(id)
+        while order.count > 4 {
+            images[order.removeFirst()] = nil
+        }
+        lock.unlock()
     }
 }
 
@@ -839,6 +943,21 @@ enum AlbumImage {
         let zoomed = LensCrop.cropped(image, zoom: zoom)
         guard let cg = zoomed.cgImage else { return zoomed }
         return UIImage(cgImage: aspect.cropped(cg), scale: zoomed.scale, orientation: zoomed.imageOrientation)
+    }
+
+    /// Screen JPEG for the viewer. Built once from the display still and reused by the neighbor prefetch.
+    static func screenStill(_ shot: AlbumShot) -> UIImage? {
+        let stem = shot.cacheStem
+        if let cached = ShotCache.screenImage(stem: stem) {
+            return framed(cached, aspect: shot.framed, zoom: shot.lensZoom)
+        }
+        if let still = shot.stillURL {
+            ShotCache.storeIfNeeded(stem: stem, fromFile: still)
+            if let cached = ShotCache.screenImage(stem: stem) {
+                return framed(cached, aspect: shot.framed, zoom: shot.lensZoom)
+            }
+        }
+        return nil
     }
 
     static func localPreview(_ shot: PhiLocalShots.Shot, maxSide: CGFloat) -> UIImage? {

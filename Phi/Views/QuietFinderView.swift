@@ -162,7 +162,11 @@ struct QuietFinderView: View {
         }
         .modifier(HiddenSystemChrome())
         .onAppear {
+            PerfTrace.noteFirstFrame()
             #if DEBUG
+            if PHIUITest.perf, PHIUITest.openEditorBasename == nil {
+                Task { await PHIUITest.runPerf { capture.openLocalShot(id: $0) } }
+            }
             PHIUITest.importPairsIfRequested()
             if let name = PHIUITest.openEditorOnce() {
                 capture.openLocalShot(id: name)
@@ -382,7 +386,12 @@ struct QuietFinderView: View {
             if capture.thumbnail == nil && capture.hasDevelopBase == false {
                 capture.openSample()
             } else {
-                showAlbum = true
+                PerfTrace.beginAlbum()
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    showAlbum = true
+                }
             }
         } label: {
             thumbnail

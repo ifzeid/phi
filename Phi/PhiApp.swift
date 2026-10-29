@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct PhiApp: App {
+    init() {
+        PerfTrace.boot()
+    }
+
     @ViewBuilder
     private var root: some View {
         #if DEBUG

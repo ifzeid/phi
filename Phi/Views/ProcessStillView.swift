@@ -56,6 +56,21 @@ struct ProcessStillView: View {
             .padding(.bottom, bottomPad)
             .frame(width: geo.size.width, height: geo.size.height)
             .background(CameraColor.background)
+            .overlay {
+                if session.isExporting {
+                    VStack(spacing: 10) {
+                        ProgressView(value: session.exportProgress)
+                            .tint(CameraColor.accent)
+                            .frame(width: 180)
+                        Text("正在保存")
+                            .font(CameraFont.interface(13, weight: .medium))
+                            .foregroundStyle(CameraColor.textPrimary)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
         }
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
