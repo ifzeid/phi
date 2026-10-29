@@ -21,7 +21,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     @Published var exposureEV: Double
     @Published var style: GrainStyle
     @Published var colorLook: ColorLook
-    @Published var halo: Bool
+    @Published var halo: HaloLevel
     @Published var preview: UIImage?
     @Published var isExporting = false
     @Published var status: String?
@@ -44,7 +44,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         lensZoom: Double = 1,
         captureLocation: CLLocation? = nil,
         colorLook: ColorLook = .none,
-        halo: Bool = false,
+        halo: HaloLevel = .off,
         originalImage: UIImage? = nil,
         originalData: Data? = nil
     ) {
@@ -70,7 +70,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     }
 
     var isNeutral: Bool {
-        exposureEV == 0 && style == .off && colorLook == .none && halo == false
+        exposureEV == 0 && style == .off && colorLook == .none && halo == .off
     }
 
     func setExposure(_ value: Double) {
@@ -90,9 +90,9 @@ final class ProcessSession: ObservableObject, Identifiable {
         schedule()
     }
 
-    func setHalo(_ enabled: Bool) {
-        guard enabled != halo else { return }
-        halo = enabled
+    func setHalo(_ level: HaloLevel) {
+        guard level != halo else { return }
+        halo = level
         schedule()
     }
 
@@ -173,7 +173,7 @@ final class ProcessSession: ObservableObject, Identifiable {
             height: 1066,
             bitsPerComponent: 8,
             bytesPerRow: 800 * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         for y in 0..<1066 {

@@ -21,7 +21,7 @@ struct ProcessStillView: View {
     @State private var confirmDiscard = false
     @State private var baseEV = 0.0
     @State private var baseLook: ColorLook = .none
-    @State private var baseHalo = false
+    @State private var baseHalo: HaloLevel = .off
     @State private var baseGrain: GrainStyle = .off
     @State private var capturedBaseline = false
 
@@ -187,11 +187,11 @@ struct ProcessStillView: View {
     private var effectsTool: some View {
         HStack(spacing: 18) {
             effectGroup(title: "光晕") {
-                SelectPill(title: "关", selected: session.halo == false, width: 76, height: 34) {
-                    session.setHalo(false)
-                }
-                SelectPill(title: "开", selected: session.halo, width: 76, height: 34) {
-                    session.setHalo(true)
+                ForEach(HaloLevel.allCases) { level in
+                    SelectPill(title: level.title, selected: session.halo == level, width: 48, height: 34) {
+                        session.setHalo(level)
+                    }
+                    .accessibilityLabel(level == .off ? "关闭光晕" : "\(level.title)光晕")
                 }
             }
             effectGroup(title: "颗粒") {
@@ -321,7 +321,7 @@ struct ProcessStillView: View {
     private func resetAdjustments() {
         session.setExposure(0)
         session.setColorLook(.none)
-        session.setHalo(false)
+        session.setHalo(.off)
         session.setStyle(.off)
     }
 
@@ -370,13 +370,14 @@ struct ColorLookPicker: View {
 }
 
 struct HaloToggle: View {
-    var enabled: Bool
-    var onChange: (Bool) -> Void
+    var level: HaloLevel
+    var onChange: (HaloLevel) -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            option("关", selected: enabled == false) { onChange(false) }
-            option("光晕", selected: enabled) { onChange(true) }
+            ForEach(HaloLevel.allCases) { step in
+                option(step.title, selected: level == step) { onChange(step) }
+            }
         }
     }
 

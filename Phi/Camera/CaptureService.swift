@@ -777,7 +777,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             lensZoom: lensZoom,
             captureLocation: location,
             colorLook: .none,
-            halo: false,
+            halo: .off,
             originalImage: originalImage ?? UIImage(cgImage: base),
             originalData: originalData
         )
