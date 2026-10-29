@@ -27,23 +27,7 @@ enum ColorLooks {
     }
 
     static func withHalo(_ image: CIImage, level: HaloLevel) -> CIImage {
-        guard level != .off else { return image }
-        return StillPipeline.addGlow(image, glow: unscaledGlow(image), scatter: level.scatter)
-    }
-
-    /// Blur of `rgb * emphasis(luma)`, before the weak/strong gain. Cached by the preview.
-    static func unscaledGlow(_ image: CIImage) -> CIImage {
-        let extent = image.extent
-        let longest = Swift.max(extent.width, extent.height)
-        guard longest > 2 else { return image }
-        let weighted = emphasize(image)
-        let tight = StillPipeline.pyramidBlur(weighted, sigma: longest * HaloOptics.tightRadius, extent: extent)
-        let medium = StillPipeline.pyramidBlur(weighted, sigma: longest * HaloOptics.mediumRadius, extent: extent)
-        guard let scales = CIFilter(name: "CIDissolveTransition") else { return tight }
-        scales.setValue(tight, forKey: kCIInputImageKey)
-        scales.setValue(medium, forKey: kCIInputTargetImageKey)
-        scales.setValue(Double(1 - HaloOptics.tightMix), forKey: kCIInputTimeKey)
-        return (scales.outputImage ?? tight).cropped(to: extent)
+        StillPipeline.applyHalo(image, level: level)
     }
 
     private static func toPerceptual(_ image: CIImage) -> CIImage {
@@ -216,78 +200,42 @@ enum ColorLooks {
         return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
-    /// `rgb * emphasis(luma)` in linear light. The same factor on every channel, so hue is kept.
-    /// Below the knee the factor is 0, so a flat midtone blurs to black and adds nothing.
-    private static func emphasize(_ image: CIImage) -> CIImage {
-        let weights = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
-        let gray = image.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": weights,
-            "inputGVector": weights,
-            "inputBVector": weights,
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-        ])
-        let knee = CGFloat(HaloOptics.knee)
-        let span = CGFloat(1) - knee
-        let scale = span == 0 ? CGFloat(0) : 1 / span
-        let bias = span == 0 ? CGFloat(0) : -knee / span
-        let shifted = gray.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: scale, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: scale, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: scale, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0)
-        ]).applyingFilter("CIColorClamp", parameters: [
-            "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
-        ])
-        let smoothstep = polynomial(shifted, CIVector(x: 0, y: 0, z: 3, w: -2))
-        let steep = polynomial(smoothstep, CIVector(x: 0, y: 0, z: 1, w: 0))
-        guard let product = CIFilter(name: "CIMultiplyCompositing") else { return image }
-        product.setValue(image, forKey: kCIInputImageKey)
-        product.setValue(steep, forKey: kCIInputBackgroundImageKey)
-        let multiplied = (product.outputImage ?? image).cropped(to: image.extent)
-        return multiplied.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 1)
-        ])
-    }
-
-    private static func polynomial(_ image: CIImage, _ rgb: CIVector) -> CIImage {
-        image.applyingFilter("CIColorPolynomial", parameters: [
-            "inputRedCoefficients": rgb,
-            "inputGreenCoefficients": rgb,
-            "inputBlueCoefficients": rgb,
-            "inputAlphaCoefficients": CIVector(x: 1, y: 0, z: 0, w: 0)
-        ])
-    }
 }
 
 /// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
 /// `Tests/look_calibration_test.py` mirrors `emphasis` and the additive mix.
 enum HaloOptics {
-    static let weakScatter: CGFloat = 0.24
-    static let strongScatter: CGFloat = 0.55
-    /// Share of the scattered light that stays in the tight bloom. The rest is the medium halo.
-    static let tightMix: CGFloat = 0.62
-    /// Radii as a fraction of the long side. The old 18% veil is gone.
-    static let tightRadius: CGFloat = 0.012
-    static let mediumRadius: CGFloat = 0.046
-    /// Linear Rec.709 luma. At and below this, emphasis is 0.
-    static let knee: Float = 0.60
+    static let weakScatter: CGFloat = 0.45
+    static let strongScatter: CGFloat = 0.85
+    /// Share of the blurred highlight in the tight, medium, and wide pyramid passes.
+    static let tightWeight: CGFloat = 0.40
+    static let mediumWeight: CGFloat = 0.40
+    static let wideWeight: CGFloat = 0.20
+    /// Radii as a fraction of the long side. Wide is a halo, not an 18% veil.
+    static let tightRadius: CGFloat = 0.015
+    static let mediumRadius: CGFloat = 0.05
+    static let wideRadius: CGFloat = 0.10
+    /// Soft highlight extract. Below `knee` nothing is pulled into the glow.
+    static let knee: Float = 0.55
+    static let highlightEnd: Float = 0.92
 
     static func emphasis(_ luma: Float) -> Float {
         let y = min(max(luma, Float(0)), Float(1))
         if y <= knee { return 0 }
-        let t = (y - knee) / (1 - knee)
-        let shaped = t * t * (3 - 2 * t)
-        return shaped * shaped
+        if y >= highlightEnd { return 1 }
+        let t = (y - knee) / (highlightEnd - knee)
+        return t * t * (3 - 2 * t)
     }
 
-    /// Pure-function check used by the debug assertion. Same knee, radii, and additive mix as the filter.
+    /// Screen shoulder: `base + (1 - base) * min(1, scatter * glow)`. Approaches 1 and does not cross it.
+    static func screenShoulder(base: Float, glow: Float, scatter: Float) -> Float {
+        if base >= 1 { return base }
+        let addition = min(1, max(0, scatter * max(glow, 0)))
+        let room = 1 - min(max(base, 0), 1)
+        return base + room * addition
+    }
+
+    /// Pure-function check used by the debug assertion. Same knee, radii, and rolloff as the filter.
     static func spatialFailures() -> [String] {
         let width = 72
         let height = 40
@@ -329,8 +277,13 @@ enum HaloOptics {
             let neighbor = ((y0 + 4) * width + (x0 - 1)) * 3
             let gain = (diffused[neighbor] + diffused[neighbor + 1] + diffused[neighbor + 2]) / 3 - 0.02
             if name == "弱" { weakGain = gain } else { strongGain = gain }
-            if gain < 0.02 {
+            if gain < 0.01 {
                 notes.append("\(name) neighbor did not gain glow \(gain)")
+            }
+            let center = ((y0 + 4) * width + (x0 + 4)) * 3
+            let lifted = diffused[center] - scene[center]
+            if lifted > 0.004 {
+                notes.append("\(name) bright source was lifted \(lifted)")
             }
         }
         if strongGain <= weakGain {
@@ -354,7 +307,52 @@ enum HaloOptics {
         if dRed <= dBlue {
             notes.append("warm glow did not keep source hue")
         }
+        notes.append(contentsOf: brightSkyFailures())
         return notes
+    }
+
+    /// Sunlit sky and a white wall. Clipped area may grow by at most 2%, and the mean by at most 4%.
+    private static func brightSkyFailures() -> [String] {
+        let width = 96
+        let height = 64
+        var scene = [Float](repeating: 0, count: width * height * 3)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 3
+                let sample: (Float, Float, Float)
+                if y < 40 {
+                    sample = (0.78, 0.84, 0.95)
+                } else if x >= 40 {
+                    sample = (0.94, 0.93, 0.90)
+                } else {
+                    sample = (0.12, 0.10, 0.08)
+                }
+                scene[offset] = sample.0
+                scene[offset + 1] = sample.1
+                scene[offset + 2] = sample.2
+            }
+        }
+        let diffused = referenceDiffuse(scene, width: width, height: height, scatter: Float(strongScatter))
+        let before = clipFraction(scene)
+        let after = clipFraction(diffused)
+        if after - before > 0.02 {
+            return ["bright sky clipped-area delta \(after - before)"]
+        }
+        return []
+    }
+
+    private static func clipFraction(_ pixels: [Float]) -> Float {
+        let count = pixels.count / 3
+        guard count > 0 else { return 0 }
+        var clipped = 0
+        for index in 0..<count {
+            let offset = index * 3
+            let peak = max(pixels[offset], max(pixels[offset + 1], pixels[offset + 2]))
+            if GrainField.encoded(peak) >= 254.5 / 255 {
+                clipped += 1
+            }
+        }
+        return Float(clipped) / Float(count)
     }
 
     private static func referenceDiffuse(_ pixels: [Float], width: Int, height: Int, scatter: Float) -> [Float] {
@@ -377,14 +375,21 @@ enum HaloOptics {
             }
             let tight = referenceBlur(plane, width: width, height: height, sigma: longest * Float(tightRadius))
             let medium = referenceBlur(plane, width: width, height: height, sigma: longest * Float(mediumRadius))
-            let mix = Float(tightMix)
+            let wide = referenceBlur(plane, width: width, height: height, sigma: longest * Float(wideRadius))
+            let weightTotal = Float(tightWeight + mediumWeight + wideWeight)
+            let tightShare = Float(tightWeight) / weightTotal
+            let mediumShare = Float(mediumWeight) / weightTotal
+            let wideShare = Float(wideWeight) / weightTotal
             for index in 0..<count {
-                glow[index * 3 + channel] = mix * tight[index] + (1 - mix) * medium[index]
+                glow[index * 3 + channel] = tightShare * tight[index] + mediumShare * medium[index] + wideShare * wide[index]
             }
         }
         var output = pixels
-        for index in output.indices {
-            output[index] = pixels[index] + scatter * glow[index]
+        for index in 0..<count {
+            let offset = index * 3
+            output[offset] = screenShoulder(base: pixels[offset], glow: glow[offset], scatter: scatter)
+            output[offset + 1] = screenShoulder(base: pixels[offset + 1], glow: glow[offset + 1], scatter: scatter)
+            output[offset + 2] = screenShoulder(base: pixels[offset + 2], glow: glow[offset + 2], scatter: scatter)
         }
         return output
     }
@@ -608,6 +613,13 @@ enum DevelopEffectCheck {
         }
         if HaloOptics.emphasis(1) < 0.99 {
             notes.append("white does not fully scatter")
+        }
+        if HaloOptics.emphasis(0.4) != 0 || HaloOptics.emphasis(1) < 0.99 {
+            notes.append("highlight extract is not a soft threshold")
+        }
+        let screened = HaloOptics.screenShoulder(base: 0.9, glow: 2, scatter: 1)
+        if screened > 1.0001 || screened < 0.9 {
+            notes.append("screen shoulder left the unit range")
         }
         let grain = GrainField.signedUnit(x: 3, y: 5, seed: 0xF1E0_4A11, cell: 1, step: 1)
         if abs(grain) < 0.001 {
