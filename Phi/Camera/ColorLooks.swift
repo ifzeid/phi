@@ -205,25 +205,37 @@ enum ColorLooks {
 /// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
 /// `Tests/look_calibration_test.py` mirrors `emphasis` and the additive mix.
 enum HaloOptics {
-    static let weakScatter: CGFloat = 0.45
-    static let strongScatter: CGFloat = 0.85
+    static let weakScatter: CGFloat = 1.0
+    static let strongScatter: CGFloat = 2.05
     /// Share of the blurred highlight in the tight, medium, and wide pyramid passes.
-    static let tightWeight: CGFloat = 0.40
+    static let tightWeight: CGFloat = 0.45
     static let mediumWeight: CGFloat = 0.40
-    static let wideWeight: CGFloat = 0.20
-    /// Radii as a fraction of the long side. Wide is a halo, not an 18% veil.
+    static let wideWeight: CGFloat = 0.15
+    /// Radii as a fraction of the long side. The wide step stays local; it is not a frame veil.
     static let tightRadius: CGFloat = 0.015
-    static let mediumRadius: CGFloat = 0.05
-    static let wideRadius: CGFloat = 0.10
+    static let mediumRadius: CGFloat = 0.035
+    static let wideRadius: CGFloat = 0.055
     /// Soft highlight extract. Below `knee` nothing is pulled into the glow.
-    static let knee: Float = 0.55
+    static let knee: Float = 0.70
     static let highlightEnd: Float = 0.92
+    /// Blur of the highlight mask. The added light is multiplied by this falloff, so it dies a short way from a real highlight.
+    static let reachRadius: CGFloat = 0.032
+    static let gateFloor: Float = 0.045
+    static let gateCeil: Float = 0.34
 
     static func emphasis(_ luma: Float) -> Float {
         let y = min(max(luma, Float(0)), Float(1))
         if y <= knee { return 0 }
         if y >= highlightEnd { return 1 }
         let t = (y - knee) / (highlightEnd - knee)
+        return t * t * (3 - 2 * t)
+    }
+
+    /// 0 far from a highlight, 1 on the highlight. The gaussian tail below `gateFloor` is cut off.
+    static func proximityGate(_ reach: Float) -> Float {
+        if reach <= gateFloor { return 0 }
+        if reach >= gateCeil { return 1 }
+        let t = (reach - gateFloor) / (gateCeil - gateFloor)
         return t * t * (3 - 2 * t)
     }
 
@@ -264,6 +276,10 @@ enum HaloOptics {
                 }
             }
             let diffused = referenceDiffuse(scene, width: width, height: height, scatter: Float(scatter))
+            let shadowLift = darkestDisplayLift(before: scene, after: diffused)
+            if shadowLift > 1 {
+                notes.append("\(name) darkest decile lifted \(shadowLift)")
+            }
             var far: Float = 0
             for y in 0..<6 {
                 for x in 0..<6 {
@@ -355,13 +371,38 @@ enum HaloOptics {
         return Float(clipped) / Float(count)
     }
 
+    /// Mean display-level change of the darkest tenth of the frame.
+    private static func darkestDisplayLift(before: [Float], after: [Float]) -> Float {
+        let count = before.count / 3
+        guard count > 0, after.count == before.count else { return 0 }
+        var levels = [(Float, Float)]()
+        levels.reserveCapacity(count)
+        for index in 0..<count {
+            let offset = index * 3
+            let source = GrainField.rec709(red: before[offset], green: before[offset + 1], blue: before[offset + 2])
+            let result = GrainField.rec709(red: after[offset], green: after[offset + 1], blue: after[offset + 2])
+            let sourceLevel = GrainField.encoded(min(max(source, 0), 1)) * 255
+            let resultLevel = GrainField.encoded(min(max(result, 0), 1)) * 255
+            levels.append((sourceLevel, resultLevel - sourceLevel))
+        }
+        levels.sort { $0.0 < $1.0 }
+        let take = max(1, count / 10)
+        var sum = Float(0)
+        for index in 0..<take {
+            sum += levels[index].1
+        }
+        return sum / Float(take)
+    }
+
     private static func referenceDiffuse(_ pixels: [Float], width: Int, height: Int, scatter: Float) -> [Float] {
         var weighted = [Float](repeating: 0, count: pixels.count)
         let count = width * height
+        var mask = [Float](repeating: 0, count: count)
         for index in 0..<count {
             let offset = index * 3
             let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
             let gain = emphasis(luma)
+            mask[index] = gain
             weighted[offset] = pixels[offset] * gain
             weighted[offset + 1] = pixels[offset + 1] * gain
             weighted[offset + 2] = pixels[offset + 2] * gain
@@ -383,6 +424,14 @@ enum HaloOptics {
             for index in 0..<count {
                 glow[index * 3 + channel] = tightShare * tight[index] + mediumShare * medium[index] + wideShare * wide[index]
             }
+        }
+        let reach = referenceBlur(mask, width: width, height: height, sigma: longest * Float(reachRadius))
+        for index in 0..<count {
+            let falloff = proximityGate(reach[index])
+            let offset = index * 3
+            glow[offset] *= falloff
+            glow[offset + 1] *= falloff
+            glow[offset + 2] *= falloff
         }
         var output = pixels
         for index in 0..<count {
