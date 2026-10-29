@@ -1108,10 +1108,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         #if DEBUG
         PHIUITest.measureOpenedEditor(source: referenceHEIF ?? source, session: session)
         #endif
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            processSession = session
+        // `present` is called on the main thread. The editor cover skips its animation so the first frame is not waiting on it.
+        MainActor.assumeIsolated {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                self.processSession = session
+            }
         }
     }
 

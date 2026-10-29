@@ -79,9 +79,14 @@ final class EditorCanvas: MTKView, MTKViewDelegate {
         do {
             try StillPipeline.render(fitted, to: drawable.texture, commandBuffer: commandBuffer)
         } catch is StillPipeline.ContextBusy {
+            // Return the drawable. Dropping it stalls the next frame.
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
             DispatchQueue.main.async { self.setNeedsDisplay() }
             return
         } catch {
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
             DispatchQueue.main.async { self.onPresented?(ticket) }
             return
         }

@@ -133,7 +133,17 @@ final class FinderToneView: MTKView, MTKViewDelegate {
         let fitted = Self.aspectFill(image, in: CGSize(width: drawable.texture.width, height: drawable.texture.height))
         do {
             try StillPipeline.render(fitted, to: drawable.texture, commandBuffer: commandBuffer)
+        } catch is StillPipeline.ContextBusy {
+            commandBuffer.present(drawable)
+            commandBuffer.addCompletedHandler { [weak self] _ in
+                self?.drawing = false
+                DispatchQueue.main.async { self?.setNeedsDisplay() }
+            }
+            commandBuffer.commit()
+            return
         } catch {
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
             drawing = false
             return
         }

@@ -946,7 +946,8 @@ enum AlbumImage {
     }
 
     /// Screen JPEG for the viewer. Built once from the display still and reused by the neighbor prefetch.
-    static func screenStill(_ shot: AlbumShot) -> UIImage? {
+    /// File-private: `AlbumShot` is private to this file.
+    fileprivate static func screenStill(_ shot: AlbumShot) -> UIImage? {
         let stem = shot.cacheStem
         if let cached = ShotCache.screenImage(stem: stem) {
             return framed(cached, aspect: shot.framed, zoom: shot.lensZoom)

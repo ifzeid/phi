@@ -950,8 +950,146 @@ def check_looks_move(failures):
                 failures.append(f"{title} red is not grey {out}")
 
 
+def applied_baseline(tag, trim=1.5):
+    if tag <= 0:
+        return tag
+    return tag - trim
+
+
+def scene_gain(baseline, ev, trim=1.5):
+    stops = applied_baseline(baseline, trim) + min(5.0, max(-5.0, ev))
+    return 2.0 ** stops
+
+
+def shoulder(x, knee=0.62, softness=0.55):
+    x = max(x, 0.0)
+    if x <= knee:
+        return x
+    span = x - knee
+    return min(knee + (1.0 - knee) * (span / (span + softness)), 1.0)
+
+
+def tone_map(x, toe=0.045):
+    x = max(x, 0.0)
+    if x <= 0:
+        toed = 0.0
+    elif x >= toe:
+        toed = x
+    else:
+        t = x / toe
+        toed = toe * t * t
+    return shoulder(toed)
+
+
+def add_bloom(base, glow, scatter):
+    extra = scatter * glow
+    if extra <= 0.0001:
+        return base
+    if base >= 1:
+        return base
+    return min(base + extra, 1.0)
+
+
+def snap_tenth(raw, lower=-5.0, upper=5.0):
+    clamped = min(upper, max(lower, raw))
+    scaled = clamped * 10.0
+    if scaled >= 0:
+        rounded = int(scaled + 0.5)
+    else:
+        rounded = -int(-scaled + 0.5)
+    return rounded / 10.0
+
+
+def tick_kind(index, fine_step=0.5, major_every=1.0):
+    major_count = max(int(round(major_every / fine_step)), 1)
+    half_count = major_count // 2
+    raw = index % major_count
+    slot = raw if raw >= 0 else raw + major_count
+    if slot == 0:
+        return "major"
+    if half_count > 0 and slot == half_count:
+        return "half"
+    return "fine"
+
+
+def crossed_mark(previous, next_value, every):
+    low = min(previous, next_value)
+    high = max(previous, next_value)
+    first = int(low // every)
+    last = int(high // every)
+    if first != last:
+        return True
+    on_mark = abs(next_value / every - round(next_value / every)) < 0.0001
+    was_mark = abs(previous / every - round(previous / every)) < 0.0001
+    return on_mark and not was_mark
+
+
+def check_zero_math(failures):
+    """Tone, EV gain, shoulder, halo mask, and ruler ticks. Mirrors the Swift formulas."""
+    if "processZeroBaselineTrim: Float = 1.5" not in RAW_SWIFT:
+        failures.append("baseline trim is not 1.5")
+    if "let toeEnd: Float = 0.045" not in RAW_SWIFT:
+        failures.append("filmic toe is not 0.045")
+    if "let knee: Float = 0.62" not in RAW_SWIFT or "let softness: Float = 0.55" not in RAW_SWIFT:
+        failures.append("shoulder knee or softness changed")
+    if "fineStep: 0.5" not in (ROOT / "Phi/Views/ProcessStillView.swift").read_text():
+        failures.append("editor ruler is not half-stop ticks")
+    if "lower: -5" not in (ROOT / "Phi/Views/ProcessStillView.swift").read_text():
+        failures.append("editor ruler does not start at -5")
+    if "upper: 5" not in (ROOT / "Phi/Views/ProcessStillView.swift").read_text():
+        failures.append("editor ruler does not end at +5")
+    finder = (ROOT / "Phi/Views/QuietFinderView.swift").read_text()
+    if "fineStep: 0.5" not in finder or "hapticEvery: 1" not in finder:
+        failures.append("finder EV ruler is not half-stop ticks with haptics on the stop")
+    if "max(-5" not in CAMERA or "min(5" not in CAMERA:
+        failures.append("finder bias is not clamped to ±5")
+    if tone_map(0) != 0 or tone_map(-0.2) != 0:
+        failures.append("black point is not 0")
+    if abs(tone_map(0.18) - 0.18) > 1e-9:
+        failures.append("mid gray moved")
+    high = shoulder(2)
+    if high >= 1 or high <= 0.62:
+        failures.append(f"shoulder did not roll 2 toward 1 ({high})")
+    # HEIF baseline 0 is not trimmed. A positive DNG tag loses 1.5 stops.
+    if abs(scene_gain(0, -1) - 0.5) > 1e-12:
+        failures.append("zero baseline was trimmed")
+    if abs(scene_gain(2, 0) - 2 ** 0.5) > 1e-12:
+        failures.append("EV 0 is not 1.5 under a +2 tag")
+    sample = 0.18
+    previous = None
+    for ev in (5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5):
+        mapped = tone_map(sample * scene_gain(0, ev))
+        if previous is not None and mapped >= previous - 1e-9:
+            failures.append(f"EV {ev} did not darken ({mapped} vs {previous})")
+        previous = mapped
+        if tone_map(0 * scene_gain(2.5, ev)) != 0:
+            failures.append(f"black lifted at EV {ev}")
+    # Finder bias of N stops then editor 0 matches editor N on an unbiased plate.
+    for stop in (-1.0, 0.4, 1.0):
+        post = tone_map(sample * scene_gain(1.2, stop))
+        finder = tone_map(sample * (2.0 ** stop) * scene_gain(1.2, 0))
+        if abs(post - finder) > 1e-12:
+            failures.append(f"finder EV {stop} is not editor EV {stop}")
+    if emphasis(0.2, 0.80, 0.96) != 0:
+        failures.append("halo mask is not zero below the knee")
+    if add_bloom(0.02, 0.0, 1.05) != 0.02:
+        failures.append("halo changed a pixel with no glow")
+    if add_bloom(0.02, 1e-6, 1.05) != 0.02:
+        failures.append("halo dust changed a far pixel")
+    if add_bloom(0.40, 0.10, 0.42) <= 0.40:
+        failures.append("halo did not add energy beside a highlight")
+    kinds = [tick_kind(index) for index in range(-10, 11)]
+    if len(kinds) != 21 or kinds.count("major") != 11 or kinds.count("half") != 10 or "fine" in kinds:
+        failures.append(f"±5 half-stop ruler ticks are {kinds}")
+    if not crossed_mark(0.9, 1.0, 1) or crossed_mark(0.1, 0.2, 1):
+        failures.append("haptic marks are not the whole stops")
+    if snap_tenth(0.14) != 0.1 or snap_tenth(0.16) != 0.2 or snap_tenth(9) != 5 or snap_tenth(-9) != -5:
+        failures.append("EV snap is not 0.1 inside ±5")
+
+
 def main():
     failures = []
+    check_zero_math(failures)
     check_effects(failures)
     check_capture_path(failures)
     for title, recipe in LOOKS.items():
