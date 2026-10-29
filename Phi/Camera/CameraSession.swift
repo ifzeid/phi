@@ -81,6 +81,10 @@ final class CameraSession: ObservableObject {
     private var processedCodec: ProcessedCodec = .heic
     private var proRawFellBack = false
     private var photoAspect: PhotoAspect = .threeByFour
+    /// True from the moment a still is committed until `didFinishCaptureFor`. Session reconfiguration waits.
+    private var captureInFlight = false
+    /// The 50mm path drops to zoom 1 for a full-frame RAW. The viewfinder zoom is put back only after capture finishes.
+    private var framingDeferred = false
     /// The preview's rotation coordinator is created on the main thread. Suspend it before swapping inputs.
     let previewAnchor = PreviewAnchor()
 
@@ -254,6 +258,11 @@ final class CameraSession: ObservableObject {
 
     private func commitLens(_ stop: FocalStop, generation: Int) {
         guard lensIsCurrent(generation) else { return }
+        if captureInFlight {
+            framingDeferred = true
+            log.info("lens change waits until capture finishes")
+            return
+        }
         do {
             try performSelect(stop)
             logActiveCamera("lens")
@@ -619,15 +628,54 @@ final class CameraSession: ObservableObject {
     }
 
     /// After a full-frame RAW capture, put the viewfinder back on the cropped framing.
+    /// If a still is still in flight, the swap waits for `noteCaptureFinished`.
     func restoreFinderFraming() {
-        let stopID = selectedStopID
-        DispatchQueue.main.async {
-            self.previewAnchor.suspend()
-            self.sessionQueue.async {
-                if let stopID, let stop = self.lensStops.first(where: { $0.id == stopID }) {
-                    try? self.performSelect(stop)
+        sessionQueue.async {
+            if self.captureInFlight {
+                self.framingDeferred = true
+                self.log.info("finder restore deferred until capture finishes")
+                return
+            }
+            self.applyFinderRestore()
+        }
+    }
+
+    /// `didFinishCaptureFor` calls this. The preview stays on the capture camera until then.
+    func noteCaptureFinished() {
+        sessionQueue.async {
+            let deferred = self.framingDeferred
+            self.captureInFlight = false
+            self.framingDeferred = false
+            guard deferred else { return }
+            self.applyFinderRestore()
+        }
+    }
+
+    /// Session-queue only. Puts the selected stop back and reattaches the preview coordinator.
+    private func applyFinderRestore() {
+        guard session.isRunning else {
+            log.error("finder restore skipped; session is not running")
+            previewAnchor.resume(device: device)
+            return
+        }
+        if let stopID = selectedStopID, let stop = lensStops.first(where: { $0.id == stopID }) {
+            do {
+                try performSelect(stop)
+                log.info("finder framing restored to \(stop.millimeters)mm")
+            } catch {
+                log.error("finder restore failed \(error.localizedDescription, privacy: .public)")
+                DispatchQueue.main.async {
+                    self.statusMessage = "取景没有回到焦段。"
                 }
-                self.previewAnchor.resume(device: self.device)
+            }
+        }
+        let active = device
+        previewAnchor.resume(device: active)
+        DispatchQueue.main.async {
+            self.previewEpoch += 1
+            if let active {
+                self.activeDeviceID = active.uniqueID
+                self.activeLensMillimeters = Self.framedMillimeters(active)
             }
         }
     }
@@ -659,27 +707,51 @@ final class CameraSession: ObservableObject {
                 }
                 return
             }
+            guard self.captureInFlight == false else {
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return
+            }
             let switching = self.needsPhysicalRawSwitch() || self.needsStillFormatWork()
             let shoot = {
                 self.settleRawCamera()
                 self.logActiveCamera("capture")
-                let prepared = self.makeSettings(flash: flash)
+                guard let prepared = self.makeSettings(flash: flash) else {
+                    self.captureInFlight = false
+                    self.log.error("photo settings were not legal for the active format")
+                    if switching {
+                        self.applyFinderRestore()
+                        self.framingDeferred = false
+                    }
+                    DispatchQueue.main.async {
+                        self.statusMessage = "这一档暂时不能拍照。"
+                        completion(false)
+                    }
+                    return
+                }
                 if prepared.usingRaw == false, self.processMode.wantsRaw, self.photoAspect.allowsRaw {
                     DispatchQueue.main.async {
                         self.statusMessage = "这一档没有 Bayer RAW，不会把系统成片当成 PHI 显影保存。"
                     }
                 }
                 note(prepared.usingRaw, prepared.codecName)
+                self.captureInFlight = true
+                if switching {
+                    self.framingDeferred = true
+                    self.log.info("capture in flight; finder restore waits until the still finishes")
+                }
                 self.photoOutput.capturePhoto(with: prepared.settings, delegate: delegate)
                 self.publishDeliveryLabel()
-                if switching {
-                    self.previewAnchor.resume(device: self.device)
-                }
                 DispatchQueue.main.async {
                     completion(true)
                 }
             }
+            // Mark the capture before the main-thread hop so a lens tap cannot beginConfiguration
+            // while the still format is being swapped, or while the photo is in flight.
+            self.captureInFlight = true
             if switching {
+                self.framingDeferred = true
                 DispatchQueue.main.async {
                     self.previewAnchor.suspend()
                     self.sessionQueue.async(execute: shoot)
@@ -888,11 +960,17 @@ final class CameraSession: ObservableObject {
         }
     }
 
-    private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String) {
-        alignPhotoDimensions()
+    private func makeSettings(flash: AVCaptureDevice.FlashMode) -> (settings: AVCapturePhotoSettings, usingRaw: Bool, codecName: String)? {
         applyProRAWSwitch()
-        let rawPixel = rawPixelFormat()
-        let chosenCodec = processedPhotoCodec()
+        let wantsRaw = processMode.wantsRaw && photoAspect.allowsRaw && rawSuppressed == false
+        // Dimensions first. A size the new format does not list makes `capturePhoto` throw,
+        // and asking for RAW before the size is legal clears `availableRawPhotoPixelFormatTypes`.
+        let dimensions = commitLegalOutputDimensions(wantsRaw: wantsRaw)
+        let rawPixel = legalRawPixelFormat()
+        guard let chosenCodec = legalProcessedCodec() else {
+            log.error("photo output has no processed codec")
+            return nil
+        }
         let processed: [String: Any] = [AVVideoCodecKey: chosenCodec.codec]
         let settings: AVCapturePhotoSettings
         // A RAW asset still needs Apple's processed file as `.photo`. Photos rejects a DNG with no primary.
@@ -902,11 +980,17 @@ final class CameraSession: ObservableObject {
         } else {
             settings = AVCapturePhotoSettings(format: processed)
         }
-        let dimensions = photoOutput.maxPhotoDimensions
-        if dimensions.width > 0, dimensions.height > 0 {
+        if let dimensions {
+            let supported = device?.activeFormat.supportedMaxPhotoDimensions ?? []
+            let listed = supported.isEmpty || supported.contains { photoDimensionsEqual($0, dimensions) }
+            guard listed else {
+                log.error("refusing maxPhotoDimensions \(dimensions.width)x\(dimensions.height); not on the active format")
+                return nil
+            }
             settings.maxPhotoDimensions = dimensions
         }
-        settings.photoQualityPrioritization = .quality
+        // `.quality` throws when the active format's max is lower. Use the highest it actually allows.
+        settings.photoQualityPrioritization = photoOutput.maxPhotoQualityPrioritization
         let shotDimensions = settings.maxPhotoDimensions
         log.info("photo settings quality raw \(rawPixel != nil) codec \(chosenCodec.name, privacy: .public) dims \(shotDimensions.width)x\(shotDimensions.height)")
         if photoOutput.supportedFlashModes.contains(flash) {
@@ -925,6 +1009,33 @@ final class CameraSession: ObservableObject {
             if self.formatLabel != label { self.formatLabel = label }
         }
         return (settings, usingRaw, codecName)
+    }
+
+    /// RAW type the output lists right now. A stale type from the previous format makes `capturePhoto` throw.
+    private func legalRawPixelFormat() -> OSType? {
+        guard let raw = rawPixelFormat() else { return nil }
+        guard photoOutput.availableRawPhotoPixelFormatTypes.contains(raw) else {
+            rawSuppressed = true
+            log.error("RAW pixel format \(raw) is not in availableRawPhotoPixelFormatTypes")
+            return nil
+        }
+        return raw
+    }
+
+    /// Codec the output lists. HEIC falls back to JPEG, then to whatever the format still offers.
+    private func legalProcessedCodec() -> (codec: AVVideoCodecType, name: String)? {
+        let codecs = photoOutput.availablePhotoCodecTypes
+        if processedCodec == .heic,
+           let hevc = codecs.first(where: { $0 == .hevc || $0.rawValue.caseInsensitiveCompare("heic") == .orderedSame }) {
+            return (hevc, "HEIC")
+        }
+        if let jpeg = codecs.first(where: { $0 == .jpeg }) {
+            return (jpeg, "JPEG")
+        }
+        if let first = codecs.first {
+            return (first, first.rawValue)
+        }
+        return nil
     }
 
     /// HEIC stills use the HEVC photo codec. `AVVideoCodecType` has no `.heic` case; that name is `AVFileType.heic`.
@@ -1316,7 +1427,9 @@ final class CameraSession: ObservableObject {
                 return true
             }
         }
-        photoOutput.maxPhotoDimensions = previous
+        if let kept = sizes.first(where: { photoDimensionsEqual($0, previous) }) ?? sizes.first {
+            photoOutput.maxPhotoDimensions = kept
+        }
         return rawTypes(matching: match).isEmpty == false
     }
 
@@ -1401,17 +1514,47 @@ final class CameraSession: ObservableObject {
     }
 
     /// The processed photo is scaled down to `maxPhotoDimensions`. The DNG stays at the format's full readout.
-    /// Those two sizes have to be the same or Photos returns invalidResource. Pick a ~12MP format, then use its largest size for both.
-    private func alignPhotoDimensions() {
-        guard let device else { return }
-        guard let match = Self.largestPhotoDimensions(device.activeFormat) else { return }
-        let previous = photoOutput.maxPhotoDimensions
-        if previous.width == match.width, previous.height == match.height { return }
-        photoOutput.maxPhotoDimensions = match
-        // The largest size can drop Bayer. Keep the size the RAW search already proved.
-        if processMode.wantsRaw, photoAspect.allowsRaw, bayerTypes().isEmpty, previous.width > 0 {
-            photoOutput.maxPhotoDimensions = previous
+    /// Those two sizes have to be one the active format lists, or `capturePhoto` throws and Photos returns invalidResource.
+    /// Crop stops walk from the largest size so a 2× crop of the full-frame RAW stays detailed.
+    private func commitLegalOutputDimensions(wantsRaw: Bool) -> CMVideoDimensions? {
+        guard let device else { return nil }
+        let supported = device.activeFormat.supportedMaxPhotoDimensions
+        if supported.isEmpty {
+            let current = photoOutput.maxPhotoDimensions
+            guard current.width > 0, current.height > 0 else { return nil }
+            return current
         }
+        let ranked = supported.sorted { lhs, rhs in
+            Int(lhs.width) * Int(lhs.height) > Int(rhs.width) * Int(rhs.height)
+        }
+        let previous = photoOutput.maxPhotoDimensions
+        if wantsRaw {
+            for size in ranked {
+                photoOutput.maxPhotoDimensions = size
+                if rawPixelFormat() != nil {
+                    if photoDimensionsEqual(size, previous) == false {
+                        log.info("maxPhotoDimensions \(previous.width)x\(previous.height) -> \(size.width)x\(size.height) for RAW")
+                    }
+                    return size
+                }
+            }
+            let fallback = ranked.first { photoDimensionsEqual($0, previous) } ?? ranked[0]
+            photoOutput.maxPhotoDimensions = fallback
+            rawSuppressed = true
+            log.error("no supported maxPhotoDimensions kept a RAW format; shooting processed at \(fallback.width)x\(fallback.height)")
+            return fallback
+        }
+        if let match = ranked.first(where: { photoDimensionsEqual($0, previous) }) {
+            return match
+        }
+        let largest = ranked[0]
+        photoOutput.maxPhotoDimensions = largest
+        log.info("maxPhotoDimensions \(previous.width)x\(previous.height) is not on the active format; using \(largest.width)x\(largest.height)")
+        return largest
+    }
+
+    private func photoDimensionsEqual(_ lhs: CMVideoDimensions, _ rhs: CMVideoDimensions) -> Bool {
+        lhs.width == rhs.width && lhs.height == rhs.height
     }
 
     private var selectedIsCrop: Bool {

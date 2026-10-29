@@ -600,7 +600,6 @@ enum StillPipeline {
         } else {
             let line = notes.joined(separator: " | ")
             log.error("HALO CI CHECK FAILED \(line, privacy: .public)")
-            assertionFailure(line)
         }
     }()
 

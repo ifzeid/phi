@@ -558,7 +558,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 pending.preview = image
             }
         }
-        if pending.preview == nil, let preview = photo.previewCGImageRepresentation() ?? photo.cgImageRepresentation() {
+        // The embedded preview is enough for the shutter thumbnail. The full-frame image
+        // representation decodes the whole still, which on a 48MP RAW is a second bitmap.
+        if pending.preview == nil, let preview = photo.previewCGImageRepresentation() {
             pending.preview = UIImage(cgImage: preview)
         }
     }
@@ -571,8 +573,10 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let snapshot = pending
         pending = PendingCapture()
         pendingLock.unlock()
+        // The still is finished. Putting the 50mm crop back any earlier reconfigures the session
+        // while this capture is still in flight.
         DispatchQueue.main.async {
-            self.camera.restoreFinderFraming()
+            self.camera.noteCaptureFinished()
             self.finish(snapshot)
         }
     }
@@ -651,9 +655,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 ))
             }
             let keptRaw = files.contains { $0.filename.lowercased().hasSuffix(".dng") }
-            let sourceThumb = preview ?? originalProcessed.flatMap { UIImage(data: $0) }
-            let thumbImage = sourceThumb.flatMap { image -> UIImage? in
-                guard let cg = StillPipeline.normalizedCGImage(from: image) else { return image }
+            let thumbImage = preview.flatMap { image -> UIImage? in
+                let capped = Self.downsampledPreview(image, maxSide: 960)
+                guard let cg = StillPipeline.normalizedCGImage(from: capped) else { return capped }
                 return UIImage(cgImage: aspect.cropped(LensCrop.cropped(cg, zoom: lensZoom)))
             }
             let thumb = thumbImage.map { StillArchive.thumbnail(from: $0) }
@@ -718,6 +722,31 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
             }
         }
+    }
+
+    /// Shrink a shutter preview before the 2× crop. Drawing a full-frame still here keeps a second bitmap alive
+    /// while the session switches back to the viewfinder zoom.
+    private static func downsampledPreview(_ image: UIImage, maxSide: CGFloat) -> UIImage {
+        guard let cg = image.cgImage else { return image }
+        let longest = max(cg.width, cg.height)
+        guard CGFloat(longest) > maxSide, longest > 0 else { return image }
+        let ratio = maxSide / CGFloat(longest)
+        let width = max(1, Int((CGFloat(cg.width) * ratio).rounded(.down)))
+        let height = max(1, Int((CGFloat(cg.height) * ratio).rounded(.down)))
+        let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        context.interpolationQuality = .medium
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let scaled = context.makeImage() else { return image }
+        return UIImage(cgImage: scaled)
     }
 
     private func saveToPhotos(

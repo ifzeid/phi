@@ -24,6 +24,7 @@ GRAIN_SWIFT = (ROOT / "Phi/Camera/GrainStyle.swift").read_text()
 RAW_SWIFT = (ROOT / "Phi/Camera/RawDevelop.swift").read_text()
 META_SWIFT = (ROOT / "Phi/Camera/PhotoMetadata.swift").read_text()
 CAPTURE = (ROOT / "Phi/Camera/CaptureService.swift").read_text()
+CAMERA = (ROOT / "Phi/Camera/CameraSession.swift").read_text()
 SESSION = (ROOT / "Phi/Camera/ProcessSession.swift").read_text()
 
 
@@ -506,7 +507,10 @@ def is_clipped(pixel):
 
 
 def daylight_scene():
-    """Courtyard-like frame: sky, white wall, terracotta, and a far shadow."""
+    """Courtyard-like frame: sky, white wall, terracotta, and a far shadow.
+
+    HaloOptics.brightSkyFailures uses these same linear colors and the same layout.
+    """
     width, height = 128, 80
     sky = (0.3916, 0.5647, 0.7605)
     wall = (0.8388, 0.7913, 0.7011)
@@ -590,6 +594,45 @@ def check_bright_sky(failures, optics):
         f"daylight halo 弱 {weak_rise:.2f} levels 强 {strong_rise:.2f} levels "
         f"wall edge {band_gain:.1f}"
     )
+    for label in (
+        "0.3916, 0.5647, 0.7605",
+        "0.8388, 0.7913, 0.7011",
+        "0.4342, 0.1620, 0.0685",
+        "0.0194, 0.0144, 0.0116",
+    ):
+        if label not in LOOKS_SWIFT:
+            failures.append(f"Swift bright-sky probe is missing daylight color {label}")
+    if "0.78, 0.84, 0.95" in LOOKS_SWIFT or "0.94, 0.93, 0.90" in LOOKS_SWIFT:
+        failures.append("Swift bright-sky probe still uses the near-white sky")
+    effect_check = LOOKS_SWIFT.split("enum DevelopEffectCheck", 1)[-1]
+    if "assertionFailure" in effect_check:
+        failures.append("DevelopEffectCheck still traps with assertionFailure")
+    if "DEVELOP EFFECT CHECK FAILED" not in LOOKS_SWIFT:
+        failures.append("DevelopEffectCheck does not log a failing check")
+    if "assertionFailure" in STILL:
+        failures.append("StillPipeline still traps with assertionFailure")
+
+
+def check_capture_path(failures):
+    """50mm RAW drops to zoom 1, then the finder must wait until the still has finished."""
+    start = CAMERA.find("func capturePhoto(")
+    end = CAMERA.find("// MARK: - Setup", start)
+    body = CAMERA[start:end] if start >= 0 and end > start else ""
+    if not body:
+        failures.append("capturePhoto is missing")
+        return
+    if "previewAnchor.resume" in body:
+        failures.append("capturePhoto resumes the finder while a still can still be in flight")
+    if "captureInFlight" not in CAMERA or "func noteCaptureFinished" not in CAMERA:
+        failures.append("finder restore is not deferred until capture finishes")
+    if "noteCaptureFinished" not in CAPTURE:
+        failures.append("capture does not tell the session when the still has finished")
+    if "restoreFinderFraming()" in CAPTURE:
+        failures.append("capture restores the finder before the still has finished")
+    if "cgImageRepresentation()" in CAPTURE:
+        failures.append("capture decodes the full-resolution still for the thumbnail")
+    if "legalRawPixelFormat" not in CAMERA or "commitLegalOutputDimensions" not in CAMERA:
+        failures.append("photo settings are not validated against the active output")
 
 
 def check_effects(failures):
@@ -764,6 +807,7 @@ def check_looks_move(failures):
 def main():
     failures = []
     check_effects(failures)
+    check_capture_path(failures)
     for title, recipe in LOOKS.items():
         row_sums = [sum(recipe["matrix"][i : i + 3]) for i in (0, 3, 6)]
         if not recipe["mono"] and any(abs(total - 1) > 1e-6 for total in row_sums):

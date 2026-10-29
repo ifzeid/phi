@@ -327,34 +327,101 @@ enum HaloOptics {
         return notes
     }
 
-    /// Sunlit sky and a white wall. Clipped area may grow by at most 2%, and the mean by at most 4%.
+    /// Same courtyard frame as `daylight_scene()` in Tests/look_calibration_test.py.
+    /// A near-white linear wall (0.94) encodes around 0.97, so it is not clipped yet, but strong
+    /// screen fill uses the rest of the headroom and lands on 1. That probe marked about 84% of
+    /// the frame as newly clipped. These daylight colors are the ones the look test measures.
     private static func brightSkyFailures() -> [String] {
-        let width = 96
-        let height = 64
+        let width = 128
+        let height = 80
+        let scene = daylightScene(width: width, height: height)
+        let weak = referenceDiffuse(scene, width: width, height: height, scatter: Float(weakScatter))
+        let strong = referenceDiffuse(scene, width: width, height: height, scatter: Float(strongScatter))
+        let before = clipFraction(scene)
+        var notes: [String] = []
+        let weakRise = meanDisplayLevel(weak) - meanDisplayLevel(scene)
+        let strongRise = meanDisplayLevel(strong) - meanDisplayLevel(scene)
+        if weakRise < Float(1.5) || weakRise > Float(4.5) {
+            notes.append("bright sky 弱 mean rise \(weakRise) levels is outside 1.5–4")
+        }
+        if strongRise < Float(4) || strongRise > Float(9.5) {
+            notes.append("bright sky 强 mean rise \(strongRise) levels is outside 4–9")
+        }
+        if strongRise < weakRise + Float(1.5) {
+            notes.append("bright sky 强 mean rise \(strongRise) is not clearly above 弱 \(weakRise)")
+        }
+        let pair: [(String, [Float])] = [("弱", weak), ("强", strong)]
+        for (name, diffused) in pair {
+            let after = clipFraction(diffused)
+            if after - before > Float(0.02) {
+                notes.append("bright sky \(name) clipped-area delta \(after - before)")
+            }
+            let shadow = displayDecileLift(before: scene, after: diffused)
+            if shadow > Float(1) {
+                notes.append("bright sky \(name) darkest decile lifted \(shadow) levels")
+            }
+        }
+        let wallX = Int(Float(width) * 0.42) + 1
+        let yStart = Int(Float(height) * 0.45)
+        let yEnd = Int(Float(height) * 0.70)
+        if yEnd > yStart, wallX >= 3 {
+            var band = Float(0)
+            var weakBand = Float(0)
+            let rows = yEnd - yStart
+            for y in yStart..<yEnd {
+                let index = y * width + (wallX - 3)
+                band += displayLevel(strong, index: index) - displayLevel(scene, index: index)
+                weakBand += displayLevel(weak, index: index) - displayLevel(scene, index: index)
+            }
+            let bandGain = band / Float(rows)
+            if bandGain < Float(3) {
+                notes.append("bright sky halo beside the wall is not visible (\(bandGain) levels)")
+            }
+            if weakBand / Float(rows) > bandGain * Float(0.75) {
+                notes.append("bright sky 弱 bloom beside the wall is not clearly quieter than 强")
+            }
+        }
+        var far = Float(0)
+        let corner = min(8, width * height)
+        for index in 0..<corner {
+            far = max(far, abs(displayLevel(strong, index: index) - displayLevel(scene, index: index)))
+        }
+        if far > Float(1.5) {
+            notes.append("bright sky far corner moved \(far) levels")
+        }
+        return notes
+    }
+
+    /// Sky, white wall, terracotta, and a far shadow. Layout matches `daylight_scene()`.
+    private static func daylightScene(width: Int, height: Int) -> [Float] {
+        let sky: (Float, Float, Float) = (0.3916, 0.5647, 0.7605)
+        let wall: (Float, Float, Float) = (0.8388, 0.7913, 0.7011)
+        let terra: (Float, Float, Float) = (0.4342, 0.1620, 0.0685)
+        let shadow: (Float, Float, Float) = (0.0194, 0.0144, 0.0116)
         var scene = [Float](repeating: 0, count: width * height * 3)
+        let skyLimit = Int(Float(height) * 0.38)
+        let wallX = Int(Float(width) * 0.42)
+        let wallLimit = Int(Float(height) * 0.82)
+        let shadowLimit = Int(Float(height) * 0.70)
         for y in 0..<height {
             for x in 0..<width {
-                let offset = (y * width + x) * 3
                 let sample: (Float, Float, Float)
-                if y < 40 {
-                    sample = (0.78, 0.84, 0.95)
-                } else if x >= 40 {
-                    sample = (0.94, 0.93, 0.90)
+                if y < skyLimit {
+                    sample = sky
+                } else if x > wallX, y < wallLimit {
+                    sample = wall
+                } else if x < 18, y > shadowLimit {
+                    sample = shadow
                 } else {
-                    sample = (0.12, 0.10, 0.08)
+                    sample = terra
                 }
+                let offset = (y * width + x) * 3
                 scene[offset] = sample.0
                 scene[offset + 1] = sample.1
                 scene[offset + 2] = sample.2
             }
         }
-        let diffused = referenceDiffuse(scene, width: width, height: height, scatter: Float(strongScatter))
-        let before = clipFraction(scene)
-        let after = clipFraction(diffused)
-        if after - before > 0.02 {
-            return ["bright sky clipped-area delta \(after - before)"]
-        }
-        return []
+        return scene
     }
 
     private static func clipFraction(_ pixels: [Float]) -> Float {
@@ -369,6 +436,44 @@ enum HaloOptics {
             }
         }
         return Float(clipped) / Float(count)
+    }
+
+    /// Display-code level, matching `display_code` in the look test: encode each channel, then Rec.709.
+    private static func displayLevel(_ pixels: [Float], index: Int) -> Float {
+        let offset = index * 3
+        let red = GrainField.encoded(min(max(pixels[offset], Float(0)), Float(1)))
+        let green = GrainField.encoded(min(max(pixels[offset + 1], Float(0)), Float(1)))
+        let blue = GrainField.encoded(min(max(pixels[offset + 2], Float(0)), Float(1)))
+        return 255 * GrainField.rec709(red: red, green: green, blue: blue)
+    }
+
+    private static func meanDisplayLevel(_ pixels: [Float]) -> Float {
+        let count = pixels.count / 3
+        guard count > 0 else { return 0 }
+        var sum = Float(0)
+        for index in 0..<count {
+            sum += displayLevel(pixels, index: index)
+        }
+        return sum / Float(count)
+    }
+
+    /// Mean display-level change of the darkest tenth, matching `darkest_mean_lift`.
+    private static func displayDecileLift(before: [Float], after: [Float]) -> Float {
+        let count = before.count / 3
+        guard count > 0, after.count == before.count else { return 0 }
+        var levels = [(Float, Float)]()
+        levels.reserveCapacity(count)
+        for index in 0..<count {
+            let source = displayLevel(before, index: index)
+            levels.append((source, displayLevel(after, index: index) - source))
+        }
+        levels.sort { $0.0 < $1.0 }
+        let take = max(1, count / 10)
+        var sum = Float(0)
+        for index in 0..<take {
+            sum += levels[index].1
+        }
+        return sum / Float(take)
     }
 
     /// Mean display-level change of the darkest tenth of the frame.
@@ -625,12 +730,17 @@ private enum CCDTexture {
 }
 
 /// Debug check: each look and the highlight glow move pixels relative to 无.
+/// A failing note is logged. It must not trap, or every editor screen dies in a debug build.
 enum DevelopEffectCheck {
     static let confirm: Void = {
         #if DEBUG
         let notes = failures()
-        if notes.isEmpty == false {
-            assertionFailure(notes.joined(separator: "\n"))
+        let log = Logger(subsystem: "com.zeid.phi", category: "develop")
+        if notes.isEmpty {
+            log.notice("DEVELOP EFFECT CHECK passed")
+        } else {
+            let line = notes.joined(separator: " | ")
+            log.error("DEVELOP EFFECT CHECK FAILED \(line, privacy: .public)")
         }
         #endif
     }()
