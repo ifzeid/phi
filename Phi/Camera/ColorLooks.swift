@@ -1,31 +1,49 @@
 import CoreImage
+import os
 
 /// Fixed develop looks. No brand names, no intensity controls.
 /// Input and output are in the linear working space. 无 is identity: no base curve.
-/// A selected look's cube runs in a temporary gamma so it is not crushed, then the image is linear again.
+/// A look's cube is authored in display-encoded P3. `CIColorCubeWithColorSpace` converts
+/// into that space, applies the lattice, and converts back. A plain `CIColorCube` in the
+/// extended-linear working space leaves the lattice unused, so the look is a no-op.
 enum ColorLooks {
     static func apply(_ image: CIImage, look: ColorLook, halo: HaloLevel) -> CIImage {
-        var current = image
-        if look != .none {
-            current = toPerceptual(current)
-            switch look {
-            case .none:
-                break
-            case .positive:
-                current = grade(current, LookCubes.positive)
-            case .negative:
-                current = grade(current, LookCubes.negative)
-            case .mono:
-                current = grade(current, LookCubes.mono)
-            case .ccd:
-                current = ccd(current)
-            }
-            current = toLinear(current)
+        withHalo(graded(image, look: look), level: halo)
+    }
+
+    static func graded(_ image: CIImage, look: ColorLook) -> CIImage {
+        switch look {
+        case .none:
+            return image
+        case .positive:
+            return applyCube(image, recipe: .positive, data: LookCubes.positive)
+        case .negative:
+            return applyCube(image, recipe: .negative, data: LookCubes.negative)
+        case .mono:
+            return applyCube(image, recipe: .mono, data: LookCubes.mono)
+        case .ccd:
+            return ccd(image)
         }
-        if halo != .off {
-            current = highlightDiffusion(current, level: halo)
-        }
-        return current
+    }
+
+    static func withHalo(_ image: CIImage, level: HaloLevel) -> CIImage {
+        guard level != .off else { return image }
+        return StillPipeline.addGlow(image, glow: unscaledGlow(image), scatter: level.scatter)
+    }
+
+    /// Blur of `rgb * emphasis(luma)`, before the weak/strong gain. Cached by the preview.
+    static func unscaledGlow(_ image: CIImage) -> CIImage {
+        let extent = image.extent
+        let longest = Swift.max(extent.width, extent.height)
+        guard longest > 2 else { return image }
+        let weighted = emphasize(image)
+        let tight = StillPipeline.pyramidBlur(weighted, sigma: longest * HaloOptics.tightRadius, extent: extent)
+        let medium = StillPipeline.pyramidBlur(weighted, sigma: longest * HaloOptics.mediumRadius, extent: extent)
+        guard let scales = CIFilter(name: "CIDissolveTransition") else { return tight }
+        scales.setValue(tight, forKey: kCIInputImageKey)
+        scales.setValue(medium, forKey: kCIInputTargetImageKey)
+        scales.setValue(Double(1 - HaloOptics.tightMix), forKey: kCIInputTimeKey)
+        return (scales.outputImage ?? tight).cropped(to: extent)
     }
 
     private static func toPerceptual(_ image: CIImage) -> CIImage {
@@ -36,20 +54,87 @@ enum ColorLooks {
         image.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
     }
 
-    /// The cube is `LookRecipe.apply` in this same perceptual space. It is not a second grade.
-    private static func grade(_ image: CIImage, _ cube: Data) -> CIImage {
-        image.applyingFilter("CIColorCube", parameters: [
+    /// Display-P3 lattice. Falls back to `LookRecipe.apply` on pixels if the GPU cube does not grade.
+    private static func applyCube(_ image: CIImage, recipe: LookRecipe, data: Data) -> CIImage {
+        if gpuCubeBroken {
+            return StillPipeline.gradePixels(image, recipe: recipe)
+        }
+        return image.applyingFilter("CIColorCubeWithColorSpace", parameters: [
             "inputCubeDimension": NSNumber(value: LookRecipe.cubeDimension),
-            "inputCubeData": cube
+            "inputCubeData": data,
+            "inputColorSpace": StillPipeline.displayP3
         ])
+    }
+
+    /// True when a saturated red is still saturated after the mono cube.
+    private static let gpuCubeBroken: Bool = {
+        let broken = probeCube()
+        if broken {
+            Logger(subsystem: "com.zeid.phi", category: "develop")
+                .error("color cube did not grade; applying the recipe on pixels")
+        }
+        return broken
+    }()
+
+    private static func probeCube() -> Bool {
+        let width = 4
+        let height = 4
+        let space = StillPipeline.displayP3
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return true }
+        let fill = CGColor(colorSpace: space, components: [0.84, 0.10, 0.08, 1])
+            ?? CGColor(srgbRed: 0.84, green: 0.10, blue: 0.08, alpha: 1)
+        ctx.setFillColor(fill)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let cg = ctx.makeImage(), let source = rgba(cg) else { return true }
+        guard source.0 > source.1 + 40 else { return true }
+        let input = CIImage(cgImage: cg, options: [CIImageOption.colorSpace: space])
+        let graded = input.applyingFilter("CIColorCubeWithColorSpace", parameters: [
+            "inputCubeDimension": NSNumber(value: LookRecipe.cubeDimension),
+            "inputCubeData": LookCubes.mono,
+            "inputColorSpace": space
+        ])
+        guard let out = StillPipeline.displayImage(graded), let pixel = rgba(out) else { return true }
+        let spread = max(pixel.0, pixel.1, pixel.2) - min(pixel.0, pixel.1, pixel.2)
+        return spread > 10
+    }
+
+    private static func rgba(_ image: CGImage) -> (Int, Int, Int)? {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let drew = pixel.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            guard let ctx = CGContext(
+                data: base,
+                width: 1,
+                height: 1,
+                bitsPerComponent: 8,
+                bytesPerRow: 4,
+                space: StillPipeline.displayP3,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            ctx.interpolationQuality = .none
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard drew else { return nil }
+        return (Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
     }
 
     /// Fixed CCD still. Color, shoulder, and texture live here. `CIRAWFilter` noise reduction,
     /// sharpness, detail, and moiré stay at 0. The small sharpen below belongs only to this look.
     private static func ccd(_ image: CIImage) -> CIImage {
-        let colored = grade(image, LookCubes.ccd)
-        let crisp = sharpenedDownsample(colored)
-        return shadowTexture(crisp)
+        let colored = applyCube(image, recipe: .ccd, data: LookCubes.ccd)
+        // Texture samples were built for perceptual code values. The cube itself is already
+        // back in linear light, so this round trip does not wrap the grade.
+        let perceptual = toPerceptual(colored)
+        return toLinear(shadowTexture(sharpenedDownsample(perceptual)))
     }
 
     /// About 8MP of softness on a full frame, then a small-radius edge. Previews already under 8MP only get a light pass.
@@ -131,56 +216,221 @@ enum ColorLooks {
         return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
-    /// Physical highlight diffusion in linear light. A fraction of every tone, weighted toward
-    /// highlights, is lifted out of the sharp image and returned as a tight bloom plus a wide veil.
-    /// Glow colour is the source colour. Edges are clamped, so there is no vignette.
-    /// `out = (1-k)*img + k*multiscaleGaussian(img * emphasis)`, then the glow is scaled so its
-    /// mean luma matches the image. A flat field stays put. Runs after the look is linear again, before grain.
-    private static func highlightDiffusion(_ image: CIImage, level: HaloLevel) -> CIImage {
-        let extent = image.extent
-        let longest = Swift.max(extent.width, extent.height)
-        guard level != .off, longest > 2 else { return image }
-        let weighted = image.applyingFilter("CIColorCube", parameters: [
-            "inputCubeDimension": NSNumber(value: HaloWeight.dimension),
-            "inputCubeData": HaloWeight.data
+    /// `rgb * emphasis(luma)` in linear light. The same factor on every channel, so hue is kept.
+    /// Below the knee the factor is 0, so a flat midtone blurs to black and adds nothing.
+    private static func emphasize(_ image: CIImage) -> CIImage {
+        let weights = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
+        let gray = image.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": weights,
+            "inputGVector": weights,
+            "inputBVector": weights,
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
         ])
-        let source = weighted.clampedToExtent()
-        let tight = source.applyingGaussianBlur(sigma: longest * HaloOptics.tightRadius).cropped(to: extent)
-        let wide = source.applyingGaussianBlur(sigma: longest * HaloOptics.wideRadius).cropped(to: extent)
-        guard let scales = CIFilter(name: "CIDissolveTransition") else { return image }
-        scales.setValue(tight, forKey: kCIInputImageKey)
-        scales.setValue(wide, forKey: kCIInputTargetImageKey)
-        scales.setValue(Double(1 - HaloOptics.tightMix), forKey: kCIInputTimeKey)
-        let glow = (scales.outputImage ?? wide).cropped(to: extent)
-        return StillPipeline.applyingDiffusion(image, glow: glow, scatter: level.scatter)
+        let knee = CGFloat(HaloOptics.knee)
+        let span = CGFloat(1) - knee
+        let scale = span == 0 ? CGFloat(0) : 1 / span
+        let bias = span == 0 ? CGFloat(0) : -knee / span
+        let shifted = gray.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: scale, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: scale, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: scale, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0)
+        ]).applyingFilter("CIColorClamp", parameters: [
+            "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
+        ])
+        let smoothstep = polynomial(shifted, CIVector(x: 0, y: 0, z: 3, w: -2))
+        let steep = polynomial(smoothstep, CIVector(x: 0, y: 0, z: 1, w: 0))
+        guard let product = CIFilter(name: "CIMultiplyCompositing") else { return image }
+        product.setValue(image, forKey: kCIInputImageKey)
+        product.setValue(steep, forKey: kCIInputBackgroundImageKey)
+        let multiplied = (product.outputImage ?? image).cropped(to: image.extent)
+        return multiplied.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+        ])
+    }
+
+    private static func polynomial(_ image: CIImage, _ rgb: CIVector) -> CIImage {
+        image.applyingFilter("CIColorPolynomial", parameters: [
+            "inputRedCoefficients": rgb,
+            "inputGreenCoefficients": rgb,
+            "inputBlueCoefficients": rgb,
+            "inputAlphaCoefficients": CIVector(x: 1, y: 0, z: 0, w: 0)
+        ])
     }
 }
 
-/// Scatter fractions and radii for 光晕. Weak and strong match a diffusion filter's two steps, not a slider.
+/// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
+/// `Tests/look_calibration_test.py` mirrors `emphasis` and the additive mix.
 enum HaloOptics {
-    static let weakScatter: CGFloat = 0.18
-    static let strongScatter: CGFloat = 0.36
-    /// Share of the scattered light that stays in the tight bloom. The rest is the wide veil.
-    static let tightMix: CGFloat = 0.38
-    /// Radii as a fraction of the long side.
-    static let tightRadius: CGFloat = 0.02
-    static let wideRadius: CGFloat = 0.18
-    /// Every tone scatters at least this much. The rest of the weight rises toward highlights.
-    static let emphasisFloor: CGFloat = 0.16
+    static let weakScatter: CGFloat = 0.24
+    static let strongScatter: CGFloat = 0.55
+    /// Share of the scattered light that stays in the tight bloom. The rest is the medium halo.
+    static let tightMix: CGFloat = 0.62
+    /// Radii as a fraction of the long side. The old 18% veil is gone.
+    static let tightRadius: CGFloat = 0.012
+    static let mediumRadius: CGFloat = 0.046
+    /// Linear Rec.709 luma. At and below this, emphasis is 0.
+    static let knee: Float = 0.60
 
     static func emphasis(_ luma: Float) -> Float {
         let y = min(max(luma, Float(0)), Float(1))
-        let t = smooth(0.04, 1, y)
-        let shaped = t * t
-        let floor = Float(emphasisFloor)
-        return floor + (1 - floor) * shaped
+        if y <= knee { return 0 }
+        let t = (y - knee) / (1 - knee)
+        let shaped = t * t * (3 - 2 * t)
+        return shaped * shaped
     }
 
-    private static func smooth(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
-        let span = edge1 - edge0
-        if span == 0 { return value < edge0 ? 0 : 1 }
-        let t = min(max((value - edge0) / span, Float(0)), Float(1))
-        return t * t * (3 - 2 * t)
+    /// Pure-function check used by the debug assertion. Same knee, radii, and additive mix as the filter.
+    static func spatialFailures() -> [String] {
+        let width = 72
+        let height = 40
+        var notes: [String] = []
+        var weakGain: Float = 0
+        var strongGain: Float = 0
+        for (scatter, name) in [(weakScatter, "弱"), (strongScatter, "强")] {
+            let flat = [Float](repeating: 0.45, count: width * height * 3)
+            let flatOut = referenceDiffuse(flat, width: width, height: height, scatter: Float(scatter))
+            var worst: Float = 0
+            for index in flat.indices {
+                worst = max(worst, abs(flatOut[index] - flat[index]) / 0.45)
+            }
+            if worst > 0.005 {
+                notes.append("\(name) gray below knee moved \(worst)")
+            }
+            let x0 = width / 2 - 4
+            let y0 = height / 2 - 4
+            var scene = [Float](repeating: 0.02, count: width * height * 3)
+            for y in y0..<(y0 + 8) {
+                for x in x0..<(x0 + 8) {
+                    let index = (y * width + x) * 3
+                    scene[index] = 1
+                    scene[index + 1] = 1
+                    scene[index + 2] = 1
+                }
+            }
+            let diffused = referenceDiffuse(scene, width: width, height: height, scatter: Float(scatter))
+            var far: Float = 0
+            for y in 0..<6 {
+                for x in 0..<6 {
+                    let index = (y * width + x) * 3
+                    far = max(far, abs(diffused[index] - scene[index]) / max(scene[index], 0.0001))
+                }
+            }
+            if far > 0.005 {
+                notes.append("\(name) far dark moved \(far)")
+            }
+            let neighbor = ((y0 + 4) * width + (x0 - 1)) * 3
+            let gain = (diffused[neighbor] + diffused[neighbor + 1] + diffused[neighbor + 2]) / 3 - 0.02
+            if name == "弱" { weakGain = gain } else { strongGain = gain }
+            if gain < 0.02 {
+                notes.append("\(name) neighbor did not gain glow \(gain)")
+            }
+        }
+        if strongGain <= weakGain {
+            notes.append("强 glow \(strongGain) is not above 弱 \(weakGain)")
+        }
+        let x0 = width / 2 - 4
+        let y0 = height / 2 - 4
+        var warm = [Float](repeating: 0.03, count: width * height * 3)
+        for y in y0..<(y0 + 8) {
+            for x in x0..<(x0 + 8) {
+                let index = (y * width + x) * 3
+                warm[index] = 1
+                warm[index + 1] = 0.72
+                warm[index + 2] = 0.38
+            }
+        }
+        let warmOut = referenceDiffuse(warm, width: width, height: height, scatter: Float(strongScatter))
+        let beside = ((y0 + 4) * width + (x0 - 1)) * 3
+        let dRed = warmOut[beside] - warm[beside]
+        let dBlue = warmOut[beside + 2] - warm[beside + 2]
+        if dRed <= dBlue {
+            notes.append("warm glow did not keep source hue")
+        }
+        return notes
+    }
+
+    private static func referenceDiffuse(_ pixels: [Float], width: Int, height: Int, scatter: Float) -> [Float] {
+        var weighted = [Float](repeating: 0, count: pixels.count)
+        let count = width * height
+        for index in 0..<count {
+            let offset = index * 3
+            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
+            let gain = emphasis(luma)
+            weighted[offset] = pixels[offset] * gain
+            weighted[offset + 1] = pixels[offset + 1] * gain
+            weighted[offset + 2] = pixels[offset + 2] * gain
+        }
+        let longest = Float(max(width, height))
+        var glow = [Float](repeating: 0, count: pixels.count)
+        for channel in 0..<3 {
+            var plane = [Float](repeating: 0, count: count)
+            for index in 0..<count {
+                plane[index] = weighted[index * 3 + channel]
+            }
+            let tight = referenceBlur(plane, width: width, height: height, sigma: longest * Float(tightRadius))
+            let medium = referenceBlur(plane, width: width, height: height, sigma: longest * Float(mediumRadius))
+            let mix = Float(tightMix)
+            for index in 0..<count {
+                glow[index * 3 + channel] = mix * tight[index] + (1 - mix) * medium[index]
+            }
+        }
+        var output = pixels
+        for index in output.indices {
+            output[index] = pixels[index] + scatter * glow[index]
+        }
+        return output
+    }
+
+    private static func referenceBlur(_ plane: [Float], width: Int, height: Int, sigma: Float) -> [Float] {
+        let kernel = referenceKernel(sigma)
+        let radius = kernel.count / 2
+        var horizontal = [Float](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var acc: Float = 0
+                for offset in kernel.indices {
+                    let sample = min(width - 1, max(0, x + offset - radius))
+                    acc += kernel[offset] * plane[y * width + sample]
+                }
+                horizontal[y * width + x] = acc
+            }
+        }
+        var output = [Float](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var acc: Float = 0
+                for offset in kernel.indices {
+                    let sample = min(height - 1, max(0, y + offset - radius))
+                    acc += kernel[offset] * horizontal[sample * width + x]
+                }
+                output[y * width + x] = acc
+            }
+        }
+        return output
+    }
+
+    private static func referenceKernel(_ sigma: Float) -> [Float] {
+        if sigma < 0.15 { return [1] }
+        let radius = max(1, Int((sigma * 3).rounded(.up)))
+        var weights = [Float]()
+        weights.reserveCapacity(radius * 2 + 1)
+        var total: Float = 0
+        for offset in -radius...radius {
+            let ratio = Float(offset) / sigma
+            let weight = exp(-0.5 * ratio * ratio)
+            weights.append(weight)
+            total += weight
+        }
+        guard total > 0 else { return [1] }
+        return weights.map { $0 / total }
     }
 }
 
@@ -206,33 +456,6 @@ enum HaloLevel: String, CaseIterable, Identifiable, Codable {
         case .strong: HaloOptics.strongScatter
         }
     }
-}
-
-/// `rgb * emphasis(luma)` in linear light. The same factor on every channel, so a neutral stays neutral.
-private enum HaloWeight {
-    static let dimension = 17
-    static let data: Data = {
-        let size = dimension
-        var samples = [Float](repeating: 0, count: size * size * size * 4)
-        let last = Float(size - 1)
-        var offset = 0
-        for blue in 0..<size {
-            for green in 0..<size {
-                for red in 0..<size {
-                    let r = Float(red) / last
-                    let g = Float(green) / last
-                    let b = Float(blue) / last
-                    let gain = HaloOptics.emphasis(GrainField.rec709(red: r, green: g, blue: b))
-                    samples[offset] = r * gain
-                    samples[offset + 1] = g * gain
-                    samples[offset + 2] = b * gain
-                    samples[offset + 3] = 1
-                    offset += 4
-                }
-            }
-        }
-        return samples.withUnsafeBytes { Data($0) }
-    }()
 }
 
 enum ColorLook: String, CaseIterable, Identifiable, Codable {
@@ -344,5 +567,53 @@ private enum CCDTexture {
         context.setFillColor(CGColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
         return context.makeImage()!
+    }
+}
+
+/// Debug check: each look and the highlight glow move pixels relative to 无.
+enum DevelopEffectCheck {
+    static let confirm: Void = {
+        #if DEBUG
+        let notes = failures()
+        if notes.isEmpty == false {
+            assertionFailure(notes.joined(separator: "\n"))
+        }
+        #endif
+    }()
+
+    static func failures() -> [String] {
+        var notes: [String] = []
+        let red = (CGFloat(0.78), CGFloat(0.14), CGFloat(0.12))
+        let recipes: [(String, LookRecipe)] = [
+            ("正片", .positive),
+            ("负片", .negative),
+            ("黑白", .mono),
+            ("CCD", .ccd)
+        ]
+        for (title, recipe) in recipes {
+            let out = recipe.apply(red: red.0, green: red.1, blue: red.2)
+            let delta = abs(out.0 - red.0) + abs(out.1 - red.1) + abs(out.2 - red.2)
+            if delta < 0.04 {
+                notes.append("\(title) did not move vs 无 (\(delta))")
+            }
+            if recipe.monochrome {
+                let spread = max(out.0, out.1, out.2) - min(out.0, out.1, out.2)
+                if spread > 0.004 {
+                    notes.append("\(title) is not grey")
+                }
+            }
+        }
+        if HaloOptics.emphasis(0.45) != 0 || HaloOptics.emphasis(0.60) != 0 {
+            notes.append("emphasis leaks below the knee")
+        }
+        if HaloOptics.emphasis(1) < 0.99 {
+            notes.append("white does not fully scatter")
+        }
+        let grain = GrainField.signedUnit(x: 3, y: 5, seed: 0xF1E0_4A11, cell: 1, step: 1)
+        if abs(grain) < 0.001 {
+            notes.append("grain hash is flat")
+        }
+        notes.append(contentsOf: HaloOptics.spatialFailures())
+        return notes
     }
 }

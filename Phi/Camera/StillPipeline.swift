@@ -1,10 +1,12 @@
 import CoreImage
-import UIKit
 import ImageIO
+import Metal
+import UIKit
 import UniformTypeIdentifiers
 
 /// Develops a still in 16-bit linear Display P3, then emits one 8-bit Display P3 image.
-/// Preview and export both call `render` so they share one recipe. Grain is FINE or off.
+/// Preview bakes a screen-sized proxy; export calls `render` at full resolution.
+/// Both use the same grade, highlight glow, grain, then exposure gain. Grain is FINE or off.
 ///
 /// The context working space is extended linear Display P3, so a tagged display image is
 /// decoded once on the way in and encoded once on the way out (`createCGImage` → Display P3).
@@ -15,12 +17,21 @@ enum StillPipeline {
     private static let renderLock = NSLock()
     static let linearP3 = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) ?? CGColorSpaceCreateDeviceRGB()
     static let displayP3 = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
-    private static let context = CIContext(options: [
-        CIContextOption.workingColorSpace: linearP3,
-        CIContextOption.outputColorSpace: displayP3,
-        CIContextOption.workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
-        CIContextOption.cacheIntermediates: false
-    ])
+    /// One Metal context for preview and export. Callers render off the main thread.
+    private static let context: CIContext = {
+        let options: [CIContextOption: Any] = [
+            CIContextOption.workingColorSpace: linearP3,
+            CIContextOption.outputColorSpace: displayP3,
+            CIContextOption.workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
+            CIContextOption.cacheIntermediates: false,
+            CIContextOption.useSoftwareRenderer: false
+        ]
+        let device: MTLDevice? = MTLCreateSystemDefaultDevice()
+        if let device {
+            return CIContext(mtlDevice: device, options: options)
+        }
+        return CIContext(options: options)
+    }()
 
     static func normalizedCGImage(from image: UIImage) -> CGImage? {
         let scale = image.scale == 0 ? 1 : image.scale
@@ -46,61 +57,112 @@ enum StillPipeline {
         lensZoom: Double = 1,
         maxSide: CGFloat?
     ) -> CGImage? {
+        guard let input = prepared(image, zoom: lensZoom, maxSide: maxSide) else { return nil }
+        return renderLinear(input, exposureEV: exposureEV, style: style, look: look, halo: halo)
+    }
+
+    /// Crop and optional long-side scale. The result is still a lazy graph; preview bakes it once.
+    static func prepared(_ image: CGImage, zoom: Double, maxSide: CGFloat?) -> CIImage? {
         var input = displayEncoded(image)
-        let zoom = lensZoom > 1 ? lensZoom : 1
-        input = LensCrop.cropped(input, zoom: zoom)
+        let zoomed = zoom > 1 ? zoom : 1
+        input = LensCrop.cropped(input, zoom: zoomed)
         let longest = max(input.extent.width, input.extent.height)
         if let maxSide, longest > maxSide, longest > 0 {
             let scale = maxSide / longest
             input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-        let bounded = Swift.min(2, Swift.max(-2, exposureEV))
-        let exposed: CIImage
-        if abs(bounded) < 0.0001 {
-            exposed = input
-        } else {
-            exposed = input.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
+        let extent = input.extent.integral
+        guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return nil }
+        return input.cropped(to: extent)
+    }
+
+    /// Look, highlight glow, then grain, then the exposure dial as a linear gain.
+    /// The dial is last so a preview can cache the developed proxy and only multiply.
+    static func renderLinear(
+        _ linear: CIImage,
+        exposureEV: Double,
+        style: GrainStyle,
+        look: ColorLook,
+        halo: HaloLevel
+    ) -> CGImage? {
+        let graded = ColorLooks.graded(linear, look: look)
+        let glowed = ColorLooks.withHalo(graded, level: halo)
+        let extent = glowed.extent.integral
+        let count = extent.width * extent.height
+        if let profile = style.profile, count > 6_000_000 {
+            return displayGrained(glowed, profile: profile, ev: exposureEV)
         }
-        let looked = ColorLooks.apply(exposed, look: look, halo: halo)
-        let developed = grained(looked, style: style)
-        return displayImage(developed)
+        let grain = grained(glowed, style: style)
+        return displayImage(applyingExposure(grain, ev: exposureEV))
+    }
+
+    /// `pow(2, ev)` in linear light. The dial runs from −5 to +5.
+    static func applyingExposure(_ source: CIImage, ev: Double) -> CIImage {
+        let bounded = min(5.0, max(-5.0, ev))
+        if abs(bounded) < 0.0001 { return source }
+        return source.applyingFilter("CIExposureAdjust", parameters: ["inputEV": bounded])
+    }
+
+    /// Bake a lazy graph to a linear bitmap so a later exposure pass does not rerun it.
+    static func materialize(_ source: CIImage) -> CIImage? {
+        let bounds = source.extent.integral
+        guard let pixels = linearPixels(source, bounds: bounds) else { return nil }
+        return bitmapImage(pixels, bounds: bounds)
+    }
+
+    /// `out = base + scatter * glow`. Glow is not scaled to the image mean.
+    static func addGlow(_ base: CIImage, glow: CIImage, scatter: CGFloat) -> CIImage {
+        let amount = min(CGFloat(1.5), max(CGFloat(0), scatter))
+        guard amount > 0 else { return base }
+        let scaled = glow.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: amount, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: amount, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: amount, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
+        ])
+        guard let add = CIFilter(name: "CIAdditionCompositing") else { return base }
+        add.setValue(scaled, forKey: kCIInputImageKey)
+        add.setValue(base, forKey: kCIInputBackgroundImageKey)
+        return (add.outputImage ?? base).cropped(to: base.extent)
+    }
+
+    /// Gaussian at `sigma`, evaluated on a reduced image and scaled back.
+    /// A full-frame sigma of hundreds of pixels never hits the full-res kernel.
+    static func pyramidBlur(_ source: CIImage, sigma: CGFloat, extent: CGRect) -> CIImage {
+        guard sigma > 0.35, extent.width > 2, extent.height > 2 else { return source.cropped(to: extent) }
+        let targetSigma: CGFloat = 6
+        let longest = max(extent.width, extent.height)
+        var scale: CGFloat = sigma > targetSigma ? targetSigma / sigma : 1
+        if longest > 0, longest * scale < 8 {
+            scale = min(1, 8 / longest)
+        }
+        scale = min(1, max(scale, 1 / 64))
+        let reduced = max(sigma * scale, 0.5)
+        let shift = CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
+        let shrink = CGAffineTransform(scaleX: scale, y: scale)
+        let down = shift.concatenating(shrink)
+        let smallW = max(CGFloat(2), (extent.width * scale).rounded(.up))
+        let smallH = max(CGFloat(2), (extent.height * scale).rounded(.up))
+        let small = CGRect(x: 0, y: 0, width: smallW, height: smallH)
+        let shrunk = source.transformed(by: down).cropped(to: small)
+        let pad = reduced * 3 + 2
+        let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 1))
+            .cropped(to: small.insetBy(dx: -pad, dy: -pad))
+        let blurred = shrunk.composited(over: black)
+            .applyingGaussianBlur(sigma: reduced)
+            .cropped(to: small)
+        let lifted = blurred.transformed(by: CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
+        let fix = CGAffineTransform(
+            translationX: extent.minX - lifted.extent.minX,
+            y: extent.minY - lifted.extent.minY
+        )
+        return lifted.transformed(by: fix).cropped(to: extent)
     }
 
     static func grained(_ image: CIImage, style: GrainStyle) -> CIImage {
         guard let profile = style.profile else { return image }
         return applyingGrain(image, profile: profile)
-    }
-
-    /// `glow` is the multiscale blur of `img * emphasis`, in source colour.
-    /// Scales that glow so its mean luma matches the image, then `out = (1 - k) * img + k * glow`.
-    static func applyingDiffusion(_ image: CIImage, glow: CIImage, scatter: CGFloat) -> CIImage {
-        let bounds = image.extent.integral
-        guard let base = linearPixels(image, bounds: bounds),
-              let glowPixels = linearPixels(glow, bounds: bounds),
-              base.count == glowPixels.count else { return image }
-        var pixels = base
-        let count = pixels.count / 4
-        var imageSum = 0.0
-        var glowSum = 0.0
-        for index in 0..<count {
-            let offset = index * 4
-            imageSum += Double(GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2]))
-            glowSum += Double(GrainField.rec709(
-                red: glowPixels[offset],
-                green: glowPixels[offset + 1],
-                blue: glowPixels[offset + 2]
-            ))
-        }
-        let scale: Float = glowSum > 1e-8 ? Float(imageSum / glowSum) : 1
-        let k = Float(scatter)
-        let kept = 1 - k
-        for index in 0..<count {
-            let offset = index * 4
-            pixels[offset] = pixels[offset] * kept + k * scale * glowPixels[offset]
-            pixels[offset + 1] = pixels[offset + 1] * kept + k * scale * glowPixels[offset + 1]
-            pixels[offset + 2] = pixels[offset + 2] * kept + k * scale * glowPixels[offset + 2]
-        }
-        return Self.image(pixels, bounds: bounds)
     }
 
     /// Mean Rec.709 luma of a linear image. Used only to decide a global night lift.
@@ -157,25 +219,123 @@ enum StillPipeline {
         return CIImage(cgImage: image, options: [CIImageOption.colorSpace: displayP3])
     }
 
-    private static func applyingGrain(_ image: CIImage, profile: GrainProfile) -> CIImage {
-        let bounds = image.extent.integral
-        guard var pixels = linearPixels(image, bounds: bounds) else { return image }
+    private static func applyingGrain(_ source: CIImage, profile: GrainProfile) -> CIImage {
+        let bounds = source.extent.integral
+        guard var pixels = linearPixels(source, bounds: bounds) else { return source }
         let width = Int(bounds.width)
         let height = Int(bounds.height)
+        paintGrain(
+            &pixels,
+            width: width,
+            height: height,
+            originX: 0,
+            originY: 0,
+            fieldWidth: width,
+            profile: profile,
+            calibration: nil
+        )
+        return bitmapImage(pixels, bounds: bounds)
+    }
+
+    /// Full-frame grain without a single float buffer the size of a 48MP still.
+    /// Noise mean and peak match `GrainField.balanced` over the whole frame, so strips do not seam.
+    private static func displayGrained(_ source: CIImage, profile: GrainProfile, ev: Double) -> CGImage? {
+        let bounds = source.extent.integral
+        let width = Int(bounds.width)
+        let height = Int(bounds.height)
+        guard width > 1, height > 1 else { return nil }
+        let calibration = noiseCalibration(width: width, height: height, profile: profile)
+        guard let canvas = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: displayP3,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        canvas.interpolationQuality = .none
+        let rowsPerStrip = 160
+        var row = 0
+        while row < height {
+            let rows = min(rowsPerStrip, height - row)
+            let rect = CGRect(
+                x: bounds.minX,
+                y: bounds.minY + CGFloat(row),
+                width: CGFloat(width),
+                height: CGFloat(rows)
+            )
+            let strip = source.cropped(to: rect)
+            guard var pixels = linearPixels(strip, bounds: rect) else { return nil }
+            paintGrain(
+                &pixels,
+                width: width,
+                height: rows,
+                originX: 0,
+                originY: row,
+                fieldWidth: width,
+                profile: profile,
+                calibration: calibration
+            )
+            let baked = bitmapImage(pixels, bounds: rect)
+            guard let piece = displayImage(applyingExposure(baked, ev: ev)) else { return nil }
+            canvas.draw(piece, in: CGRect(x: 0, y: CGFloat(row), width: CGFloat(width), height: CGFloat(rows)))
+            row += rows
+        }
+        return canvas.makeImage()
+    }
+
+    private static func noiseCalibration(width: Int, height: Int, profile: GrainProfile) -> (mean: Float, scale: Float) {
         let step = GrainField.step(width: width, tileFraction: profile.tileFraction)
+        var sum = 0.0
+        let count = max(width * height, 1)
+        for y in 0..<height {
+            for x in 0..<width {
+                sum += Double(GrainField.signedUnit(x: x, y: y, seed: profile.seed, cell: profile.cell, step: step))
+            }
+        }
+        let mean = Float(sum / Double(count))
+        var peak: Float = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                let sample = GrainField.signedUnit(x: x, y: y, seed: profile.seed, cell: profile.cell, step: step) - mean
+                peak = max(peak, abs(sample))
+            }
+        }
+        let scale: Float = peak > 1 ? 1 / peak : 1
+        return (mean, scale)
+    }
+
+    private static func paintGrain(
+        _ pixels: inout [Float],
+        width: Int,
+        height: Int,
+        originX: Int,
+        originY: Int,
+        fieldWidth: Int,
+        profile: GrainProfile,
+        calibration: (mean: Float, scale: Float)?
+    ) {
+        let step = GrainField.step(width: fieldWidth, tileFraction: profile.tileFraction)
         var noise = [Float](repeating: 0, count: width * height)
         for y in 0..<height {
             for x in 0..<width {
                 noise[y * width + x] = GrainField.signedUnit(
-                    x: x,
-                    y: y,
+                    x: originX + x,
+                    y: originY + y,
                     seed: profile.seed,
                     cell: profile.cell,
                     step: step
                 )
             }
         }
-        noise = GrainField.balanced(noise)
+        if let calibration {
+            for index in noise.indices {
+                noise[index] = (noise[index] - calibration.mean) * calibration.scale
+            }
+        } else {
+            noise = GrainField.balanced(noise)
+        }
         let amplitude = Float(profile.amplitude)
         for index in noise.indices {
             let offset = index * 4
@@ -198,7 +358,6 @@ enum StillPipeline {
             pixels[offset + 1] = GrainField.decoded(greenD * factor)
             pixels[offset + 2] = GrainField.decoded(blueD * factor)
         }
-        return Self.image(pixels, bounds: bounds)
     }
 
     private static func linearPixels(_ image: CIImage, bounds: CGRect) -> [Float]? {
@@ -224,7 +383,24 @@ enum StillPipeline {
         return wrote ? pixels : nil
     }
 
-    private static func image(_ pixels: [Float], bounds: CGRect) -> CIImage {
+    static func gradePixels(_ source: CIImage, recipe: LookRecipe) -> CIImage {
+        let bounds = source.extent.integral
+        guard var pixels = linearPixels(source, bounds: bounds) else { return source }
+        let count = pixels.count / 4
+        for index in 0..<count {
+            let offset = index * 4
+            let red = GrainField.encoded(pixels[offset])
+            let green = GrainField.encoded(pixels[offset + 1])
+            let blue = GrainField.encoded(pixels[offset + 2])
+            let mapped = recipe.apply(red: CGFloat(red), green: CGFloat(green), blue: CGFloat(blue))
+            pixels[offset] = GrainField.decoded(Float(mapped.0))
+            pixels[offset + 1] = GrainField.decoded(Float(mapped.1))
+            pixels[offset + 2] = GrainField.decoded(Float(mapped.2))
+        }
+        return bitmapImage(pixels, bounds: bounds)
+    }
+
+    private static func bitmapImage(_ pixels: [Float], bounds: CGRect) -> CIImage {
         let width = Int(bounds.width)
         let rowBytes = width * MemoryLayout<Float>.size * 4
         let data = pixels.withUnsafeBufferPointer { Data(buffer: $0) }
@@ -247,6 +423,136 @@ enum StillPipeline {
         CGImageDestinationAddImage(destination, image, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
+    }
+}
+
+/// Screen-sized develop cache. The proxy, the grade, and the highlight blur are baked once.
+/// Dragging exposure only multiplies that bitmap. Full resolution is `StillPipeline.render`.
+final class PreviewCache {
+    private var proxyID: ObjectIdentifier?
+    private var proxyZoom = 0.0
+    private var proxySide = 0
+    private var proxyDNG = -1
+    private var proxyAspect: PhotoAspect?
+    private var proxy: CIImage?
+
+    private var gradedLook: ColorLook?
+    private var graded: CIImage?
+    private var glowLook: ColorLook?
+    private var glow: CIImage?
+    private var bakedLook: ColorLook?
+    private var bakedHalo: HaloLevel?
+    private var bakedStyle: GrainStyle?
+    private var baked: CIImage?
+
+    func cgImage(
+        source: CGImage,
+        dng: Data?,
+        aspect: PhotoAspect,
+        exposureEV: Double,
+        style: GrainStyle,
+        look: ColorLook,
+        halo: HaloLevel,
+        lensZoom: Double,
+        maxSide: CGFloat
+    ) -> CGImage? {
+        guard let base = linearBase(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
+            return nil
+        }
+        let developed = develop(base, look: look, halo: halo, style: style)
+        return StillPipeline.displayImage(StillPipeline.applyingExposure(developed, ev: exposureEV))
+    }
+
+    private func linearBase(
+        source: CGImage,
+        dng: Data?,
+        aspect: PhotoAspect,
+        zoom: Double,
+        maxSide: CGFloat
+    ) -> CIImage? {
+        let side = Int(maxSide.rounded())
+        let dngCount = dng?.count ?? 0
+        let identity = ObjectIdentifier(source)
+        if proxyID == identity,
+           proxyZoom == zoom,
+           proxySide == side,
+           proxyDNG == dngCount,
+           proxyAspect == aspect,
+           let proxy {
+            return proxy
+        }
+        let prepared: CIImage?
+        if let dng {
+            prepared = RawDevelop.linearBase(
+                dng: dng,
+                aspect: aspect,
+                lensZoom: zoom,
+                maxSide: maxSide,
+                draft: false
+            )
+        } else {
+            prepared = StillPipeline.prepared(source, zoom: zoom, maxSide: maxSide)
+        }
+        guard let prepared else { return nil }
+        let bakedProxy = StillPipeline.materialize(prepared) ?? prepared
+        proxy = bakedProxy
+        proxyID = identity
+        proxyZoom = zoom
+        proxySide = side
+        proxyDNG = dngCount
+        proxyAspect = aspect
+        graded = nil
+        gradedLook = nil
+        glow = nil
+        glowLook = nil
+        baked = nil
+        return bakedProxy
+    }
+
+    private func develop(_ base: CIImage, look: ColorLook, halo: HaloLevel, style: GrainStyle) -> CIImage {
+        if graded == nil || gradedLook != look {
+            if look == .none {
+                graded = base
+            } else {
+                let graph = ColorLooks.graded(base, look: look)
+                graded = StillPipeline.materialize(graph) ?? graph
+            }
+            gradedLook = look
+            glow = nil
+            glowLook = nil
+            baked = nil
+        }
+        guard let graded else { return base }
+        if halo != .off, glow == nil || glowLook != look {
+            let field = ColorLooks.unscaledGlow(graded)
+            glow = StillPipeline.materialize(field) ?? field
+            glowLook = look
+            baked = nil
+        }
+        if let baked, bakedLook == look, bakedHalo == halo, bakedStyle == style {
+            return baked
+        }
+        if halo == .off, style == .off {
+            baked = graded
+            bakedLook = look
+            bakedHalo = halo
+            bakedStyle = style
+            return graded
+        }
+        var current = graded
+        if halo != .off, let glow {
+            current = StillPipeline.addGlow(current, glow: glow, scatter: halo.scatter)
+        }
+        if style != .off {
+            current = StillPipeline.grained(current, style: style)
+        } else {
+            current = StillPipeline.materialize(current) ?? current
+        }
+        baked = current
+        bakedLook = look
+        bakedHalo = halo
+        bakedStyle = style
+        return current
     }
 }
 

@@ -5,8 +5,10 @@ Memory-color hue stays within 10°.
 
 Grain at FINE, 光晕, EV, and 无 are checked against the develop sources.
 Grain is zero-mean luminance: a gray patch stays neutral and its mean color stays
-within ΔE 1. 无 is identity. 光晕 (weak and strong) keeps neutral grays neutral,
-does not rotate hue, and keeps mean luma within a few percent. EV does not rotate hue.
+within ΔE 1, and some pixels move. 无 is identity. Each look moves a red sample.
+光晕 is additive and highlight-only: a gray below the knee and a dark region far
+from a bright patch stay within 0.5%, and the pixels beside that patch gain glow.
+EV does not rotate hue.
 Run: python3 Tests/look_calibration_test.py
 """
 
@@ -21,6 +23,8 @@ LOOKS_SWIFT = (ROOT / "Phi/Camera/ColorLooks.swift").read_text()
 GRAIN_SWIFT = (ROOT / "Phi/Camera/GrainStyle.swift").read_text()
 RAW_SWIFT = (ROOT / "Phi/Camera/RawDevelop.swift").read_text()
 META_SWIFT = (ROOT / "Phi/Camera/PhotoMetadata.swift").read_text()
+CAPTURE = (ROOT / "Phi/Camera/CaptureService.swift").read_text()
+SESSION = (ROOT / "Phi/Camera/ProcessSession.swift").read_text()
 
 
 def clamp(value):
@@ -213,18 +217,19 @@ def grain_pixel(rgb, noise, amplitude):
     return tuple(srgb_decode(channel * factor) for channel in display)
 
 
-def emphasis(luma, floor):
-    """Matches HaloOptics.emphasis: floor plus a squared smoothstep toward highlights."""
+def emphasis(luma, knee):
+    """Matches HaloOptics.emphasis: 0 at and below the knee, then smoothstep squared."""
     y = max(0.0, min(1.0, luma))
-    t = smooth(0.04, 1.0, y)
-    shaped = t * t
-    return floor + (1.0 - floor) * shaped
+    if y <= knee:
+        return 0.0
+    t = (y - knee) / (1.0 - knee)
+    shaped = t * t * (3.0 - 2.0 * t)
+    return shaped * shaped
 
 
 def diffuse_pixel(rgb, glow, scatter):
-    """out = (1-k)*img + k*glow. Glow is already energy-scaled."""
-    kept = 1.0 - scatter
-    return tuple(rgb[channel] * kept + scatter * glow[channel] for channel in range(3))
+    """out = img + k * glow. Glow is not renormalized to the image mean."""
+    return tuple(rgb[channel] + scatter * glow[channel] for channel in range(3))
 
 
 def gaussian_kernel(sigma):
@@ -262,24 +267,20 @@ def blur_plane(plane, width, height, sigma):
 def diffuse_image(pixels, width, height, scatter, optics):
     weighted = []
     for pixel in pixels:
-        gain = emphasis(rec709(pixel), optics["floor"])
+        gain = emphasis(rec709(pixel), optics["knee"])
         weighted.append(tuple(channel * gain for channel in pixel))
     glow = []
+    longest = max(width, height)
     for channel in range(3):
         plane = [pixel[channel] for pixel in weighted]
-        tight = blur_plane(plane, width, height, max(width, height) * optics["tight"])
-        wide = blur_plane(plane, width, height, max(width, height) * optics["wide"])
+        tight = blur_plane(plane, width, height, longest * optics["tight"])
+        medium = blur_plane(plane, width, height, longest * optics["medium"])
         mix = optics["tight_mix"]
-        glow.append([(1.0 - mix) * wide[i] + mix * tight[i] for i in range(width * height)])
-    image_luma = sum(rec709(pixel) for pixel in pixels) / len(pixels)
-    glow_luma = sum(
-        rec709((glow[0][index], glow[1][index], glow[2][index])) for index in range(len(pixels))
-    ) / len(pixels)
-    scale = 1.0 if glow_luma <= 1e-8 else image_luma / glow_luma
+        glow.append([mix * tight[i] + (1.0 - mix) * medium[i] for i in range(width * height)])
     return [
         diffuse_pixel(
             pixels[index],
-            (glow[0][index] * scale, glow[1][index] * scale, glow[2][index] * scale),
+            (glow[0][index], glow[1][index], glow[2][index]),
             scatter,
         )
         for index in range(len(pixels))
@@ -336,20 +337,23 @@ def parse_grain():
 def parse_halo():
     import re
 
-    names = ("weakScatter", "strongScatter", "tightMix", "tightRadius", "wideRadius", "emphasisFloor")
+    names = ("weakScatter", "strongScatter", "tightMix", "tightRadius", "mediumRadius")
     values = {}
     for name in names:
         match = re.search(rf"static let {name}: CGFloat = ([0-9.]+)", LOOKS_SWIFT)
         if not match:
             return None
         values[name] = float(match.group(1))
+    knee = re.search(r"static let knee: Float = ([0-9.]+)", LOOKS_SWIFT)
+    if not knee:
+        return None
     return {
         "weak": values["weakScatter"],
         "strong": values["strongScatter"],
         "tight_mix": values["tightMix"],
         "tight": values["tightRadius"],
-        "wide": values["wideRadius"],
-        "floor": values["emphasisFloor"],
+        "medium": values["mediumRadius"],
+        "knee": float(knee.group(1)),
     }
 
 
@@ -371,77 +375,71 @@ def check_halo(failures):
         return
     if not (0 < optics["weak"] < optics["strong"] <= 0.65):
         failures.append(f"halo steps {optics['weak']} / {optics['strong']} are not a weak/strong pair")
-    if optics["wide"] <= optics["tight"]:
-        failures.append("wide veil is not wider than the tight bloom")
-    if not (0.05 < optics["floor"] < 0.45):
-        failures.append("emphasis floor does not leave highlight headroom")
+    if not (optics["tight"] < optics["medium"] < 0.08):
+        failures.append(f"medium halo {optics['medium']} is not a short radius above the tight bloom")
+    if optics["knee"] < 0.55 or optics["knee"] > 0.70:
+        failures.append(f"halo knee {optics['knee']} is not near 0.6 linear")
+    if emphasis(0.45, optics["knee"]) != 0 or emphasis(optics["knee"], optics["knee"]) != 0:
+        failures.append("emphasis is not zero at and below the knee")
+    if emphasis(1.0, optics["knee"]) < 0.99:
+        failures.append("white does not fully scatter")
 
-    colors = ((0.62, 0.28, 0.16), (0.18, 0.34, 0.62), (0.20, 0.46, 0.16))
-    worst = 0.0
+    gains = {}
     for scatter, name in ((optics["weak"], "弱"), (optics["strong"], "强")):
-        for display in (0.05, 0.20, 0.50, 0.80, 0.96):
-            linear = tuple(srgb_decode(display) for _ in range(3))
-            gain = emphasis(rec709(linear), optics["floor"])
-            raw = tuple(channel * gain for channel in linear)
-            scale = 1.0 if rec709(raw) <= 1e-8 else rec709(linear) / rec709(raw)
-            glow = tuple(channel * scale for channel in raw)
-            out = diffuse_pixel(linear, glow, scatter)
-            if max(out) - min(out) > 1e-6:
-                failures.append(f"halo {name} grey {display:.2f} is not neutral {out}")
-            relative = abs(rec709(out) - rec709(linear)) / max(rec709(linear), 1e-6)
-            worst = max(worst, relative)
-            if relative > 0.03:
-                failures.append(f"halo {name} grey {display:.2f} luma {relative:.3%}")
-        for linear in colors:
-            gain = emphasis(rec709(linear), optics["floor"])
-            raw = tuple(channel * gain for channel in linear)
-            scale = 1.0 if rec709(raw) <= 1e-8 else rec709(linear) / rec709(raw)
-            glow = tuple(channel * scale for channel in raw)
-            out = diffuse_pixel(linear, glow, scatter)
-            if hue_delta(linear, out) > 0.5:
-                failures.append(f"halo {name} flat hue {hue_delta(linear, out):.2f}")
-            if max(abs(out[channel] - linear[channel]) for channel in range(3)) > 1e-5:
-                failures.append(f"halo {name} flat color moved")
+        for level in (0.20, 0.45, 0.50):
+            flat = [(level, level, level)] * 16
+            out = diffuse_image(flat, 4, 4, scatter, optics)
+            worst = max(abs(out[i][c] - level) / level for i in range(len(out)) for c in range(3))
+            if worst >= 0.005:
+                failures.append(f"halo {name} gray {level:.2f} below the knee moved {worst:.3%}")
+            if any(max(pixel) - min(pixel) > 1e-6 for pixel in out):
+                failures.append(f"halo {name} gray {level:.2f} picked up chroma")
 
-        width, height = 48, 32
-        scene = [
-            (0.05 if x < width // 2 else 0.72,) * 3
-            for y in range(height)
-            for x in range(width)
-        ]
+        width, height = 72, 40
+        x0, y0 = width // 2 - 4, height // 2 - 4
+        scene = []
+        for y in range(height):
+            for x in range(width):
+                if x0 <= x < x0 + 8 and y0 <= y < y0 + 8:
+                    scene.append((1.0, 1.0, 1.0))
+                else:
+                    scene.append((0.02, 0.02, 0.02))
         diffused = diffuse_image(scene, width, height, scatter, optics)
-        if any(max(pixel) - min(pixel) > 1e-5 for pixel in diffused):
-            failures.append(f"halo {name} neutral scene picked up chroma")
-        original_luma = sum(rec709(pixel) for pixel in scene) / len(scene)
-        output_luma = sum(rec709(pixel) for pixel in diffused) / len(diffused)
-        relative = abs(output_luma - original_luma) / original_luma
-        worst = max(worst, relative)
-        if relative > 0.03:
-            failures.append(f"halo {name} mean luma shifted {relative:.3%}")
-        dark = [
-            rec709(diffused[y * width + x])
-            for y in range(height)
-            for x in range(width // 2)
-        ]
-        if sum(dark) / len(dark) <= 0.05 * 1.02:
-            failures.append(f"halo {name} did not lift the shadow veil")
+        far = 0.0
+        for y in range(6):
+            for x in range(6):
+                index = y * width + x
+                src = scene[index][0]
+                far = max(far, abs(diffused[index][0] - src) / src)
+        if far >= 0.005:
+            failures.append(f"halo {name} dark region far from highlights moved {far:.3%}")
+        neighbor = (y0 + 4) * width + (x0 - 1)
+        gain = rec709(diffused[neighbor]) - rec709(scene[neighbor])
+        gains[name] = gain
+        if gain < 0.02:
+            failures.append(f"halo {name} area next to a bright patch did not gain glow ({gain:.4f})")
+        if max(diffused[neighbor]) - min(diffused[neighbor]) > 1e-5:
+            failures.append(f"halo {name} neutral glow picked up chroma")
 
-        colored = [
-            (0.62 * scale, 0.22 * scale, 0.12 * scale)
-            for y in range(height)
-            for x in range(width)
-            for scale in ((0.25 if x < width // 2 else 1.0),)
-        ]
-        colored_out = diffuse_image(colored, width, height, scatter, optics)
-        incoming = mean_rgb(colored)
-        outgoing = mean_rgb(colored_out)
-        if hue_delta(incoming, outgoing) > 2:
-            failures.append(f"halo {name} scene hue {hue_delta(incoming, outgoing):.2f}")
-        color_relative = abs(rec709(outgoing) - rec709(incoming)) / rec709(incoming)
-        worst = max(worst, color_relative)
-        if color_relative > 0.03:
-            failures.append(f"halo {name} color mean luma shifted {color_relative:.3%}")
-    print(f"halo max mean-luma shift {worst:.4%}")
+    if gains.get("强", 0) <= gains.get("弱", 0):
+        failures.append("强 halo is not stronger than 弱")
+
+    width, height = 72, 40
+    x0, y0 = width // 2 - 4, height // 2 - 4
+    warm_src = (1.0, 0.72, 0.38)
+    warm = []
+    for y in range(height):
+        for x in range(width):
+            warm.append(warm_src if x0 <= x < x0 + 8 and y0 <= y < y0 + 8 else (0.03, 0.03, 0.03))
+    warm_out = diffuse_image(warm, width, height, optics["strong"], optics)
+    beside = (y0 + 4) * width + (x0 - 1)
+    delta = tuple(warm_out[beside][channel] - warm[beside][channel] for channel in range(3))
+    if delta[0] <= delta[2]:
+        failures.append(f"warm highlight glow did not keep source hue {delta}")
+    corner = warm_out[0]
+    if max(abs(corner[channel] - 0.03) / 0.03 for channel in range(3)) >= 0.005:
+        failures.append("warm scene darkened a far pixel")
+    print(f"halo neighbor gain 弱 {gains.get('弱', 0):.4f} 强 {gains.get('强', 0):.4f}")
 
 
 def check_effects(failures):
@@ -468,16 +466,34 @@ def check_effects(failures):
     ):
         if marker not in STILL:
             failures.append(f"StillPipeline missing {marker}")
-    if "imageSum / glowSum" not in STILL or "let kept = 1 - k" not in STILL:
-        failures.append("diffusion mix is not energy-conserving")
     if "CIImageOption.colorSpace: StillPipeline.linearP3" not in LOOKS_SWIFT:
         failures.append("CCD texture is not tagged extended-linear")
-    if "sRGB" in META_SWIFT or "sRGB" in STILL:
-        failures.append("HEIF export path mentions sRGB")
-    if "shaped = t * t" not in LOOKS_SWIFT or "smooth(0.04, 1, y)" not in LOOKS_SWIFT:
-        failures.append("highlight emphasis is not the squared smoothstep")
-    if spec["amplitude"] <= 0 or spec["amplitude"] > 0.12:
-        failures.append(f"FINE amplitude {spec['amplitude']} is not a fine grain")
+        if "sRGB" in META_SWIFT or "sRGB" in STILL:
+            failures.append("HEIF export path mentions sRGB")
+        if "if y <= knee { return 0 }" not in LOOKS_SWIFT:
+            failures.append("highlight emphasis does not cut off at the knee")
+        if "imageSum / glowSum" in STILL or "let kept = 1 - k" in STILL:
+            failures.append("diffusion still renormalizes glow to the image mean")
+        if "CIAdditionCompositing" not in STILL:
+            failures.append("halo is not additive")
+        if "pyramidBlur" not in STILL:
+            failures.append("diffusion blur is not a pyramid")
+        if "wideRadius" in LOOKS_SWIFT or "emphasisFloor" in LOOKS_SWIFT:
+            failures.append("frame-wide veil constants remain")
+        if "CIColorCubeWithColorSpace" not in LOOKS_SWIFT or "inputColorSpace" not in LOOKS_SWIFT:
+            failures.append("look cube is not applied in a tagged display space")
+        if "MTLCreateSystemDefaultDevice" not in STILL:
+            failures.append("CIContext is not Metal")
+        if "PreviewCache" not in STILL or "PreviewCache" not in SESSION:
+            failures.append("preview has no cached proxy")
+        schedule = SESSION.split("func schedule()", 1)[-1].split("private func showOriginal", 1)[0]
+        if "normalizedCGImage" in schedule or "45_000_000" in schedule:
+            failures.append("schedule still redraws or waits on the caller")
+        export = CAPTURE.split("background-export", 1)[-1].split(".value", 1)[0]
+        if "encodeDeveloped" not in export:
+            failures.append("HEIF encode is not inside the background export task")
+        if spec["amplitude"] <= 0 or spec["amplitude"] > 0.12:
+            failures.append(f"FINE amplitude {spec['amplitude']} is not a fine grain")
 
     width = height = 96
     gray_levels = (0.05, 0.20, 0.50, 0.80, 0.96)
@@ -528,8 +544,22 @@ def check_effects(failures):
             failures.append(f"grain color hue {hue_delta(original_display, shown_mean):.2f}")
         if delta_e(original_display, shown_mean) >= 1:
             failures.append(f"grain color ΔE {delta_e(original_display, shown_mean):.3f}")
+        moved = max(
+            abs(pixel[channel] - linear[channel])
+            for pixel in grained
+            for channel in range(3)
+        )
+        if moved < 0.01:
+            failures.append(f"grain color did not move pixels vs 无 ({moved:.4f})")
+
+    gray = tuple(srgb_decode(0.5) for _ in range(3))
+    grained_gray = grain_image(gray, width, height, spec)
+    gray_move = max(abs(pixel[channel] - gray[channel]) for pixel in grained_gray for channel in range(3))
+    if gray_move < 0.01:
+        failures.append(f"grain grey did not move pixels vs 无 ({gray_move:.4f})")
 
     check_halo(failures)
+    check_looks_move(failures)
 
     for ev in (-1.0, 0.0, 1.0):
         for display in (0.20, 0.50):
@@ -554,6 +584,19 @@ def check_effects(failures):
     if delta_e((0.50, 0.50, 0.50), (crushed, crushed, crushed)) < 1:
         failures.append("double-gamma fixture no longer reproduces the tone crush")
     print(f"grain max gray ΔE {worst_grain:.4f} at amplitude {spec['amplitude']}")
+
+
+def check_looks_move(failures):
+    """Each develop look changes at least one sample vs identity (无)."""
+    probe = ("red", (0.78, 0.14, 0.12))
+    for title, recipe in LOOKS.items():
+        out = apply(recipe, *probe[1])
+        delta = sum(abs(out[channel] - probe[1][channel]) for channel in range(3))
+        if delta < 0.04:
+            failures.append(f"{title} did not move vs 无 ({delta:.4f})")
+        if recipe["mono"]:
+            if max(out) - min(out) > 0.004:
+                failures.append(f"{title} red is not grey {out}")
 
 
 def main():
