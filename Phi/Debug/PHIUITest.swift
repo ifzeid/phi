@@ -4,7 +4,7 @@ import SwiftUI
 /// Simulator screenshots.
 /// `-PHIUITestScreen capture|album|editor|settings|flash|discard|style`
 /// `-PHIUITestAspect 1:1|3:4|2:3|9:16` (also `4:3`, `3:2`, `16:9`)
-/// `-PHIUITestEVRuler` kept so older capture launches still open the finder
+/// `-PHIUITestEVRuler` keeps the capture exposure ruler visible
 /// `-PHIUITestGrid` turns the crop grid on
 /// `-PHIUITestManual` shows the M / ISO ruler
 /// `-PHIUITestZoom 0.5|1|2|4` sets the zoom-cycle label
@@ -50,7 +50,7 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestGrid")
     }
 
-    /// Manual ruler. The capture ruler is always on; this chooses M / ISO instead of A / EV.
+    /// Manual ruler. Shows M / ISO instead of A / EV, and keeps that ruler on screen.
     static var manual: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestManual")
     }

@@ -113,6 +113,14 @@ struct QuietFinderView: View {
     @State private var flashOpacity: Double = 0
     @State private var statusTicket = 0
     @State private var meterScale: MeterScale = .iso
+    @State private var rulerOpacity: Double = {
+        #if DEBUG
+        return (PHIUITest.showEVRuler || PHIUITest.manual) ? 1 : 0
+        #else
+        return 0
+        #endif
+    }()
+    @State private var rulerTicket = 0
     @State private var wantsManual: Bool = {
         #if DEBUG
         return PHIUITest.manual
@@ -265,6 +273,9 @@ struct QuietFinderView: View {
                     .position(layout.pillCenter)
 
                 captureRuler
+                    .opacity(rulerOpacity)
+                    .allowsHitTesting(rulerOpacity > 0.04)
+                    .accessibilityHidden(rulerOpacity < 0.04)
                     .frame(width: layout.rulerFrame.width, height: layout.rulerFrame.height)
                     .position(x: layout.rulerFrame.midX, y: layout.rulerFrame.midY)
 
@@ -617,9 +628,13 @@ struct QuietFinderView: View {
             label: evTickLabel,
             snap: snapEV,
             onChange: { next in
+                noteRulerActivity()
                 camera.setExposureEV(next)
             },
-            onCommit: { camera.commitExposureEV() }
+            onCommit: {
+                noteRulerActivity()
+                camera.commitExposureEV()
+            }
         )
     }
 
@@ -629,7 +644,10 @@ struct QuietFinderView: View {
             valueText: isoNumber(shownISO),
             trailing: shutterReadout(shownShutter),
             onLeading: toggleMeterMode,
-            onTrailing: { meterScale = .shutter },
+            onTrailing: {
+                meterScale = .shutter
+                noteRulerActivity()
+            },
             value: isoCoordinate(shownISO),
             lower: isoCoordinate(isoStops.first ?? 50),
             upper: isoCoordinate(isoStops.last ?? 800),
@@ -641,9 +659,10 @@ struct QuietFinderView: View {
             label: isoTickLabel,
             snap: snapISOCoordinate,
             onChange: { coordinate in
+                noteRulerActivity()
                 camera.setManualISO(nearestISO(to: coordinate))
             },
-            onCommit: {}
+            onCommit: { noteRulerActivity() }
         )
     }
 
@@ -653,7 +672,10 @@ struct QuietFinderView: View {
             valueText: MeterFormat.shutterFraction(shownShutter),
             trailing: "ISO \(isoNumber(shownISO))",
             onLeading: toggleMeterMode,
-            onTrailing: { meterScale = .iso },
+            onTrailing: {
+                meterScale = .iso
+                noteRulerActivity()
+            },
             value: shutterCoordinate,
             lower: 0,
             upper: Double(max(shutterStops.count - 1, 0)),
@@ -665,11 +687,12 @@ struct QuietFinderView: View {
             label: shutterTickLabel,
             snap: snapShutterCoordinate,
             onChange: { coordinate in
+                noteRulerActivity()
                 let index = Int(coordinate.rounded())
                 guard shutterStops.indices.contains(index) else { return }
                 camera.setManualShutter(shutterStops[index])
             },
-            onCommit: {}
+            onCommit: { noteRulerActivity() }
         )
     }
 
@@ -705,6 +728,31 @@ struct QuietFinderView: View {
         _ = camera.setAutoExposure(enableAuto)
         if enableAuto == false {
             meterScale = .iso
+        }
+        noteRulerActivity()
+    }
+
+    /// The ruler keeps its frame while hidden, so the shutter row does not move.
+    /// A viewfinder swipe or a meter change shows it, then it fades after a few idle seconds.
+    private func noteRulerActivity() {
+        #if DEBUG
+        if PHIUITest.showEVRuler || PHIUITest.manual {
+            rulerOpacity = 1
+            return
+        }
+        #endif
+        rulerTicket += 1
+        let ticket = rulerTicket
+        if rulerOpacity < 0.99 {
+            withAnimation(.easeOut(duration: 0.15)) {
+                rulerOpacity = 1
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            guard rulerTicket == ticket else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                rulerOpacity = 0
+            }
         }
     }
 
@@ -812,6 +860,7 @@ struct QuietFinderView: View {
     }
 
     private func handleDrag(_ event: PreviewDrag) {
+        noteRulerActivity()
         guard showsManual == false else { return }
         switch event {
         case .began:
