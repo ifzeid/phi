@@ -100,7 +100,7 @@ enum StillPipeline {
             pixels[offset + 1] = pixels[offset + 1] * kept + k * scale * glowPixels[offset + 1]
             pixels[offset + 2] = pixels[offset + 2] * kept + k * scale * glowPixels[offset + 2]
         }
-        return image(pixels, bounds: bounds)
+        return Self.image(pixels, bounds: bounds)
     }
 
     /// Mean Rec.709 luma of a linear image. Used only to decide a global night lift.
@@ -198,7 +198,7 @@ enum StillPipeline {
             pixels[offset + 1] = GrainField.decoded(greenD * factor)
             pixels[offset + 2] = GrainField.decoded(blueD * factor)
         }
-        return image(pixels, bounds: bounds)
+        return Self.image(pixels, bounds: bounds)
     }
 
     private static func linearPixels(_ image: CIImage, bounds: CGRect) -> [Float]? {
