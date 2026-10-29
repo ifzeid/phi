@@ -534,10 +534,14 @@ def check_effects(failures):
         failures.append("highlight emphasis does not cut off at the knee")
     if "imageSum / glowSum" in STILL or "let kept = 1 - k" in STILL:
         failures.append("diffusion still renormalizes glow to the image mean")
-    if "CIAdditionCompositing" not in STILL:
-        failures.append("halo is not additive")
-    if "headroomPower" not in LOOKS_SWIFT or "headroomMask" not in STILL:
+    if "CIAdditionCompositing" in STILL or "CIMultiplyCompositing" in STILL:
+        failures.append("halo still uses a CI composite for the glow gain")
+    if "func applyHalo" not in STILL or "func renderHalo" not in STILL:
+        failures.append("preview and export do not share applyHalo")
+    if "headroomPower" not in LOOKS_SWIFT or "HaloOptics.headroom" not in STILL:
         failures.append("glow has no highlight rolloff")
+    if "bakedHalo == halo" not in STILL:
+        failures.append("preview cache ignores halo strength")
     if "pyramidBlur" not in STILL:
         failures.append("diffusion blur is not a pyramid")
     if "wideRadius" in LOOKS_SWIFT or "emphasisFloor" in LOOKS_SWIFT:

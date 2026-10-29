@@ -27,23 +27,7 @@ enum ColorLooks {
     }
 
     static func withHalo(_ image: CIImage, level: HaloLevel) -> CIImage {
-        guard level != .off else { return image }
-        return StillPipeline.addGlow(image, glow: unscaledGlow(image), scatter: level.scatter)
-    }
-
-    /// Blur of `rgb * emphasis(luma)`, before the weak/strong gain. Cached by the preview.
-    static func unscaledGlow(_ image: CIImage) -> CIImage {
-        let extent = image.extent
-        let longest = Swift.max(extent.width, extent.height)
-        guard longest > 2 else { return image }
-        let weighted = emphasize(image)
-        let tight = StillPipeline.pyramidBlur(weighted, sigma: longest * HaloOptics.tightRadius, extent: extent)
-        let medium = StillPipeline.pyramidBlur(weighted, sigma: longest * HaloOptics.mediumRadius, extent: extent)
-        guard let scales = CIFilter(name: "CIDissolveTransition") else { return tight }
-        scales.setValue(tight, forKey: kCIInputImageKey)
-        scales.setValue(medium, forKey: kCIInputTargetImageKey)
-        scales.setValue(Double(1 - HaloOptics.tightMix), forKey: kCIInputTimeKey)
-        return (scales.outputImage ?? tight).cropped(to: extent)
+        StillPipeline.applyHalo(image, level: level)
     }
 
     private static func toPerceptual(_ image: CIImage) -> CIImage {
@@ -216,54 +200,6 @@ enum ColorLooks {
         return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
-    /// `rgb * emphasis(luma)` in linear light. The same factor on every channel, so hue is kept.
-    /// Below the knee the factor is 0, so a flat midtone blurs to black and adds nothing.
-    private static func emphasize(_ image: CIImage) -> CIImage {
-        let weights = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
-        let gray = image.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": weights,
-            "inputGVector": weights,
-            "inputBVector": weights,
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-        ])
-        let knee = CGFloat(HaloOptics.knee)
-        let span = CGFloat(1) - knee
-        let scale = span == 0 ? CGFloat(0) : 1 / span
-        let bias = span == 0 ? CGFloat(0) : -knee / span
-        let shifted = gray.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: scale, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: scale, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: scale, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0)
-        ]).applyingFilter("CIColorClamp", parameters: [
-            "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
-        ])
-        let smoothstep = polynomial(shifted, CIVector(x: 0, y: 0, z: 3, w: -2))
-        let steep = polynomial(smoothstep, CIVector(x: 0, y: 0, z: 1, w: 0))
-        guard let product = CIFilter(name: "CIMultiplyCompositing") else { return image }
-        product.setValue(image, forKey: kCIInputImageKey)
-        product.setValue(steep, forKey: kCIInputBackgroundImageKey)
-        let multiplied = (product.outputImage ?? image).cropped(to: image.extent)
-        return multiplied.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 1)
-        ])
-    }
-
-    private static func polynomial(_ image: CIImage, _ rgb: CIVector) -> CIImage {
-        image.applyingFilter("CIColorPolynomial", parameters: [
-            "inputRedCoefficients": rgb,
-            "inputGreenCoefficients": rgb,
-            "inputBlueCoefficients": rgb,
-            "inputAlphaCoefficients": CIVector(x: 1, y: 0, z: 0, w: 0)
-        ])
-    }
 }
 
 /// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
@@ -278,7 +214,7 @@ enum HaloOptics {
     static let mediumRadius: CGFloat = 0.046
     /// Linear Rec.709 luma. At and below this, emphasis is 0.
     static let knee: Float = 0.60
-    /// `out = img + glow * (1 - luma)^headroomPower`. Power 3 matches the cubic mask in `addGlow`.
+    /// `out = img + glow * (1 - luma)^headroomPower`. Applied on linear pixels, not a CI blend.
     static let headroomPower: Float = 3
 
     static func emphasis(_ luma: Float) -> Float {

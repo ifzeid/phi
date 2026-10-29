@@ -1,6 +1,7 @@
 import CoreImage
 import ImageIO
 import Metal
+import os
 import UIKit
 import UniformTypeIdentifiers
 
@@ -86,7 +87,7 @@ enum StillPipeline {
         halo: HaloLevel
     ) -> CGImage? {
         let graded = ColorLooks.graded(linear, look: look)
-        let glowed = ColorLooks.withHalo(graded, level: halo)
+        let glowed = applyHalo(graded, level: halo)
         let extent = glowed.extent.integral
         let count = extent.width * extent.height
         if let profile = style.profile, count > 6_000_000 {
@@ -110,55 +111,27 @@ enum StillPipeline {
         return bitmapImage(pixels, bounds: bounds)
     }
 
-    /// `out = base + scatter * glow * (1 - luma)^headroomPower`.
-    /// The headroom term is ~0 on white, so a bright sky is not lifted into the clip.
-    /// Glow still lands on darker neighbours. It is not rescaled to the image mean.
-    static func addGlow(_ base: CIImage, glow: CIImage, scatter: CGFloat) -> CIImage {
-        let amount = min(CGFloat(1.5), max(CGFloat(0), scatter))
-        guard amount > 0 else { return base }
-        let admitted = glow.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: amount, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: amount, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: amount, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-        ])
-        guard let shaped = CIFilter(name: "CIMultiplyCompositing") else { return base }
-        shaped.setValue(admitted, forKey: kCIInputImageKey)
-        shaped.setValue(headroomMask(base), forKey: kCIInputBackgroundImageKey)
-        guard let add = CIFilter(name: "CIAdditionCompositing") else { return base }
-        add.setValue(shaped.outputImage ?? admitted, forKey: kCIInputImageKey)
-        add.setValue(base, forKey: kCIInputBackgroundImageKey)
-        return (add.outputImage ?? base).cropped(to: base.extent)
+    /// Preview and export both call this. The blur is a finite CI pyramid; the gain and
+    /// `(1 - luma)^3` rolloff are applied on the rendered linear pixels. CI compositing
+    /// filters in the extended-linear working space were ignoring that weight, so 弱 and 强
+    /// added the same unscaled glow and bright skies clipped.
+    static func applyHalo(_ base: CIImage, level: HaloLevel) -> CIImage {
+        #if DEBUG
+        _ = haloPipelineCheck
+        #endif
+        return renderHalo(base, level: level)
     }
 
-    /// `(1 - Rec.709 luma)^headroomPower` in the linear working space. Cubic matches power 3.
-    private static func headroomMask(_ source: CIImage) -> CIImage {
-        let weights = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
-        let luma = source.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": weights,
-            "inputGVector": weights,
-            "inputBVector": weights,
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-        ])
-        let inverted = luma.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: -1, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: -1, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: -1, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-            "inputBiasVector": CIVector(x: 1, y: 1, z: 1, w: 0)
-        ]).applyingFilter("CIColorClamp", parameters: [
-            "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
-        ])
-        let cubic = CIVector(x: 0, y: 0, z: 0, w: 1)
-        return inverted.applyingFilter("CIColorPolynomial", parameters: [
-            "inputRedCoefficients": cubic,
-            "inputGreenCoefficients": cubic,
-            "inputBlueCoefficients": cubic,
-            "inputAlphaCoefficients": CIVector(x: 1, y: 0, z: 0, w: 0)
-        ])
+    static func renderHalo(_ base: CIImage, level: HaloLevel) -> CIImage {
+        guard level != .off, level.scatter > 0 else { return base }
+        let extent = base.extent.integral
+        guard extent.width > 2, extent.height > 2, extent.isInfinite == false else { return base }
+        guard let glow = highlightGlow(of: base, extent: extent) else { return base }
+        guard var pixels = linearPixels(base, bounds: extent) else { return base }
+        let width = Int(extent.width)
+        let height = Int(extent.height)
+        mixHalo(&pixels, width: width, height: height, glow: glow, scatter: Float(level.scatter))
+        return bitmapImage(pixels, bounds: extent)
     }
 
     /// Gaussian at `sigma`, evaluated on a reduced image and scaled back.
@@ -192,6 +165,128 @@ enum StillPipeline {
             y: extent.minY - lifted.extent.minY
         )
         return lifted.transformed(by: fix).cropped(to: extent)
+    }
+
+    /// Finite downsample, emphasis on those pixels, then `pyramidBlur`. No infinite clamp.
+    private struct GlowMap {
+        var samples: [Float]
+        var width: Int
+        var height: Int
+        var scaleX: Float
+        var scaleY: Float
+    }
+
+    private static func highlightGlow(of source: CIImage, extent: CGRect) -> GlowMap? {
+        let longest = max(extent.width, extent.height)
+        let mediumSigma = longest * HaloOptics.mediumRadius
+        let tightSigma = longest * HaloOptics.tightRadius
+        var scale: CGFloat = mediumSigma > 6 ? 6 / mediumSigma : 1
+        if longest > 0, longest * scale < 8 {
+            scale = min(1, 8 / longest)
+        }
+        scale = min(1, max(scale, 1 / 64))
+        let smallW = max(2, Int((extent.width * scale).rounded(.up)))
+        let smallH = max(2, Int((extent.height * scale).rounded(.up)))
+        let small = CGRect(x: 0, y: 0, width: smallW, height: smallH)
+        let shift = CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
+        let shrink = CGAffineTransform(scaleX: scale, y: scale)
+        let scaled = source.transformed(by: shift.concatenating(shrink)).cropped(to: small)
+        guard var reduced = linearPixels(scaled, bounds: small) else { return nil }
+        emphasize(&reduced)
+        let emphasized = bitmapImage(reduced, bounds: small)
+        let tight = pyramidBlur(emphasized, sigma: max(tightSigma * scale, 0.5), extent: small)
+        let medium = pyramidBlur(emphasized, sigma: max(mediumSigma * scale, 0.5), extent: small)
+        guard let tightPixels = linearPixels(tight, bounds: small),
+              let mediumPixels = linearPixels(medium, bounds: small),
+              tightPixels.count == reduced.count,
+              mediumPixels.count == reduced.count else { return nil }
+        let count = smallW * smallH
+        var glow = [Float](repeating: 0, count: count * 3)
+        let mix = Float(HaloOptics.tightMix)
+        for index in 0..<count {
+            let sourceOffset = index * 4
+            let glowOffset = index * 3
+            for channel in 0..<3 {
+                let tightSample = max(tightPixels[sourceOffset + channel], 0)
+                let mediumSample = max(mediumPixels[sourceOffset + channel], 0)
+                glow[glowOffset + channel] = mix * tightSample + (1 - mix) * mediumSample
+            }
+        }
+        return GlowMap(
+            samples: glow,
+            width: smallW,
+            height: smallH,
+            scaleX: Float(smallW) / Float(extent.width),
+            scaleY: Float(smallH) / Float(extent.height)
+        )
+    }
+
+    private static func emphasize(_ pixels: inout [Float]) {
+        let count = pixels.count / 4
+        for index in 0..<count {
+            let offset = index * 4
+            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
+            let gain = HaloOptics.emphasis(luma)
+            pixels[offset] *= gain
+            pixels[offset + 1] *= gain
+            pixels[offset + 2] *= gain
+            pixels[offset + 3] = 1
+        }
+    }
+
+    private static func mixHalo(
+        _ pixels: inout [Float],
+        width: Int,
+        height: Int,
+        glow: GlowMap,
+        scatter: Float
+    ) {
+        guard scatter > 0, glow.width > 1, glow.height > 1 else { return }
+        for y in 0..<height {
+            for x in 0..<width {
+                let sample = sampleGlow(glow, x: x, y: y)
+                let offset = (y * width + x) * 4
+                let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
+                let gain = scatter * HaloOptics.headroom(luma)
+                pixels[offset] += gain * sample.0
+                pixels[offset + 1] += gain * sample.1
+                pixels[offset + 2] += gain * sample.2
+            }
+        }
+    }
+
+    private static func sampleGlow(_ glow: GlowMap, x: Int, y: Int) -> (Float, Float, Float) {
+        let fx = min(max((Float(x) + 0.5) * glow.scaleX - 0.5, 0), Float(glow.width - 1))
+        let fy = min(max((Float(y) + 0.5) * glow.scaleY - 0.5, 0), Float(glow.height - 1))
+        let x0 = Int(fx)
+        let y0 = Int(fy)
+        let x1 = min(x0 + 1, glow.width - 1)
+        let y1 = min(y0 + 1, glow.height - 1)
+        let tx = fx - Float(x0)
+        let ty = fy - Float(y0)
+        func at(_ px: Int, _ py: Int, _ channel: Int) -> Float {
+            glow.samples[(py * glow.width + px) * 3 + channel]
+        }
+        var rgb = (Float(0), Float(0), Float(0))
+        let channels = [
+            (1 - tx) * (1 - ty),
+            tx * (1 - ty),
+            (1 - tx) * ty,
+            tx * ty
+        ]
+        let points = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+        for channel in 0..<3 {
+            var acc: Float = 0
+            for index in 0..<4 {
+                acc += channels[index] * at(points[index].0, points[index].1, channel)
+            }
+            switch channel {
+            case 0: rgb.0 = acc
+            case 1: rgb.1 = acc
+            default: rgb.2 = acc
+            }
+        }
+        return rgb
     }
 
     static func grained(_ image: CIImage, style: GrainStyle) -> CIImage {
@@ -458,10 +553,130 @@ enum StillPipeline {
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
     }
+
+    #if DEBUG
+    /// Renders a synthetic bright sky through `renderHalo` (the preview and export path).
+    private static let haloPipelineCheck: Void = {
+        let notes = haloCIFailures()
+        let log = Logger(subsystem: "com.zeid.phi", category: "develop")
+        if notes.isEmpty {
+            log.notice("HALO CI CHECK passed")
+        } else {
+            let line = notes.joined(separator: " | ")
+            log.error("HALO CI CHECK FAILED \(line, privacy: .public)")
+            assertionFailure(line)
+        }
+    }()
+
+    private static func haloCIFailures() -> [String] {
+        let width = 96
+        let height = 64
+        var pixels = [Float](repeating: 0, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let sample: (Float, Float, Float)
+                if y < 40 {
+                    sample = (0.78, 0.84, 0.95)
+                } else if x >= 48 {
+                    sample = (0.94, 0.93, 0.90)
+                } else {
+                    sample = (0.12, 0.10, 0.08)
+                }
+                pixels[offset] = sample.0
+                pixels[offset + 1] = sample.1
+                pixels[offset + 2] = sample.2
+                pixels[offset + 3] = 1
+            }
+        }
+        let extent = CGRect(x: 0, y: 0, width: width, height: height)
+        let source = bitmapImage(pixels, bounds: extent)
+        guard let plain = displayImage(source),
+              let weakImage = displayImage(renderHalo(source, level: .weak)),
+              let strongImage = displayImage(renderHalo(source, level: .strong)),
+              let plainBytes = rgba8(plain),
+              let weakBytes = rgba8(weakImage),
+              let strongBytes = rgba8(strongImage) else {
+            return ["halo CI render failed"]
+        }
+        var notes: [String] = []
+        let plainClip = clipFraction(plainBytes)
+        let strongClip = clipFraction(strongBytes)
+        let delta = strongClip - plainClip
+        if delta > 0.02 {
+            notes.append(String(format: "clipped-area delta %.3f (plain %.3f strong %.3f)", delta, plainClip, strongClip))
+        }
+        let weakMean = byteMean(weakBytes)
+        let strongMean = byteMean(strongBytes)
+        var difference = 0
+        let limit = min(weakBytes.count, strongBytes.count)
+        for index in stride(from: 0, to: limit, by: 4) {
+            difference += abs(Int(weakBytes[index]) - Int(strongBytes[index]))
+            difference += abs(Int(weakBytes[index + 1]) - Int(strongBytes[index + 1]))
+            difference += abs(Int(weakBytes[index + 2]) - Int(strongBytes[index + 2]))
+        }
+        if difference == 0 {
+            notes.append(String(format: "weak and strong render identically (means %.2f %.2f)", weakMean, strongMean))
+        }
+        if notes.isEmpty == false {
+            notes.append(String(format: "means plain %.2f weak %.2f strong %.2f", byteMean(plainBytes), weakMean, strongMean))
+        }
+        return notes
+    }
+
+    private static func rgba8(_ image: CGImage) -> [UInt8]? {
+        let width = image.width
+        let height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drew = bytes.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            guard let ctx = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: displayP3,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            ctx.interpolationQuality = .none
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drew ? bytes : nil
+    }
+
+    private static func clipFraction(_ bytes: [UInt8]) -> Float {
+        let count = bytes.count / 4
+        guard count > 0 else { return 0 }
+        var clipped = 0
+        for index in 0..<count {
+            let offset = index * 4
+            if bytes[offset] == 255 || bytes[offset + 1] == 255 || bytes[offset + 2] == 255 {
+                clipped += 1
+            }
+        }
+        return Float(clipped) / Float(count)
+    }
+
+    private static func byteMean(_ bytes: [UInt8]) -> Float {
+        let count = bytes.count / 4
+        guard count > 0 else { return 0 }
+        var sum: Float = 0
+        for index in 0..<count {
+            let offset = index * 4
+            let red = Float(bytes[offset])
+            let green = Float(bytes[offset + 1])
+            let blue = Float(bytes[offset + 2])
+            sum += 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        }
+        return sum / Float(count)
+    }
+    #endif
 }
 
-/// Screen-sized develop cache. The proxy, the grade, and the highlight blur are baked once.
-/// Dragging exposure only multiplies that bitmap. Full resolution is `StillPipeline.render`.
+/// Screen-sized develop cache. Exposure is a gain on the baked bitmap.
+/// The bake key includes look, halo strength, and grain. Full resolution is `StillPipeline.render`.
 final class PreviewCache {
     private var proxyID: ObjectIdentifier?
     private var proxyZoom = 0.0
@@ -472,8 +687,6 @@ final class PreviewCache {
 
     private var gradedLook: ColorLook?
     private var graded: CIImage?
-    private var glowLook: ColorLook?
-    private var glow: CIImage?
     private var bakedLook: ColorLook?
     private var bakedHalo: HaloLevel?
     private var bakedStyle: GrainStyle?
@@ -537,8 +750,6 @@ final class PreviewCache {
         proxyAspect = aspect
         graded = nil
         gradedLook = nil
-        glow = nil
-        glowLook = nil
         baked = nil
         return bakedProxy
     }
@@ -552,17 +763,9 @@ final class PreviewCache {
                 graded = StillPipeline.materialize(graph) ?? graph
             }
             gradedLook = look
-            glow = nil
-            glowLook = nil
             baked = nil
         }
         guard let graded else { return base }
-        if halo != .off, glow == nil || glowLook != look {
-            let field = ColorLooks.unscaledGlow(graded)
-            glow = StillPipeline.materialize(field) ?? field
-            glowLook = look
-            baked = nil
-        }
         if let baked, bakedLook == look, bakedHalo == halo, bakedStyle == style {
             return baked
         }
@@ -574,13 +777,11 @@ final class PreviewCache {
             return graded
         }
         var current = graded
-        if halo != .off, let glow {
-            current = StillPipeline.addGlow(current, glow: glow, scatter: halo.scatter)
+        if halo != .off {
+            current = StillPipeline.applyHalo(current, level: halo)
         }
         if style != .off {
             current = StillPipeline.grained(current, style: style)
-        } else {
-            current = StillPipeline.materialize(current) ?? current
         }
         baked = current
         bakedLook = look
