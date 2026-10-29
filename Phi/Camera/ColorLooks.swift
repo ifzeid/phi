@@ -269,8 +269,8 @@ enum ColorLooks {
 /// Scatter fractions and radii for 光晕. Weak and strong are two steps, not a slider.
 /// `Tests/look_calibration_test.py` mirrors `emphasis` and the additive mix.
 enum HaloOptics {
-    static let weakScatter: CGFloat = 0.24
-    static let strongScatter: CGFloat = 0.55
+    static let weakScatter: CGFloat = 0.12
+    static let strongScatter: CGFloat = 0.22
     /// Share of the scattered light that stays in the tight bloom. The rest is the medium halo.
     static let tightMix: CGFloat = 0.62
     /// Radii as a fraction of the long side. The old 18% veil is gone.
@@ -278,6 +278,8 @@ enum HaloOptics {
     static let mediumRadius: CGFloat = 0.046
     /// Linear Rec.709 luma. At and below this, emphasis is 0.
     static let knee: Float = 0.60
+    /// `out = img + glow * (1 - luma)^headroomPower`. Power 3 matches the cubic mask in `addGlow`.
+    static let headroomPower: Float = 3
 
     static func emphasis(_ luma: Float) -> Float {
         let y = min(max(luma, Float(0)), Float(1))
@@ -287,7 +289,18 @@ enum HaloOptics {
         return shaped * shaped
     }
 
-    /// Pure-function check used by the debug assertion. Same knee, radii, and additive mix as the filter.
+    /// 1 on black, 0 on white. Stops the bloom from lifting pixels that are already bright.
+    static func headroom(_ luma: Float) -> Float {
+        let room = min(max(1 - luma, Float(0)), Float(1))
+        var powered = Float(1)
+        let steps = max(1, Int(headroomPower.rounded()))
+        for _ in 0..<steps {
+            powered *= room
+        }
+        return powered
+    }
+
+    /// Pure-function check used by the debug assertion. Same knee, radii, and rolloff as the filter.
     static func spatialFailures() -> [String] {
         let width = 72
         let height = 40
@@ -329,8 +342,13 @@ enum HaloOptics {
             let neighbor = ((y0 + 4) * width + (x0 - 1)) * 3
             let gain = (diffused[neighbor] + diffused[neighbor + 1] + diffused[neighbor + 2]) / 3 - 0.02
             if name == "弱" { weakGain = gain } else { strongGain = gain }
-            if gain < 0.02 {
+            if gain < 0.01 {
                 notes.append("\(name) neighbor did not gain glow \(gain)")
+            }
+            let center = ((y0 + 4) * width + (x0 + 4)) * 3
+            let lifted = diffused[center] - scene[center]
+            if lifted > 0.004 {
+                notes.append("\(name) bright source was lifted \(lifted)")
             }
         }
         if strongGain <= weakGain {
@@ -354,7 +372,71 @@ enum HaloOptics {
         if dRed <= dBlue {
             notes.append("warm glow did not keep source hue")
         }
+        notes.append(contentsOf: brightSkyFailures())
         return notes
+    }
+
+    /// Sunlit sky and a white wall. Clipped area may grow by at most 2%, and the mean by at most 4%.
+    private static func brightSkyFailures() -> [String] {
+        let width = 96
+        let height = 64
+        var scene = [Float](repeating: 0, count: width * height * 3)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 3
+                let sample: (Float, Float, Float)
+                if y < 40 {
+                    sample = (0.78, 0.84, 0.95)
+                } else if x >= 40 {
+                    sample = (0.94, 0.93, 0.90)
+                } else {
+                    sample = (0.12, 0.10, 0.08)
+                }
+                scene[offset] = sample.0
+                scene[offset + 1] = sample.1
+                scene[offset + 2] = sample.2
+            }
+        }
+        let diffused = referenceDiffuse(scene, width: width, height: height, scatter: Float(strongScatter))
+        let before = clipFraction(scene)
+        let after = clipFraction(diffused)
+        if after - before > 0.02 {
+            return ["bright sky clipped-area delta \(after - before)"]
+        }
+        let sourceMean = displayMean(scene)
+        let outputMean = displayMean(diffused)
+        if sourceMean > 0, (outputMean - sourceMean) / sourceMean > 0.04 {
+            return ["bright sky mean luma rise \((outputMean - sourceMean) / sourceMean)"]
+        }
+        return []
+    }
+
+    private static func clipFraction(_ pixels: [Float]) -> Float {
+        let count = pixels.count / 3
+        guard count > 0 else { return 0 }
+        var clipped = 0
+        for index in 0..<count {
+            let offset = index * 3
+            let peak = max(pixels[offset], max(pixels[offset + 1], pixels[offset + 2]))
+            if GrainField.encoded(peak) >= 254.5 / 255 {
+                clipped += 1
+            }
+        }
+        return Float(clipped) / Float(count)
+    }
+
+    private static func displayMean(_ pixels: [Float]) -> Float {
+        let count = pixels.count / 3
+        guard count > 0 else { return 0 }
+        var sum: Float = 0
+        for index in 0..<count {
+            let offset = index * 3
+            let encodedR = GrainField.encoded(pixels[offset])
+            let encodedG = GrainField.encoded(pixels[offset + 1])
+            let encodedB = GrainField.encoded(pixels[offset + 2])
+            sum += GrainField.rec709(red: encodedR, green: encodedG, blue: encodedB)
+        }
+        return sum / Float(count)
     }
 
     private static func referenceDiffuse(_ pixels: [Float], width: Int, height: Int, scatter: Float) -> [Float] {
@@ -383,8 +465,13 @@ enum HaloOptics {
             }
         }
         var output = pixels
-        for index in output.indices {
-            output[index] = pixels[index] + scatter * glow[index]
+        for index in 0..<count {
+            let offset = index * 3
+            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
+            let gain = scatter * headroom(luma)
+            output[offset] = pixels[offset] + gain * glow[offset]
+            output[offset + 1] = pixels[offset + 1] + gain * glow[offset + 1]
+            output[offset + 2] = pixels[offset + 2] + gain * glow[offset + 2]
         }
         return output
     }
@@ -608,6 +695,9 @@ enum DevelopEffectCheck {
         }
         if HaloOptics.emphasis(1) < 0.99 {
             notes.append("white does not fully scatter")
+        }
+        if HaloOptics.headroom(0) < 0.99 || HaloOptics.headroom(1) > 0.0001 {
+            notes.append("headroom does not protect white")
         }
         let grain = GrainField.signedUnit(x: 3, y: 5, seed: 0xF1E0_4A11, cell: 1, step: 1)
         if abs(grain) < 0.001 {

@@ -110,21 +110,55 @@ enum StillPipeline {
         return bitmapImage(pixels, bounds: bounds)
     }
 
-    /// `out = base + scatter * glow`. Glow is not scaled to the image mean.
+    /// `out = base + scatter * glow * (1 - luma)^headroomPower`.
+    /// The headroom term is ~0 on white, so a bright sky is not lifted into the clip.
+    /// Glow still lands on darker neighbours. It is not rescaled to the image mean.
     static func addGlow(_ base: CIImage, glow: CIImage, scatter: CGFloat) -> CIImage {
         let amount = min(CGFloat(1.5), max(CGFloat(0), scatter))
         guard amount > 0 else { return base }
-        let scaled = glow.applyingFilter("CIColorMatrix", parameters: [
+        let admitted = glow.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: amount, y: 0, z: 0, w: 0),
             "inputGVector": CIVector(x: 0, y: amount, z: 0, w: 0),
             "inputBVector": CIVector(x: 0, y: 0, z: amount, w: 0),
             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
             "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
         ])
+        guard let shaped = CIFilter(name: "CIMultiplyCompositing") else { return base }
+        shaped.setValue(admitted, forKey: kCIInputImageKey)
+        shaped.setValue(headroomMask(base), forKey: kCIInputBackgroundImageKey)
         guard let add = CIFilter(name: "CIAdditionCompositing") else { return base }
-        add.setValue(scaled, forKey: kCIInputImageKey)
+        add.setValue(shaped.outputImage ?? admitted, forKey: kCIInputImageKey)
         add.setValue(base, forKey: kCIInputBackgroundImageKey)
         return (add.outputImage ?? base).cropped(to: base.extent)
+    }
+
+    /// `(1 - Rec.709 luma)^headroomPower` in the linear working space. Cubic matches power 3.
+    private static func headroomMask(_ source: CIImage) -> CIImage {
+        let weights = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
+        let luma = source.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": weights,
+            "inputGVector": weights,
+            "inputBVector": weights,
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
+        ])
+        let inverted = luma.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: -1, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: -1, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: -1, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 1, y: 1, z: 1, w: 0)
+        ]).applyingFilter("CIColorClamp", parameters: [
+            "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
+        ])
+        let cubic = CIVector(x: 0, y: 0, z: 0, w: 1)
+        return inverted.applyingFilter("CIColorPolynomial", parameters: [
+            "inputRedCoefficients": cubic,
+            "inputGreenCoefficients": cubic,
+            "inputBlueCoefficients": cubic,
+            "inputAlphaCoefficients": CIVector(x: 1, y: 0, z: 0, w: 0)
+        ])
     }
 
     /// Gaussian at `sigma`, evaluated on a reduced image and scaled back.

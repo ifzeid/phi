@@ -7,6 +7,8 @@ import SwiftUI
 /// `-PHIUITestEVRuler` opens the exposure ruler on the capture screen
 /// `-PHIUITestGrid` turns the crop grid on
 /// `-PHIUITestEditorTab exposure|style|effects`
+/// `-PHIUITestLook none|positive|negative|mono|ccd`
+/// `-PHIUITestHalo off|weak|strong`
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -60,6 +62,32 @@ enum PHIUITest {
         case exposure
         case style
         case effects
+    }
+
+    static var look: ColorLook? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-PHIUITestLook"),
+              arguments.indices.contains(flag + 1) else { return nil }
+        switch arguments[flag + 1] {
+        case "none", "无": return .none
+        case "positive", "正片": return .positive
+        case "negative", "负片": return .negative
+        case "mono", "黑白": return .mono
+        case "ccd", "CCD": return .ccd
+        default: return ColorLook(rawValue: arguments[flag + 1])
+        }
+    }
+
+    static var halo: HaloLevel? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-PHIUITestHalo"),
+              arguments.indices.contains(flag + 1) else { return nil }
+        switch arguments[flag + 1] {
+        case "off", "关": return .off
+        case "weak", "弱": return .weak
+        case "strong", "强": return .strong
+        default: return HaloLevel(rawValue: arguments[flag + 1])
+        }
     }
 
     /// UITest launches start from the defaults. A launch argument is the only override.
@@ -132,6 +160,8 @@ struct PHIUITestHost: View {
 
     private static func editorSession() -> ProcessSession {
         let image = PHIUITest.sample?.cgImage ?? ProcessSession.syntheticPreview().base
+        let look = PHIUITest.look ?? .none
+        let halo = PHIUITest.halo ?? .off
         let session = ProcessSession(
             base: image,
             exposureEV: 0,
@@ -139,9 +169,15 @@ struct PHIUITestHost: View {
             isSample: true,
             originalWasRaw: true,
             sourceDNG: nil,
-            framedAspect: PHIUITest.aspect ?? .threeByFour
+            framedAspect: PHIUITest.aspect ?? .threeByFour,
+            colorLook: look,
+            halo: halo
         )
-        session.preview = PHIUITest.sample
+        if look == .none, halo == .off {
+            session.preview = PHIUITest.sample
+        } else {
+            session.schedule()
+        }
         return session
     }
 }

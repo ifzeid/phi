@@ -227,9 +227,16 @@ def emphasis(luma, knee):
     return shaped * shaped
 
 
-def diffuse_pixel(rgb, glow, scatter):
-    """out = img + k * glow. Glow is not renormalized to the image mean."""
-    return tuple(rgb[channel] + scatter * glow[channel] for channel in range(3))
+def headroom(luma, power):
+    """Matches HaloOptics.headroom: (1 - luma)^power, 0 on white."""
+    room = max(0.0, min(1.0, 1.0 - luma))
+    return room ** power
+
+
+def diffuse_pixel(rgb, glow, scatter, power):
+    """out = img + k * glow * (1 - luma)^power. Bright pixels keep their headroom."""
+    room = headroom(rec709(rgb), power)
+    return tuple(rgb[channel] + scatter * glow[channel] * room for channel in range(3))
 
 
 def gaussian_kernel(sigma):
@@ -277,11 +284,13 @@ def diffuse_image(pixels, width, height, scatter, optics):
         medium = blur_plane(plane, width, height, longest * optics["medium"])
         mix = optics["tight_mix"]
         glow.append([mix * tight[i] + (1.0 - mix) * medium[i] for i in range(width * height)])
+    power = optics["power"]
     return [
         diffuse_pixel(
             pixels[index],
             (glow[0][index], glow[1][index], glow[2][index]),
             scatter,
+            power,
         )
         for index in range(len(pixels))
     ]
@@ -345,7 +354,8 @@ def parse_halo():
             return None
         values[name] = float(match.group(1))
     knee = re.search(r"static let knee: Float = ([0-9.]+)", LOOKS_SWIFT)
-    if not knee:
+    power = re.search(r"static let headroomPower: Float = ([0-9.]+)", LOOKS_SWIFT)
+    if not knee or not power:
         return None
     return {
         "weak": values["weakScatter"],
@@ -354,6 +364,7 @@ def parse_halo():
         "tight": values["tightRadius"],
         "medium": values["mediumRadius"],
         "knee": float(knee.group(1)),
+        "power": float(power.group(1)),
     }
 
 
@@ -416,10 +427,13 @@ def check_halo(failures):
         neighbor = (y0 + 4) * width + (x0 - 1)
         gain = rec709(diffused[neighbor]) - rec709(scene[neighbor])
         gains[name] = gain
-        if gain < 0.02:
+        if gain < 0.01:
             failures.append(f"halo {name} area next to a bright patch did not gain glow ({gain:.4f})")
         if max(diffused[neighbor]) - min(diffused[neighbor]) > 1e-5:
             failures.append(f"halo {name} neutral glow picked up chroma")
+        center = (y0 + 4) * width + (x0 + 4)
+        if rec709(diffused[center]) > rec709(scene[center]) + 0.004:
+            failures.append(f"halo {name} lifted the bright source")
 
     if gains.get("强", 0) <= gains.get("弱", 0):
         failures.append("强 halo is not stronger than 弱")
@@ -439,7 +453,53 @@ def check_halo(failures):
     corner = warm_out[0]
     if max(abs(corner[channel] - 0.03) / 0.03 for channel in range(3)) >= 0.005:
         failures.append("warm scene darkened a far pixel")
+    check_bright_sky(failures, optics)
     print(f"halo neighbor gain 弱 {gains.get('弱', 0):.4f} 强 {gains.get('强', 0):.4f}")
+
+
+def display_luma(pixel):
+    encoded = tuple(srgb_encode(min(channel, 1.0)) for channel in pixel)
+    return rec709(encoded)
+
+
+def is_clipped(pixel):
+    return max(srgb_encode(min(channel, 1.0)) for channel in pixel) >= 254.5 / 255.0
+
+
+def check_bright_sky(failures, optics):
+    """Sunlit sky plus a white wall. Clipped area may grow by at most 2%, mean luma by at most 4%."""
+    width, height = 96, 64
+    scene = []
+    for y in range(height):
+        for x in range(width):
+            if y < 40:
+                scene.append((0.78, 0.84, 0.95))
+            elif x >= 40:
+                scene.append((0.94, 0.93, 0.90))
+            else:
+                scene.append((0.12, 0.10, 0.08))
+    diffused = diffuse_image(scene, width, height, optics["strong"], optics)
+    before = sum(1 for pixel in scene if is_clipped(pixel)) / len(scene)
+    after = sum(1 for pixel in diffused if is_clipped(pixel)) / len(diffused)
+    if after - before > 0.02:
+        failures.append(f"bright sky clipped-area delta {after - before:.3%}")
+    source_mean = sum(display_luma(pixel) for pixel in scene) / len(scene)
+    output_mean = sum(display_luma(pixel) for pixel in diffused) / len(diffused)
+    rise = (output_mean - source_mean) / source_mean
+    if rise > 0.04:
+        failures.append(f"bright sky mean luma rise {rise:.3%}")
+    bright = [
+        (scene[index], diffused[index])
+        for index in range(len(scene))
+        if rec709(scene[index]) >= 0.85
+    ]
+    if bright:
+        source_bright = sum(display_luma(pair[0]) for pair in bright) / len(bright)
+        output_bright = sum(display_luma(pair[1]) for pair in bright) / len(bright)
+        bright_rise = (output_bright - source_bright) / source_bright
+        if bright_rise > 0.01:
+            failures.append(f"bright sky highlights were lifted {bright_rise:.3%}")
+    print(f"bright sky clip {before:.2%}→{after:.2%} mean rise {rise:.2%}")
 
 
 def check_effects(failures):
@@ -468,32 +528,38 @@ def check_effects(failures):
             failures.append(f"StillPipeline missing {marker}")
     if "CIImageOption.colorSpace: StillPipeline.linearP3" not in LOOKS_SWIFT:
         failures.append("CCD texture is not tagged extended-linear")
-        if "sRGB" in META_SWIFT or "sRGB" in STILL:
-            failures.append("HEIF export path mentions sRGB")
-        if "if y <= knee { return 0 }" not in LOOKS_SWIFT:
-            failures.append("highlight emphasis does not cut off at the knee")
-        if "imageSum / glowSum" in STILL or "let kept = 1 - k" in STILL:
-            failures.append("diffusion still renormalizes glow to the image mean")
-        if "CIAdditionCompositing" not in STILL:
-            failures.append("halo is not additive")
-        if "pyramidBlur" not in STILL:
-            failures.append("diffusion blur is not a pyramid")
-        if "wideRadius" in LOOKS_SWIFT or "emphasisFloor" in LOOKS_SWIFT:
-            failures.append("frame-wide veil constants remain")
-        if "CIColorCubeWithColorSpace" not in LOOKS_SWIFT or "inputColorSpace" not in LOOKS_SWIFT:
-            failures.append("look cube is not applied in a tagged display space")
-        if "MTLCreateSystemDefaultDevice" not in STILL:
-            failures.append("CIContext is not Metal")
-        if "PreviewCache" not in STILL or "PreviewCache" not in SESSION:
-            failures.append("preview has no cached proxy")
-        schedule = SESSION.split("func schedule()", 1)[-1].split("private func showOriginal", 1)[0]
-        if "normalizedCGImage" in schedule or "45_000_000" in schedule:
-            failures.append("schedule still redraws or waits on the caller")
-        export = CAPTURE.split("background-export", 1)[-1].split(".value", 1)[0]
-        if "encodeDeveloped" not in export:
-            failures.append("HEIF encode is not inside the background export task")
-        if spec["amplitude"] <= 0 or spec["amplitude"] > 0.12:
-            failures.append(f"FINE amplitude {spec['amplitude']} is not a fine grain")
+    if "sRGB" in META_SWIFT or "sRGB" in STILL:
+        failures.append("HEIF export path mentions sRGB")
+    if "if y <= knee { return 0 }" not in LOOKS_SWIFT:
+        failures.append("highlight emphasis does not cut off at the knee")
+    if "imageSum / glowSum" in STILL or "let kept = 1 - k" in STILL:
+        failures.append("diffusion still renormalizes glow to the image mean")
+    if "CIAdditionCompositing" not in STILL:
+        failures.append("halo is not additive")
+    if "headroomPower" not in LOOKS_SWIFT or "headroomMask" not in STILL:
+        failures.append("glow has no highlight rolloff")
+    if "pyramidBlur" not in STILL:
+        failures.append("diffusion blur is not a pyramid")
+    if "wideRadius" in LOOKS_SWIFT or "emphasisFloor" in LOOKS_SWIFT:
+        failures.append("frame-wide veil constants remain")
+    if "CIColorCubeWithColorSpace" not in LOOKS_SWIFT or "inputColorSpace" not in LOOKS_SWIFT:
+        failures.append("look cube is not applied in a tagged display space")
+    if "MTLCreateSystemDefaultDevice" not in STILL:
+        failures.append("CIContext is not Metal")
+    if "PreviewCache" not in STILL or "PreviewCache" not in SESSION:
+        failures.append("preview has no cached proxy")
+    schedule = SESSION.split("func schedule()", 1)[-1].split("private func showOriginal", 1)[0]
+    if "normalizedCGImage" in schedule or "45_000_000" in schedule:
+        failures.append("schedule still redraws or waits on the caller")
+    export = CAPTURE.split("background-export", 1)[-1].split(".value", 1)[0]
+    if "encodeDeveloped" not in export:
+        failures.append("HEIF encode is not inside the background export task")
+    if "-PHIUITestLook" not in (ROOT / "Phi/Debug/PHIUITest.swift").read_text():
+        failures.append("missing -PHIUITestLook")
+    if "-PHIUITestHalo" not in (ROOT / "Phi/Debug/PHIUITest.swift").read_text():
+        failures.append("missing -PHIUITestHalo")
+    if spec["amplitude"] <= 0 or spec["amplitude"] > 0.12:
+        failures.append(f"FINE amplitude {spec['amplitude']} is not a fine grain")
 
     width = height = 96
     gray_levels = (0.05, 0.20, 0.50, 0.80, 0.96)
