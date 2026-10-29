@@ -608,24 +608,58 @@ enum DevelopEffectCheck {
                 }
             }
         }
-        if HaloOptics.emphasis(0.45) != 0 || HaloOptics.emphasis(0.60) != 0 {
-            notes.append("emphasis leaks below the knee")
-        }
-        if HaloOptics.emphasis(1) < 0.99 {
-            notes.append("white does not fully scatter")
-        }
-        if HaloOptics.emphasis(0.4) != 0 || HaloOptics.emphasis(1) < 0.99 {
-            notes.append("highlight extract is not a soft threshold")
-        }
-        let screened = HaloOptics.screenShoulder(base: 0.9, glow: 2, scatter: 1)
-        if screened > 1.0001 || screened < 0.9 {
-            notes.append("screen shoulder left the unit range")
-        }
+        notes.append(contentsOf: haloRampFailures())
         let grain = GrainField.signedUnit(x: 3, y: 5, seed: 0xF1E0_4A11, cell: 1, step: 1)
         if abs(grain) < 0.001 {
             notes.append("grain hash is flat")
         }
         notes.append(contentsOf: HaloOptics.spatialFailures())
+        return notes
+    }
+
+    /// The glow curve starts at 0.55, rises smoothly, and the screen mix stays inside 0...1.
+    private static func haloRampFailures() -> [String] {
+        var notes: [String] = []
+        let knee = HaloOptics.knee
+        let below: [Float] = [0, 0.45, knee - 0.01, knee]
+        for sample in below where HaloOptics.emphasis(sample) != 0 {
+            notes.append("emphasis leaks below the knee")
+            break
+        }
+        var previous = Float(0)
+        var step = Float(0)
+        let stepSize = Float(0.05)
+        let rampLimit = Float(1.001)
+        let unitSlack = Float(0.00001)
+        while step <= rampLimit {
+            let value = HaloOptics.emphasis(min(step, Float(1)))
+            if value > Float(1) + unitSlack || value + unitSlack < previous {
+                notes.append("emphasis is not a unit ramp")
+                break
+            }
+            previous = value
+            step += stepSize
+        }
+        if HaloOptics.emphasis(1) < 0.99 {
+            notes.append("white does not fully scatter")
+        }
+        let bases: [Float] = [0, 0.25, 0.55, 0.9, 1]
+        let glows: [Float] = [0, 0.4, 1, 2, 6]
+        let scatters: [Float] = [0, Float(HaloOptics.weakScatter), Float(HaloOptics.strongScatter), 1.5]
+        var screenBroke = false
+        let screenSlack = Float(0.0001)
+        for base in bases where screenBroke == false {
+            for glow in glows where screenBroke == false {
+                for scatter in scatters {
+                    let screened = HaloOptics.screenShoulder(base: base, glow: glow, scatter: scatter)
+                    if screened > Float(1) + screenSlack || screened + unitSlack < base {
+                        notes.append("screen composite left the unit range")
+                        screenBroke = true
+                        break
+                    }
+                }
+            }
+        }
         return notes
     }
 }
