@@ -29,7 +29,10 @@ final class ProcessSession: ObservableObject, Identifiable {
 
     var onPreview: ((UIImage) -> Void)?
 
-    private var token = 0
+    private var renderTicket = 0
+    private var rendering = false
+    private let previewCache = PreviewCache()
+    private var oriented: CGImage?
 
     init(
         base: CGImage,
@@ -67,6 +70,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         if let originalImage {
             self.preview = originalImage
         }
+        _ = DevelopEffectCheck.confirm
     }
 
     var isNeutral: Bool {
@@ -97,64 +101,111 @@ final class ProcessSession: ObservableObject, Identifiable {
     }
 
     func schedule() {
+        renderTicket += 1
         if isNeutral {
-            token += 1
-            if let originalImage {
-                preview = originalImage
-                developInfo = "原片 · \(originalImage.size.width)x\(originalImage.size.height)"
-            } else {
-                preview = UIImage(cgImage: base)
-                developInfo = "原片 · \(base.width)×\(base.height)"
-            }
+            showOriginal()
             return
         }
-        token += 1
-        let current = token
-        let upright = originalImage.flatMap { StillPipeline.normalizedCGImage(from: $0) } ?? base
-        let base = upright
-        let ev = exposureEV
-        let style = style
-        let dng = sourceDNG
-        let aspect = framedAspect
-        let zoom = lensZoom
-        let look = colorLook
-        let haloOn = halo
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 45_000_000)
-            guard current == self.token else { return }
-            let rendered = await Task.detached(priority: .userInitiated) {
-                if let dng {
-                    return RawDevelop.image(
-                        dng: dng,
-                        exposureEV: ev,
-                        style: style,
-                        look: look,
-                        halo: haloOn,
-                        aspect: aspect,
-                        lensZoom: zoom,
-                        maxSide: Self.previewSide,
-                        draft: false
-                    )
-                }
-                return StillPipeline.render(
-                    base,
-                    exposureEV: ev,
-                    style: style,
-                    look: look,
-                    halo: haloOn,
-                    lensZoom: zoom,
-                    maxSide: Self.previewSide
-                )
-            }.value
-            guard current == self.token, let rendered else { return }
-            let image = UIImage(cgImage: rendered)
-            let source = dng == nil ? "source HEIF" : "source DNG"
-            let report = RawDevelop.lastReport
-            self.developInfo = "\(source) · \(rendered.width)×\(rendered.height) · \(report)"
-            Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
-            self.preview = image
-            self.onPreview?(image)
+        if rendering { return }
+        rendering = true
+        Task.detached(priority: .userInitiated) { [weak self] in
+            await self?.pump()
         }
+    }
+
+    private func showOriginal() {
+        if let originalImage {
+            preview = originalImage
+            developInfo = "原片 · \(originalImage.size.width)x\(originalImage.size.height)"
+        } else {
+            preview = UIImage(cgImage: base)
+            developInfo = "原片 · \(base.width)×\(base.height)"
+        }
+    }
+
+    private struct DevelopRequest {
+        var ticket: Int
+        var neutral: Bool
+        var exposureEV: Double
+        var style: GrainStyle
+        var look: ColorLook
+        var halo: HaloLevel
+        var zoom: Double
+        var maxSide: CGFloat
+        var base: CGImage
+        var original: UIImage?
+        var dng: Data?
+        var aspect: PhotoAspect
+    }
+
+    private func makeSnapshot() -> DevelopRequest {
+        DevelopRequest(
+            ticket: renderTicket,
+            neutral: isNeutral,
+            exposureEV: exposureEV,
+            style: style,
+            look: colorLook,
+            halo: halo,
+            zoom: lensZoom,
+            maxSide: Self.previewSide,
+            base: base,
+            original: originalImage,
+            dng: sourceDNG,
+            aspect: framedAspect
+        )
+    }
+
+    /// Latest request wins. Exposure hits the baked proxy; look, 光晕, and grain rebuild it.
+    private func pump() async {
+        while true {
+            let snap = await MainActor.run { self.makeSnapshot() }
+            if snap.neutral {
+                await MainActor.run {
+                    self.showOriginal()
+                    self.rendering = false
+                }
+                return
+            }
+            let source = upright(snap.original, fallback: snap.base)
+            let rendered = previewCache.cgImage(
+                source: source,
+                dng: snap.dng,
+                aspect: snap.aspect,
+                exposureEV: snap.exposureEV,
+                style: snap.style,
+                look: snap.look,
+                halo: snap.halo,
+                lensZoom: snap.zoom,
+                maxSide: snap.maxSide
+            )
+            let stale = await MainActor.run { () -> Bool in
+                guard self.renderTicket == snap.ticket else { return true }
+                if let rendered {
+                    let image = UIImage(cgImage: rendered)
+                    let label = snap.dng == nil ? "source HEIF" : "source DNG"
+                    self.developInfo = "\(label) · \(rendered.width)×\(rendered.height) · \(RawDevelop.lastReport)"
+                    Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
+                    self.preview = image
+                    self.onPreview?(image)
+                }
+                self.rendering = false
+                return false
+            }
+            if stale == false { return }
+        }
+    }
+
+    private func upright(_ original: UIImage?, fallback: CGImage) -> CGImage {
+        if let oriented { return oriented }
+        let resolved: CGImage
+        if let original, original.imageOrientation != .up,
+           let drawn = StillPipeline.normalizedCGImage(from: original) {
+            resolved = drawn
+        } else {
+            resolved = fallback
+        }
+        oriented = resolved
+        return resolved
     }
 
     /// Screen pixels, not the 1600px draft scale. Full export still uses scale 1.

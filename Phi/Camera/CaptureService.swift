@@ -25,6 +25,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var albumRevision = 0
     /// Local id of an edited HEIF whose Photos write failed. Album 重试 and the editor 重试 both use it.
     private var developRetryID: String?
+    private var previewPublish = 0
 
     private var cancellables = Set<AnyCancellable>()
     private var cameraPublishQueued = false
@@ -261,70 +262,101 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     func exportDeveloped(_ session: ProcessSession) async {
-        await MainActor.run { session.isExporting = true }
-        let base = session.base
-        let ev = session.exposureEV
-        let style = session.style
-        let isSample = session.isSample
-        let originalWasRaw = session.originalWasRaw
-        let dng = session.sourceDNG
-        let metadata = session.sourceMetadata
-        let aspect = session.framedAspect
-        let look = session.colorLook
-        let halo = session.halo
-        let zoom = session.lensZoom
-        let neutral = session.isNeutral
-        let originalPixels = session.originalImage?.cgImage
-        let rendered = await Task.detached(priority: .userInitiated) {
-            if neutral {
-                return Optional(originalPixels ?? base)
-            }
-            if let dng {
-                return RawDevelop.image(
+        let job = await MainActor.run { () -> ExportJob? in
+            if session.isExporting { return nil }
+            session.isExporting = true
+            return ExportJob(
+                base: session.base,
+                ev: session.exposureEV,
+                style: session.style,
+                isSample: session.isSample,
+                originalWasRaw: session.originalWasRaw,
+                dng: session.sourceDNG,
+                metadata: session.sourceMetadata,
+                aspect: session.framedAspect,
+                look: session.colorLook,
+                halo: session.halo,
+                zoom: session.lensZoom,
+                neutral: session.isNeutral,
+                originalPixels: session.originalImage?.cgImage,
+                styleTitle: session.style.title
+            )
+        }
+        guard let job else { return }
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 16_000_000)
+        let exported = await Task.detached(priority: .userInitiated) { () -> ExportBody in
+            // background-export: full-res render and HEIF encode stay off the main thread.
+            let rendered: CGImage?
+            if job.neutral {
+                rendered = job.originalPixels ?? job.base
+            } else if let dng = job.dng {
+                rendered = RawDevelop.image(
                     dng: dng,
-                    exposureEV: ev,
-                    style: style,
-                    look: look,
-                    halo: halo,
-                    aspect: aspect,
-                    lensZoom: zoom,
+                    exposureEV: job.ev,
+                    style: job.style,
+                    look: job.look,
+                    halo: job.halo,
+                    aspect: job.aspect,
+                    lensZoom: job.zoom,
                     maxSide: nil,
                     draft: false
                 )
+            } else {
+                rendered = StillPipeline.render(
+                    job.base,
+                    exposureEV: job.ev,
+                    style: job.style,
+                    look: job.look,
+                    halo: job.halo,
+                    lensZoom: job.zoom,
+                    maxSide: nil
+                )
             }
-            return StillPipeline.render(
-                base,
-                exposureEV: ev,
-                style: style,
-                look: look,
-                halo: halo,
-                lensZoom: zoom,
-                maxSide: nil
-            )
+            guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered, metadata: job.metadata) else {
+                return .renderFailed
+            }
+            let stamp = Self.fileStamp()
+            guard let url = try? StillArchive.write(data: encoded.data, stamp: stamp, ext: encoded.ext) else {
+                return .writeFailed
+            }
+            return .ready(ExportFile(
+                data: encoded.data,
+                ext: encoded.ext,
+                uti: encoded.uti,
+                width: rendered.width,
+                height: rendered.height,
+                url: url,
+                stamp: stamp
+            ))
         }.value
-        guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered, metadata: metadata) else {
+        let saved: ExportFile
+        switch exported {
+        case .renderFailed:
             await MainActor.run {
                 session.isExporting = false
                 session.status = "没有导出处理图。Couldn't render the still."
             }
             return
-        }
-        let sourceName = dng == nil ? "系统成片" : "DNG"
-        let bytes = encoded.data.count
-        let info = "\(sourceName) · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("\(info, privacy: .public)")
-        let stamp = Self.fileStamp()
-        let filename = "PHI-\(style.title)-\(stamp).\(encoded.ext)"
-        guard let url = try? StillArchive.write(data: encoded.data, stamp: stamp, ext: encoded.ext) else {
+        case .writeFailed:
             await MainActor.run {
                 session.isExporting = false
                 session.status = "处理图没有留在 App 内。"
             }
             return
+        case .ready(let ready):
+            saved = ready
         }
+        let sourceName = job.dng == nil ? "系统成片" : "DNG"
+        let bytes = saved.data.count
+        let info = "\(sourceName) · \(saved.width)×\(saved.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("\(info, privacy: .public)")
+        let stamp = saved.stamp
+        let filename = "PHI-\(job.styleTitle)-\(stamp).\(saved.ext)"
+        let url = saved.url
         let file = LibraryRecord.File(
             path: url.lastPathComponent,
-            typeIdentifier: encoded.uti,
+            typeIdentifier: saved.uti,
             filename: filename,
             alternate: false
         )
@@ -335,13 +367,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             savedToPhotos: false,
             photosIdentifier: nil,
             saveFailed: nil,
-            aspect: aspect.rawValue,
+            aspect: job.aspect.rawValue,
             lensZoom: nil
         )
         PhiLocalShots.remember(localShot)
         let payload = LibraryPayload(
-            data: encoded.data,
-            typeIdentifier: encoded.uti,
+            data: saved.data,
+            typeIdentifier: saved.uti,
             filename: filename,
             alternate: false
         )
@@ -352,9 +384,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             self.canRetryPhotoSave = true
         }
         let note: String
-        if isSample {
+        if job.isSample {
             note = "已把样张的处理图存入相册。Saved the sample develop."
-        } else if originalWasRaw {
+        } else if job.originalWasRaw {
             note = "已另存处理图。RAW 原片没有改动。Saved a develop. The RAW file was left as captured."
         } else {
             note = "已另存处理图，没有覆盖拍摄原片。Saved a separate develop."
@@ -369,6 +401,39 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
         retryPhotoSave()
+    }
+
+    private struct ExportFile {
+        var data: Data
+        var ext: String
+        var uti: String
+        var width: Int
+        var height: Int
+        var url: URL
+        var stamp: String
+    }
+
+    private enum ExportBody {
+        case renderFailed
+        case writeFailed
+        case ready(ExportFile)
+    }
+
+    private struct ExportJob {
+        var base: CGImage
+        var ev: Double
+        var style: GrainStyle
+        var isSample: Bool
+        var originalWasRaw: Bool
+        var dng: Data?
+        var metadata: [String: Any]?
+        var aspect: PhotoAspect
+        var look: ColorLook
+        var halo: HaloLevel
+        var zoom: Double
+        var neutral: Bool
+        var originalPixels: CGImage?
+        var styleTitle: String
     }
 
     private func saveDevelopedToPhotos(
@@ -783,8 +848,24 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         )
         if isSample == false {
             session.onPreview = { [weak self] image in
-                self?.storeThumbnail(image)
-                self?.persist(session)
+                guard let self else { return }
+                self.previewPublish += 1
+                let generation = self.previewPublish
+                Task.detached(priority: .utility) { [weak self] in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    let current = await MainActor.run { self?.previewPublish == generation }
+                    guard current == true else { return }
+                    let thumb = StillArchive.thumbnail(from: image)
+                    let jpeg = thumb.jpegData(compressionQuality: 0.82)
+                    if let jpeg {
+                        try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
+                    }
+                    await MainActor.run {
+                        guard self?.previewPublish == generation else { return }
+                        self?.thumbnail = thumb
+                        self?.persist(session)
+                    }
+                }
             }
             if session.status == nil {
                 session.status = recipe.originalWasRaw
@@ -806,14 +887,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             colorLook: session.colorLook,
             halo: session.halo
         ))
-    }
-
-    private func storeThumbnail(_ image: UIImage) {
-        let thumb = StillArchive.thumbnail(from: image)
-        thumbnail = thumb
-        if let jpeg = thumb.jpegData(compressionQuality: 0.82) {
-            try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
-        }
     }
 
     private static func fileStamp() -> String {

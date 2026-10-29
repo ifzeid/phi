@@ -5,7 +5,8 @@ import os
 /// because scale can restore defaults. The 无 look does not grade the file. Other looks are the
 /// `LookRecipe` cubes. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
-/// The EV dial is `CIRAWFilter.exposure`. Apple's HEIF is not an input.
+/// The EV dial is a linear gain after the look, matching the HEIF preview cache.
+/// `CIRAWFilter.exposure` stays at the file baseline. Apple's HEIF is not an input.
 enum RawDevelop {
     static let exportQuality: CGFloat = 0.98
     /// Last develop, for the on-screen line and the log. Not a user setting.
@@ -22,9 +23,8 @@ enum RawDevelop {
         maxSide: CGFloat?,
         draft: Bool
     ) -> CGImage? {
-        guard let filtered = filteredImage(
+        guard let filtered = linearBase(
             dng: dng,
-            exposureEV: exposureEV,
             aspect: aspect,
             lensZoom: lensZoom,
             maxSide: maxSide,
@@ -32,9 +32,31 @@ enum RawDevelop {
         ) else {
             return nil
         }
-        let looked = ColorLooks.apply(filtered, look: look, halo: halo)
-        let grained = StillPipeline.grained(looked, style: style)
-        return StillPipeline.displayImage(grained)
+        return StillPipeline.renderLinear(
+            filtered,
+            exposureEV: exposureEV,
+            style: style,
+            look: look,
+            halo: halo
+        )
+    }
+
+    /// Proxy-scale or full-size linear develop at baseline exposure. The dial is applied later.
+    static func linearBase(
+        dng: Data,
+        aspect: PhotoAspect,
+        lensZoom: Double,
+        maxSide: CGFloat?,
+        draft: Bool
+    ) -> CIImage? {
+        filteredImage(
+            dng: dng,
+            exposureEV: 0,
+            aspect: aspect,
+            lensZoom: lensZoom,
+            maxSide: maxSide,
+            draft: draft
+        )
     }
 
     private static func filteredImage(
@@ -78,7 +100,7 @@ enum RawDevelop {
     }
 
     /// Applied after draft mode and scaleFactor so those changes cannot put noise reduction back.
-    /// `exposure` replaces the file's baseline, so the dial is added to `baselineExposure`.
+    /// `exposure` replaces the file's baseline. Callers pass 0 here; the dial is a gain after the look.
     @discardableResult
     private static func silenceProcessing(_ filter: CIRAWFilter, exposureEV: Double) -> Float {
         let bounded = Swift.min(5, Swift.max(-5, exposureEV))
