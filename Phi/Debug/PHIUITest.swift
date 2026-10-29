@@ -189,7 +189,7 @@ enum PHIUITest {
         for stem in Set(heic.keys).intersection(dng.keys).sorted() {
             guard let heifURL = heic[stem], let dngURL = dng[stem] else { continue }
             let facts = captureFacts(heifURL: heifURL)
-            guard let heifFile = copyIntoStills(heifURL, name: "\(stem).heic"),
+            guard let heifFile = copyIntoStills(heifURL, name: "\(stem).apple.heic"),
                   let dngFile = copyIntoStills(dngURL, name: "\(stem).dng") else {
                 let line = "EDITOR IMPORT failed \(stem)"
                 print(line)
@@ -218,7 +218,8 @@ enum PHIUITest {
                 photosIdentifier: nil,
                 saveFailed: false,
                 aspect: facts.aspect.rawValue,
-                lensZoom: facts.zoom
+                lensZoom: facts.zoom,
+                processMode: ProcessMode.bayer.rawValue
             ))
             StillArchive.storeLastRecord(LibraryRecord(files: files))
             let zoomText = facts.zoom.map { String(format: "%.2f", $0) } ?? "1"

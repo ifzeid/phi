@@ -108,9 +108,8 @@ enum RawDevelop {
         let baseline = silenceProcessing(filter, exposureEV: exposureEV)
         guard var output = filter.outputImage else { return nil }
         Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline)
-        let lifted = sceneExposureLift(output)
-        output = lifted.image
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) sceneLift \(lifted.extraEV)")
+        output = baseShoulder(output)
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) shoulder knee 0.62")
         // `outputImage` is already upright: a 4032×3024 buffer tagged orientation 6 comes out 3024×4032.
         // Applying that EXIF tag again turns the portrait frame sideways.
         let framed = LensCrop.cropped(output, zoom: zoom)
@@ -164,16 +163,46 @@ enum RawDevelop {
         return line
     }
 
-    /// One global EV when the frame is still dark after baseline exposure. No local tone map.
-    private static func sceneExposureLift(_ image: CIImage) -> (image: CIImage, extraEV: Float) {
-        guard let mean = StillPipeline.meanLinearLuma(image), mean > 0.001, mean < 0.08 else {
-            return (image, 0)
+    /// Global shoulder. Midtones below the knee stay put, so a sunset is not lifted into a pale frame.
+    /// Highlights roll toward 1 and are not locally tone-mapped.
+    static func baseShoulderValue(_ linear: Float) -> Float {
+        let knee: Float = 0.62
+        let softness: Float = 0.55
+        let x = max(linear, 0)
+        if x <= knee { return x }
+        let span = x - knee
+        return min(knee + (1 - knee) * (span / (span + softness)), 1)
+    }
+
+    static func baseToneFailures() -> [String] {
+        var notes: [String] = []
+        if baseShoulderValue(0.4) != 0.4 {
+            notes.append("base shoulder moved a midtone")
         }
-        let needed = log2(Float(0.12) / mean)
-        let extra = min(Float(1.5), max(Float(0), needed))
-        guard extra >= 0.15 else { return (image, 0) }
-        let lifted = image.applyingFilter("CIExposureAdjust", parameters: ["inputEV": extra])
-        return (lifted, extra)
+        let high = baseShoulderValue(2)
+        if high >= 1 || high <= baseShoulderValue(0.62) {
+            notes.append("base shoulder did not keep a highlight")
+        }
+        return notes
+    }
+
+    private static let shoulderKernel: CIColorKernel? = CIColorKernel(source: """
+        kernel vec4 phiShoulder(__sample s) {
+            float knee = 0.62;
+            float softness = 0.55;
+            vec3 x = max(s.rgb, vec3(0.0));
+            vec3 span = max(x - vec3(knee), vec3(0.0));
+            vec3 compressed = vec3(knee) + vec3(1.0 - knee) * (span / (span + vec3(softness)));
+            vec3 y = mix(x, min(compressed, vec3(1.0)), step(vec3(knee), x));
+            return vec4(y, s.a);
+        }
+        """)
+
+    private static func baseShoulder(_ image: CIImage) -> CIImage {
+        guard let kernel = shoulderKernel, let output = kernel.apply(extent: image.extent, arguments: [image]) else {
+            return image
+        }
+        return output
     }
 }
 

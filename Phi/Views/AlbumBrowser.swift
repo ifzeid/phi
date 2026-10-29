@@ -439,7 +439,7 @@ private struct AlbumShot: Identifiable {
             hasRaw: shot.hasRaw,
             needsRetry: shot.saveFailed == true && shot.savedToPhotos == false,
             missing: resolved.isEmpty,
-            lensZoom: shot.lensZoom ?? 1,
+            lensZoom: PhiLocalShots.displayZoom(of: shot),
             framed: PhotoAspect(rawValue: shot.aspect ?? "") ?? .threeByFour
         )
     }
@@ -842,10 +842,11 @@ enum AlbumImage {
     }
 
     static func localPreview(_ shot: PhiLocalShots.Shot, maxSide: CGFloat) -> UIImage? {
+        let preferred = PhiLocalShots.displayFile(of: shot)
         let ordered = shot.files.sorted { lhs, rhs in
-            let leftRaw = lhs.filename.lowercased().hasSuffix(".dng")
-            let rightRaw = rhs.filename.lowercased().hasSuffix(".dng")
-            return leftRaw == false && rightRaw
+            if lhs.path == preferred?.path { return true }
+            if rhs.path == preferred?.path { return false }
+            return PhiLocalShots.isAppleFallback(lhs) == false && PhiLocalShots.isAppleFallback(rhs)
         }
         for file in ordered {
             guard let url = StillArchive.resolve(file.path),

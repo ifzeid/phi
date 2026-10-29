@@ -110,12 +110,47 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let hasRaw = shot.hasRaw
         let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? photoAspect
         let zoom = shot.lensZoom ?? 1
+        let mode = ProcessMode(rawValue: shot.processMode ?? "") ?? (hasRaw ? ProcessMode.bayer : ProcessMode.standard)
         Task {
             let displayURL = displayStored.flatMap { StillArchive.resolve($0) }
             let displayImage = displayURL.flatMap { AlbumImage.fileImage(url: $0, maxSide: nil) }
             let displayData = displayURL.flatMap { try? Data(contentsOf: $0) }
             let dngURL = dngStored.flatMap { StillArchive.resolve($0) }
             let dng = dngURL.flatMap { try? Data(contentsOf: $0) }
+            if mode == .bayer, let dng {
+                let metadata = PhotoMetadata.properties(of: dng)
+                let neutral = RawDevelop.image(
+                    dng: dng,
+                    exposureEV: 0,
+                    style: .off,
+                    look: .none,
+                    halo: .off,
+                    aspect: aspect,
+                    lensZoom: zoom,
+                    maxSide: EditorMatch.previewMaxSide,
+                    draft: false
+                )
+                if let neutral {
+                    let image = UIImage(cgImage: neutral)
+                    await MainActor.run {
+                        self.present(
+                            base: neutral,
+                            recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
+                            isSample: false,
+                            status: "原片。改一项之后才重新显影。",
+                            sourceDNG: dng,
+                            sourceMetadata: metadata,
+                            aspect: aspect,
+                            lensZoom: zoom,
+                            originalImage: image,
+                            originalData: displayData,
+                            zeroProcess: true,
+                            referenceHEIF: displayImage
+                        )
+                    }
+                    return
+                }
+            }
             if let displayImage, let pixels = displayImage.cgImage {
                 let metadata = dng.flatMap { PhotoMetadata.properties(of: $0) }
                 await MainActor.run {
@@ -176,11 +211,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
         let aspect = PhiShotIndex.aspect(for: localIdentifier) ?? photoAspect
-        let zoom = PhiShotIndex.lensZoom(for: localIdentifier)
+        let zoom = PhiShotIndex.captureZoom(for: localIdentifier)
+        let mode = PhiShotIndex.processMode(for: localIdentifier)
         let rawShot = PhiRawAsset.contains(asset)
         Task {
             let dng = await PhotoLibrary.loadAlternateData(for: asset)
             if let image = await AlbumImage.loadOriginal(asset), let pixels = image.cgImage {
+                let zero = mode == .bayer || (mode == nil && dng != nil && rawShot)
                 await MainActor.run {
                     self.present(
                         base: pixels,
@@ -192,7 +229,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         aspect: aspect,
                         lensZoom: zoom,
                         location: asset.location,
-                        originalImage: image
+                        originalImage: image,
+                        zeroProcess: zero && dng != nil
                     )
                 }
                 return
@@ -279,7 +317,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 zoom: session.lensZoom,
                 neutral: session.isNeutral,
                 originalPixels: session.originalImage?.cgImage,
-                styleTitle: session.style.title
+                styleTitle: session.style.title,
+                rendersFromDNG: session.rendersFromDNG
             )
         }
         guard let job else { return }
@@ -288,10 +327,21 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let exported = await Task.detached(priority: .userInitiated) { () -> ExportBody in
             // background-export: full-res render and HEIF encode stay off the main thread.
             let rendered: CGImage?
-            if job.neutral {
+            if job.rendersFromDNG, let dng = job.dng, job.neutral == false {
+                rendered = RawDevelop.image(
+                    dng: dng,
+                    exposureEV: job.ev,
+                    style: job.style,
+                    look: job.look,
+                    halo: job.halo,
+                    aspect: job.aspect,
+                    lensZoom: job.zoom,
+                    maxSide: nil,
+                    draft: false
+                )
+            } else if job.neutral {
                 rendered = job.originalPixels ?? job.base
             } else {
-                // The edit base is the framed camera still. A fresh DNG develop replaces that tone.
                 rendered = StillPipeline.render(
                     job.base,
                     exposureEV: job.ev,
@@ -424,6 +474,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         var neutral: Bool
         var originalPixels: CGImage?
         var styleTitle: String
+        var rendersFromDNG: Bool
     }
 
     private func saveDevelopedToPhotos(
@@ -595,7 +646,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
 
         DispatchQueue.global(qos: .userInitiated).async {
             let spokenCodec = codec
-            // Keep Apple's original HEIF/JPEG bytes. Develop runs later, from the stored DNG, when the user taps 编辑.
+            // Mode 0 develops the DNG into the primary HEIF. Apple's file is only the `.apple.` fallback until that finishes.
             let stamp = StillArchive.stamp()
             let processedBox = originalProcessed.map { CapturedContainer.inspect($0) }
             let rawBox = rawData.map { CapturedContainer.inspect($0) }
@@ -609,24 +660,29 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             if let rawBox {
                 photosLog.info("capture raw \(rawBox.logLine, privacy: .public)")
             }
+            let zeroProcess = format == .bayer && saveRaw && rawData != nil
             var files: [LibraryRecord.File] = []
             var payloads: [LibraryPayload] = []
-            if let processedBox, processedBox.isDecodableImage, processedBox.isRawContainer == false,
-               let url = try? StillArchive.write(data: processedBox.data, stamp: stamp, ext: processedBox.filenameExtension) {
-                let file = LibraryRecord.File(
-                    path: url.lastPathComponent,
-                    typeIdentifier: processedBox.typeIdentifier,
-                    filename: url.lastPathComponent,
-                    alternate: false
-                )
-                files.append(file)
-                payloads.append(LibraryPayload(
-                    data: processedBox.data,
-                    fileURL: url,
-                    typeIdentifier: processedBox.typeIdentifier,
-                    filename: file.filename,
-                    alternate: false
-                ))
+            if let processedBox, processedBox.isDecodableImage, processedBox.isRawContainer == false {
+                let storedExt = zeroProcess ? "apple.\(processedBox.filenameExtension)" : processedBox.filenameExtension
+                if let url = try? StillArchive.write(data: processedBox.data, stamp: stamp, ext: storedExt) {
+                    let file = LibraryRecord.File(
+                        path: url.lastPathComponent,
+                        typeIdentifier: processedBox.typeIdentifier,
+                        filename: url.lastPathComponent,
+                        alternate: false
+                    )
+                    files.append(file)
+                    if zeroProcess == false {
+                        payloads.append(LibraryPayload(
+                            data: processedBox.data,
+                            fileURL: url,
+                            typeIdentifier: processedBox.typeIdentifier,
+                            filename: file.filename,
+                            alternate: false
+                        ))
+                    }
+                }
             }
             if saveRaw, let rawBox, rawBox.isRawContainer,
                let url = try? StillArchive.write(data: rawBox.data, stamp: stamp, ext: "dng") {
@@ -690,7 +746,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     photosIdentifier: nil,
                     saveFailed: nil,
                     aspect: aspect.rawValue,
-                    lensZoom: lensZoom > 1.01 ? lensZoom : nil
+                    lensZoom: lensZoom > 1.01 ? lensZoom : nil,
+                    processMode: format.rawValue
                 )
                 PhiLocalShots.remember(localShot)
                 self.albumRevision += 1
@@ -700,16 +757,124 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 UserDefaults.standard.set(false, forKey: StillArchive.lastSavedKey)
                 self.canRetryPhotoSave = true
+                if zeroProcess, let rawData {
+                    self.developZeroPrimary(
+                        dng: rawData,
+                        stamp: stamp,
+                        aspect: aspect,
+                        lensZoom: lensZoom,
+                        location: shotLocation,
+                        metadata: snapshot.metadata,
+                        fallback: payloads
+                    )
+                } else {
+                    Task {
+                        await self.saveToPhotos(
+                            payloads,
+                            skippedRaw: skippedRaw,
+                            croppedAspect: aspect != .threeByFour,
+                            location: shotLocation,
+                            aspect: aspect,
+                            lensZoom: lensZoom,
+                            thumb: thumb,
+                            localShotID: stamp,
+                            processMode: format
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mode 0. Apple's HEIF stays on disk as `.apple.` until this develop becomes the primary.
+    private func developZeroPrimary(
+        dng: Data,
+        stamp: String,
+        aspect: PhotoAspect,
+        lensZoom: Double,
+        location: CLLocation?,
+        metadata: [String: Any]?,
+        fallback: [LibraryPayload]
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let rendered = RawDevelop.image(
+                dng: dng,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: .off,
+                aspect: aspect,
+                lensZoom: lensZoom,
+                maxSide: nil,
+                draft: false
+            )
+            let encoded = rendered.flatMap { StillPipeline.encodeDeveloped($0, metadata: metadata) }
+            let url = encoded.flatMap { try? StillArchive.write(data: $0.data, stamp: stamp, ext: $0.ext) }
+            DispatchQueue.main.async {
+                guard let encoded, let url, let rendered else {
+                    Logger(subsystem: "com.zeid.phi", category: "develop").error("mode 0 develop failed; keeping Apple HEIF")
+                    let kept = PhiLocalShots.shot(id: stamp).flatMap { LibraryRecord(files: $0.files).payloads() } ?? fallback
+                    Task {
+                        await self.saveToPhotos(
+                            kept,
+                            skippedRaw: false,
+                            croppedAspect: aspect != .threeByFour,
+                            location: location,
+                            aspect: aspect,
+                            lensZoom: lensZoom,
+                            thumb: nil,
+                            localShotID: stamp,
+                            processMode: .bayer
+                        )
+                    }
+                    return
+                }
+                var shot = PhiLocalShots.shot(id: stamp)
+                let primary = LibraryRecord.File(
+                    path: url.lastPathComponent,
+                    typeIdentifier: encoded.uti,
+                    filename: url.lastPathComponent,
+                    alternate: false
+                )
+                var files = shot?.files ?? []
+                files.removeAll { $0.filename == primary.filename }
+                files.insert(primary, at: 0)
+                let dngPayload = fallback.first { $0.filename.lowercased().hasSuffix(".dng") }
+                let primaryPayload = LibraryPayload(
+                    data: encoded.data,
+                    fileURL: url,
+                    typeIdentifier: encoded.uti,
+                    filename: primary.filename,
+                    alternate: false
+                )
+                var payloads = [primaryPayload]
+                if let dngPayload {
+                    payloads.append(dngPayload)
+                }
+                if var shot {
+                    shot.files = files
+                    shot.processMode = ProcessMode.bayer.rawValue
+                    shot.hasRaw = true
+                    PhiLocalShots.remember(shot)
+                }
+                let thumb = UIImage(cgImage: rendered)
+                let small = StillArchive.thumbnail(from: thumb)
+                self.thumbnail = small
+                if let jpeg = small.jpegData(compressionQuality: 0.82) {
+                    try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
+                }
+                self.albumRevision += 1
                 Task {
                     await self.saveToPhotos(
                         payloads,
-                        skippedRaw: skippedRaw,
-                        croppedAspect: aspect != .threeByFour,
-                        location: shotLocation,
+                        skippedRaw: false,
+                        croppedAspect: false,
+                        location: location,
                         aspect: aspect,
-                        lensZoom: lensZoom,
-                        thumb: thumb,
-                        localShotID: stamp
+                        lensZoom: 1,
+                        thumb: small,
+                        localShotID: stamp,
+                        processMode: .bayer
                     )
                 }
             }
@@ -749,7 +914,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         aspect: PhotoAspect = .threeByFour,
         lensZoom: Double = 1,
         thumb: UIImage? = nil,
-        localShotID: String = ""
+        localShotID: String = "",
+        processMode: ProcessMode? = nil
     ) async {
         do {
             let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true, location: location)
@@ -759,7 +925,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     localIdentifier: identifier,
                     hasRaw: hasRaw,
                     aspect: aspect.rawValue,
-                    lensZoom: lensZoom > 1.01 ? lensZoom : nil
+                    lensZoom: lensZoom > 1.01 ? lensZoom : nil,
+                    processMode: processMode?.rawValue
                 )
                 PhiLocalShots.markSaved(id: localShotID, photosIdentifier: identifier)
                 if let thumb {
@@ -848,10 +1015,12 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         lensZoom: Double = 1,
         location: CLLocation? = nil,
         originalImage: UIImage? = nil,
-        originalData: Data? = nil
+        originalData: Data? = nil,
+        zeroProcess: Bool = false,
+        referenceHEIF: UIImage? = nil
     ) {
         let source = originalImage ?? UIImage(cgImage: base)
-        let framed = AlbumImage.framed(source, aspect: aspect, zoom: lensZoom)
+        let framed = zeroProcess ? source : AlbumImage.framed(source, aspect: aspect, zoom: lensZoom)
         let pixels = framed.cgImage ?? base
         let session = ProcessSession(
             base: pixels,
@@ -863,12 +1032,13 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             sourceDNG: sourceDNG,
             sourceMetadata: sourceMetadata,
             framedAspect: aspect,
-            lensZoom: 1,
+            lensZoom: zeroProcess ? lensZoom : 1,
             captureLocation: location,
             colorLook: .none,
             halo: .off,
             originalImage: framed,
-            originalData: originalData
+            originalData: originalData,
+            rendersFromDNG: zeroProcess
         )
         if isSample == false {
             session.onPreview = { [weak self] image in
@@ -901,7 +1071,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         session.developInfo = "原片 · \(session.preview?.size.width ?? 0)x\(session.preview?.size.height ?? 0)"
         session.warmPreview()
         #if DEBUG
-        PHIUITest.measureOpenedEditor(source: source, session: session)
+        PHIUITest.measureOpenedEditor(source: referenceHEIF ?? source, session: session)
         #endif
         processSession = session
     }

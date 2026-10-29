@@ -14,6 +14,8 @@ final class ProcessSession: ObservableObject, Identifiable {
     let framedAspect: PhotoAspect
     /// 1 is the full sensor. A crop stop such as 2× keeps the center of the full-frame DNG.
     let lensZoom: Double
+    /// Mode 0. Preview and non-neutral export develop `sourceDNG` instead of Apple's HEIF.
+    let rendersFromDNG: Bool
     let captureLocation: CLLocation?
     /// The file the user opened. Neutral edits show this, not a new render.
     let originalImage: UIImage?
@@ -68,7 +70,8 @@ final class ProcessSession: ObservableObject, Identifiable {
         colorLook: ColorLook = .none,
         halo: HaloLevel = .off,
         originalImage: UIImage? = nil,
-        originalData: Data? = nil
+        originalData: Data? = nil,
+        rendersFromDNG: Bool = false
     ) {
         self.base = base
         self.exposureEV = exposureEV
@@ -85,6 +88,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         self.halo = halo
         self.originalImage = originalImage
         self.originalData = originalData
+        self.rendersFromDNG = rendersFromDNG
         self.developInfo = sourceDNG == nil ? "来源 系统成片" : "来源 DNG"
         if let originalImage {
             self.preview = originalImage
@@ -210,13 +214,13 @@ final class ProcessSession: ObservableObject, Identifiable {
             let source = upright(snap.original, fallback: snap.base)
             let rendered = previewCache.previewImage(
                 source: source,
-                dng: nil,
+                dng: self.rendersFromDNG ? self.sourceDNG : nil,
                 aspect: snap.aspect,
                 exposureEV: snap.exposureEV,
                 style: snap.style,
                 look: snap.look,
                 halo: snap.halo,
-                lensZoom: 1,
+                lensZoom: self.rendersFromDNG ? self.lensZoom : 1,
                 maxSide: snap.maxSide
             )
             let stale = await MainActor.run { () -> Bool in
@@ -318,10 +322,14 @@ final class ProcessSession: ObservableObject, Identifiable {
         let source = upright(originalImage, fallback: base)
         let aspect = framedAspect
         let cache = previewCache
+        let dng = rendersFromDNG ? sourceDNG : nil
+        let zoom = rendersFromDNG ? lensZoom : 1
         warmTask = Task.detached(priority: .userInitiated) {
             cache.prewarm(
                 source: source,
+                dng: dng,
                 aspect: aspect,
+                zoom: zoom,
                 sides: [EditorMatch.dragSide, EditorMatch.previewMaxSide]
             )
         }

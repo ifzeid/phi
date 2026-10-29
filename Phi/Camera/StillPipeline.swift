@@ -767,11 +767,11 @@ final class PreviewCache {
     private var grades: [String: CIImage] = [:]
 
     /// Drag and idle proxies, and every look cube, so the first edit does not compile them.
-    func prewarm(source: CGImage, aspect: PhotoAspect, sides: [CGFloat]) {
+    func prewarm(source: CGImage, dng: Data?, aspect: PhotoAspect, zoom: Double, sides: [CGFloat]) {
         lock.lock()
         defer { lock.unlock() }
         for side in sides {
-            guard let base = linearBase(source: source, dng: nil, aspect: aspect, zoom: 1, maxSide: side) else { continue }
+            guard let base = linearBase(source: source, dng: dng, aspect: aspect, zoom: zoom, maxSide: side) else { continue }
             for look in ColorLook.allCases {
                 _ = grade(base, look: look, halo: .off, style: .off)
             }

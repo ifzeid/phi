@@ -1573,6 +1573,7 @@ final class CameraSession: ObservableObject {
                     if photoDimensionsEqual(size, previous) == false {
                         log.info("maxPhotoDimensions \(previous.width)x\(previous.height) -> \(size.width)x\(size.height) for RAW")
                     }
+                    logBayerHeadroom(chosen: size)
                     return size
                 }
             }
@@ -1589,6 +1590,19 @@ final class CameraSession: ObservableObject {
         photoOutput.maxPhotoDimensions = largest
         log.info("maxPhotoDimensions \(previous.width)x\(previous.height) is not on the active format; using \(largest.width)x\(largest.height)")
         return largest
+    }
+
+    /// Largest still size on the device versus the Bayer size we actually requested.
+    /// 48MP Bayer is possible only when a format lists Bayer at that size. Optical stops select a
+    /// ~12MP format first, so they do not reach a larger format that also has Bayer.
+    private func logBayerHeadroom(chosen: CMVideoDimensions) {
+        guard let device else { return }
+        let sensor = device.formats.compactMap { Self.largestPhotoDimensions($0) }.max { lhs, rhs in
+            Int(lhs.width) * Int(lhs.height) < Int(rhs.width) * Int(rhs.height)
+        }
+        let sensorText = sensor.map { "\($0.width)x\($0.height)" } ?? "none"
+        let full = sensor.map { photoDimensionsEqual($0, chosen) } ?? false
+        log.info("bayer readout \(chosen.width)x\(chosen.height) sensor-max \(sensorText, privacy: .public) fullSensor \(full)")
     }
 
     private func photoDimensionsEqual(_ lhs: CMVideoDimensions, _ rhs: CMVideoDimensions) -> Bool {
@@ -1612,8 +1626,11 @@ final class CameraSession: ObservableObject {
         return bayerTypes().isEmpty
     }
 
-    /// Crop stops want the largest still format so a 2× crop of the 48MP frame stays detailed.
-    /// Optical stops try a ~12MP format first, then larger ones, and keep the first that lists Bayer after commit.
+    /// Crop stops want the largest still format so a 2× crop of the full-frame RAW stays detailed.
+    /// Optical main and tele stops try a ~12MP format first and keep it when it still lists Bayer.
+    /// A 48MP Bayer readout is delivered only when that larger format is the one selected and
+    /// `supportedMaxPhotoDimensions` still lists Bayer at that size. The tele module on these phones
+    /// is a 12MP sensor; the 48MP sensor is the main wide camera.
     private static func formatsForRaw(on device: AVCaptureDevice, preferFullSensor: Bool) -> [AVCaptureDevice.Format] {
         let ranked: [(AVCaptureDevice.Format, Int)] = device.formats.compactMap { format in
             guard let area = largestPhotoDimensions(format).map({ Int($0.width) * Int($0.height) }), area > 0 else {

@@ -652,8 +652,8 @@ def check_capture_path(failures):
         failures.append("CIRAWFilter output is rotated a second time")
     if "AlbumImage.framed" not in CAPTURE:
         failures.append("editor does not crop with the album frame")
-    if "dng: nil" not in SESSION:
-        failures.append("editor preview still develops the DNG")
+    if "rendersFromDNG ? self.sourceDNG : nil" not in SESSION:
+        failures.append("editor preview does not keep HEIF edits off the DNG")
     if "previewMaxSide: CGFloat = 1280" not in SESSION:
         failures.append("editor preview is not capped")
     if "func warmPreview" not in SESSION:
@@ -678,8 +678,10 @@ def check_capture_path(failures):
         failures.append("preview context does not cache intermediates")
     if "dragSide: CGFloat = 800" not in SESSION:
         failures.append("drag proxy is not 800 px")
-    if "RawDevelop.image" in CAPTURE:
-        failures.append("saving an edit still redevelops the DNG")
+    if "rendersFromDNG" not in CAPTURE or "RawDevelop.image" not in CAPTURE:
+        failures.append("mode 0 edits do not develop the DNG")
+    if "baseShoulder" not in RAW_SWIFT:
+        failures.append("mode 0 has no highlight shoulder")
     if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:
         failures.append("missing portrait DNG orientation check")
 
