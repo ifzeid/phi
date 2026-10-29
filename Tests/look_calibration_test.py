@@ -698,6 +698,8 @@ def check_capture_path(failures):
         "-PHIUITestEditorNight",
         "EDITOR NIGHT",
         "EDITOR NIGHT FAILED",
+        "EDITOR HALIDE LUMA",
+        "EDITOR HALIDE LUMA FAILED",
         "-PHIUITestEditorFinderEV",
         "EDITOR FINDER EV",
         "EDITOR FINDER EV FAILED",
@@ -738,6 +740,10 @@ def check_capture_path(failures):
         failures.append("as-shot white balance is not restored after develop setup")
     if "toneMapValue" not in RAW_SWIFT or "filmic: true" not in RAW_SWIFT:
         failures.append("mode 0 EV 0 is missing the filmic curve after BaselineExposure")
+    if "processZeroBaselineTrim: Float = 1.5" not in RAW_SWIFT or "appliedBaseline" not in RAW_SWIFT:
+        failures.append("EV 0 still multiplies the full JPEG BaselineExposure")
+    if "tag > 0" not in RAW_SWIFT:
+        failures.append("a zero baseline is trimmed with the DNG tag")
     if "shadowBias = 0" not in RAW_SWIFT:
         failures.append("RAW shadow bias is still the display pedestal")
     if "StillPipeline.expose(" not in RAW_SWIFT or "StillPipeline.expose(" not in STILL:

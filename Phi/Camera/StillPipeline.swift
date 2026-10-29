@@ -134,7 +134,7 @@ static func renderLinear(
         return output.cropped(to: output.extent.integral)
     }
 
-    /// `2^(baseline + ev)` on scene-linear RGB, then the mode 0 filmic or the highlight shoulder.
+    /// `2^(trimmed baseline + ev)` on scene-linear RGB, then the mode 0 filmic or the highlight shoulder.
     /// Preview and export both call this. The multiply is on these samples.
     static func expose(_ plate: LinearPlate, ev: Double, shoulder: Bool = true) -> CIImage {
         var pixels = plate.pixels

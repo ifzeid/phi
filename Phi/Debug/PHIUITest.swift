@@ -1055,7 +1055,72 @@ enum PHIUITest {
         var failed = false
         failed = nightPair(dng: dng, aspect: aspect, zoom: zoom, file: file, ev: ev, maxSide: EditorMatch.previewMaxSide, kind: "preview") || failed
         failed = nightPair(dng: dng, aspect: aspect, zoom: zoom, file: file, ev: ev, maxSide: nil, kind: "export") || failed
+        failed = halideLuma(dng: dng, aspect: aspect, zoom: zoom, file: file) || failed
         return failed
+    }
+
+    /// Mean display luma at the Halide reference stops. Compare these numbers to Process Zero screenshots.
+    /// Stops must darken. The log is the measurement; it does not encode a target luma.
+    private static func halideLuma(dng: Data, aspect: PhotoAspect, zoom: Double, file: String) -> Bool {
+        let stops = [0.0, -1.0, -2.0, -4.0, -5.0]
+        var means: [Float] = []
+        var failed = false
+        for ev in stops {
+            guard let image = RawDevelop.image(
+                dng: dng,
+                exposureEV: ev,
+                style: .off,
+                look: .none,
+                halo: .off,
+                aspect: aspect,
+                lensZoom: zoom,
+                maxSide: EditorMatch.previewMaxSide,
+                draft: false
+            ), let plane = displayRGB(image) else {
+                logSweep(String(format: "EDITOR HALIDE LUMA FAILED file=%@ ev=%+.1f did not render", file, ev))
+                return true
+            }
+            let mean = EditorMatch.displayMeanLuma(image)
+            let sky = skyPercentiles(plane)
+            let clipped = clippedFraction(plane)
+            means.append(mean)
+            logSweep(String(
+                format: "EDITOR HALIDE LUMA file=%@ ev=%+.1f mean=%.4f skyP5=%.3f,%.3f,%.3f clipped=%.4f tag=%.3f applied=%.3f",
+                file,
+                ev,
+                Double(mean),
+                Double(sky.p5.0), Double(sky.p5.1), Double(sky.p5.2),
+                Double(clipped),
+                Double(RawDevelop.lastBaseline),
+                Double(RawDevelop.lastAppliedBaseline)
+            ))
+        }
+        for index in 1..<means.count {
+            if means[index] > means[index - 1] - 0.002 {
+                logSweep(String(
+                    format: "EDITOR HALIDE LUMA FAILED file=%@ ev %+.1f mean %.4f did not darken from %.4f",
+                    file,
+                    stops[index],
+                    Double(means[index]),
+                    Double(means[index - 1])
+                ))
+                failed = true
+            }
+        }
+        return failed
+    }
+
+    /// Share of pixels with a channel already at the display ceiling. Beams should stay under this.
+    private static func clippedFraction(_ plane: RGBPlane) -> Float {
+        let count = plane.red.count
+        guard count > 0 else { return 0 }
+        var clipped = 0
+        for index in 0..<count {
+            if plane.red[index] >= 0.98 || plane.green[index] >= 0.98 || plane.blue[index] >= 0.98 {
+                clipped += 1
+            }
+        }
+        return Float(clipped) / Float(count)
     }
 
     private static func nightPair(

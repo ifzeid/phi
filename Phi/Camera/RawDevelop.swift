@@ -5,8 +5,9 @@ import os
 /// because scale can restore defaults. The 无 look does not grade the file. Other looks are the
 /// `LookRecipe` cubes. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
-/// EV 0 is the DNG BaselineExposure tag, applied once as `2^baseline`, then a gentle filmic curve.
-/// The dial is the same multiply (`2^(baseline + ev)`) before that curve. The filter does not add a second gain.
+/// EV 0 is scene-referred: Apple's BaselineExposure matches the bright JPEG, and Process Zero
+/// sits 1.5 stops under that tag. The dial is `2^(applied + ev)` before the filmic curve.
+/// The filter does not add a second gain.
 /// Demosaic stays full resolution and draft stays off. Apple's HEIF is not an input.
 enum RawDevelop {
     static let exportQuality: CGFloat = 0.98
@@ -103,8 +104,11 @@ enum RawDevelop {
             filter.neutralTint = asShotTint
         }
         guard let output = filter.outputImage else { return nil }
-        Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline)
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) as-shot WB \(asShotTemperature) tint \(asShotTint), full-res demosaic, filmic after 2^EV")
+        let applied = Self.appliedBaseline(baseline)
+        Self.lastBaseline = baseline
+        Self.lastAppliedBaseline = applied
+        Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline, applied: applied)
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure tag \(baseline) applied \(applied) as-shot WB \(asShotTemperature) tint \(asShotTint), full-res demosaic, filmic after 2^EV")
         // `outputImage` is already upright: a 4032×3024 buffer tagged orientation 6 comes out 3024×4032.
         // Applying that EXIF tag again turns the portrait frame sideways.
         let framed = LensCrop.cropped(output, zoom: zoom)
@@ -134,7 +138,7 @@ enum RawDevelop {
     }
 
     /// Applied after draft mode and scaleFactor so those changes cannot put noise reduction back.
-    /// The tag is returned and applied once, later, as `2^baseline`. The filter must not also apply it:
+    /// The tag is returned and trimmed later. The filter must not also apply it:
     /// its exposure, boost, and gamut map sit on a curve that refits after a second gain.
     @discardableResult
     private static func silenceProcessing(_ filter: CIRAWFilter) -> Float {
@@ -160,20 +164,35 @@ enum RawDevelop {
         return baseline
     }
 
-    private static func report(_ filter: CIRAWFilter, native: CGSize, output: CGRect, baseline: Float) -> String {
-        let line = "native \(Int(native.width))x\(Int(native.height)) out \(Int(output.width))x\(Int(output.height)) scale \(filter.scaleFactor) draft \(filter.isDraftModeEnabled) exp \(filter.exposure) base \(baseline) nr \(filter.luminanceNoiseReductionAmount)/\(filter.colorNoiseReductionAmount) sharp \(filter.sharpnessAmount) detail \(filter.detailAmount) moire \(filter.moireReductionAmount) ltm \(filter.localToneMapAmount) lens \(filter.isLensCorrectionEnabled)"
+    private static func report(_ filter: CIRAWFilter, native: CGSize, output: CGRect, baseline: Float, applied: Float) -> String {
+        let line = "native \(Int(native.width))x\(Int(native.height)) out \(Int(output.width))x\(Int(output.height)) scale \(filter.scaleFactor) draft \(filter.isDraftModeEnabled) exp \(filter.exposure) base \(baseline) applied \(applied) nr \(filter.luminanceNoiseReductionAmount)/\(filter.colorNoiseReductionAmount) sharp \(filter.sharpnessAmount) detail \(filter.detailAmount) moire \(filter.moireReductionAmount) ltm \(filter.localToneMapAmount) lens \(filter.isLensCorrectionEnabled)"
         Logger(subsystem: "com.zeid.phi", category: "develop").info("\(line, privacy: .public)")
         return line
     }
 
-    /// `2^(baseline + ev)` before any tone curve. HEIF passes a baseline of 0.
+    /// Stops removed from a positive DNG BaselineExposure so EV 0 matches Halide Process Zero.
+    /// The tag is the JPEG match. On the 21:39 night DNG, the full tag left PHI at −3 still brighter
+    /// than Halide at −2, so EV 0 was more than one stop hot. 1.5 stops under the tag is that normal.
+    /// A baseline of 0 (HEIF, or a tag that is already zero) is not trimmed.
+    static let processZeroBaselineTrim: Float = 1.5
+    /// Last file's tag and the stops actually multiplied in. The night UITest logs both.
+    static var lastBaseline: Float = 0
+    static var lastAppliedBaseline: Float = 0
+
+    /// Tag stops that `sceneGain` multiplies. Zero stays zero.
+    static func appliedBaseline(_ tag: Float) -> Float {
+        guard tag > 0 else { return tag }
+        return tag - processZeroBaselineTrim
+    }
+
+    /// `2^(appliedBaseline + ev)` before any tone curve. HEIF passes a baseline of 0.
     static func sceneGain(baseline: Float, ev: Double) -> Float {
-        let stops = Double(baseline) + min(5, max(-5, ev))
+        let stops = Double(appliedBaseline(baseline)) + min(5, max(-5, ev))
         return Float(pow(2, stops))
     }
 
     /// Gentle S for mode 0: a toe pins black at 0, the middle stays linear, then the highlight shoulder.
-    /// Mid-gray is not rescaled here. EV 0 brightness is BaselineExposure, applied once as `2^baseline`.
+    /// Mid-gray is not rescaled here. EV 0 brightness is the trimmed baseline, one multiply.
     /// The same curve on each channel, so a neutral beam stays neutral.
     static func toneMapValue(_ linear: Float) -> Float {
         let x = max(linear, 0)
@@ -232,9 +251,16 @@ enum RawDevelop {
         if toneMapValue(0.85 * Float(pow(2, 0.9))) >= 0.985 {
             notes.append("filmic clipped a white wall at +0.9")
         }
-        let gain = sceneGain(baseline: 0.5, ev: -2)
-        if abs(gain - Float(pow(2, 0.5 - 2))) > 0.0001 {
-            notes.append("scene gain is not 2^(baseline+EV)")
+        let gain = sceneGain(baseline: 2, ev: -2)
+        if abs(gain - Float(pow(2, 2 - Double(processZeroBaselineTrim) - 2))) > 0.0001 {
+            notes.append("scene gain is not 2^(trimmed baseline+EV)")
+        }
+        let heif = sceneGain(baseline: 0, ev: -1)
+        if abs(heif - Float(pow(2, -1))) > 0.0001 {
+            notes.append("a zero baseline was trimmed")
+        }
+        if appliedBaseline(2) >= 2 {
+            notes.append("Process Zero still uses the full JPEG baseline")
         }
         if toneMapValue(0.4) != 0.4 {
             notes.append("filmic slope moved a midtone")
