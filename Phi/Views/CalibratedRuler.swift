@@ -3,6 +3,7 @@ import UIKit
 
 /// 88 pt mechanical ruler. The red needle stays put. The tape moves under the finger.
 /// Major ticks are 2×20 ivory, half ticks 1×13, fine ticks 1×6 grey.
+/// `hapticEvery` limits the click to those units. Zero clicks on every snap.
 struct CalibratedRuler: View {
     var leading: String
     var valueText: String
@@ -16,6 +17,8 @@ struct CalibratedRuler: View {
     var pointsPerUnit: CGFloat
     var fineStep: Double
     var majorEvery: Double
+    /// Haptic only when the needle crosses a multiple of this. 0 clicks on every snapped step.
+    var hapticEvery: Double = 0
     var zeroMark: Bool
     var emphasizeNearestLabel: Bool
     var label: (Double) -> String
@@ -101,10 +104,13 @@ struct CalibratedRuler: View {
                 live = limited
                 let next = snap(limited)
                 guard next != lastSent else { return }
+                let previous = lastSent ?? next
                 lastSent = next
                 onChange(next)
-                haptic.impactOccurred(intensity: 0.45)
-                haptic.prepare()
+                if hapticEvery <= 0 || Self.crossedMark(previous, next, every: hapticEvery) {
+                    haptic.impactOccurred(intensity: 0.45)
+                    haptic.prepare()
+                }
             }
             .onEnded { _ in
                 let next = snap(live ?? value)
@@ -151,6 +157,19 @@ struct CalibratedRuler: View {
         }
         let needle = CGRect(x: midX - 1.5, y: 36, width: 3, height: 28)
         context.fill(Path(roundedRect: needle, cornerRadius: 1.5), with: .color(CameraColor.accent))
+    }
+
+    /// True when `next` lands on or passes a multiple of `every` that `previous` had not.
+    private static func crossedMark(_ previous: Double, _ next: Double, every: Double) -> Bool {
+        guard every > 0 else { return true }
+        let low = min(previous, next)
+        let high = max(previous, next)
+        let first = Int((low / every).rounded(.down))
+        let last = Int((high / every).rounded(.down))
+        if first != last { return true }
+        let onMark = abs(next / every - (next / every).rounded()) < 0.0001
+        let wasMark = abs(previous / every - (previous / every).rounded()) < 0.0001
+        return onMark && wasMark == false
     }
 
     private func tickKind(slot: Int, halfCount: Int) -> TickKind {

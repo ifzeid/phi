@@ -27,7 +27,7 @@ final class CameraSession: ObservableObject {
     @Published private(set) var focalStops: [FocalStop] = []
     @Published private(set) var selectedStopID: String?
     @Published private(set) var exposureEV: Double = 0
-    @Published private(set) var exposureRange: ClosedRange<Double> = -2...2
+    @Published private(set) var exposureRange: ClosedRange<Double> = -5...5
     @Published private(set) var autoExposure = true
     @Published private(set) var manualExposureSupported = false
     @Published private(set) var manualISOValue: Float = 100
@@ -906,8 +906,9 @@ final class CameraSession: ObservableObject {
 
     private func discover(_ device: AVCaptureDevice) -> Discovery {
         let raw = photoOutput.availableRawPhotoPixelFormatTypes.contains { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
-        let lower = max(-4, Double(device.minExposureTargetBias))
-        let upper = min(4, Double(device.maxExposureTargetBias))
+        // The exposure ruler is ±5. The hardware bias, when narrower, still wins.
+        let lower = max(-5, Double(device.minExposureTargetBias))
+        let upper = min(5, Double(device.maxExposureTargetBias))
         let range: ClosedRange<Double> = lower < upper ? lower...upper : 0...0
         let ordered = Self.orderedFlash(photoOutput.supportedFlashModes)
         let manual = supportsCustomExposure(device) || Self.backCameras().contains { $0.isExposureModeSupported(.custom) }

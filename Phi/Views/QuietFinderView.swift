@@ -625,8 +625,9 @@ struct QuietFinderView: View {
             lower: evLower,
             upper: evUpper,
             pointsPerUnit: 100,
-            fineStep: 0.1,
+            fineStep: 0.5,
             majorEvery: 1,
+            hapticEvery: 1,
             zeroMark: true,
             emphasizeNearestLabel: false,
             label: evTickLabel,
@@ -762,12 +763,12 @@ struct QuietFinderView: View {
 
     private var evLower: Double {
         if camera.isConfigured { return camera.exposureRange.lowerBound }
-        return -4
+        return -5
     }
 
     private var evUpper: Double {
         if camera.isConfigured { return camera.exposureRange.upperBound }
-        return 4
+        return 5
     }
 
     private func evTickLabel(_ tick: Double) -> String {

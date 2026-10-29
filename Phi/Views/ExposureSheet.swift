@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// EV ruler from the device range, clipped to −2…+2. The needle uses the same value as the number.
+/// EV ruler from −5…+5. Major marks every 1 EV, one minor mark at each half stop. The needle uses the same value as the number.
 struct ExposureSheet: View {
     var ev: Double
     var range: ClosedRange<Double>
@@ -71,13 +71,12 @@ struct ExposureRuler: View {
             let inset: CGFloat = 10
             ZStack(alignment: .topLeading) {
                 Canvas { context, size in
-                    let steps = max(Int(((range.upperBound - range.lowerBound) / 0.1).rounded()), 1)
+                    let steps = max(Int(((range.upperBound - range.lowerBound) / 0.5).rounded()), 1)
                     for index in 0...steps {
-                        let sample = range.lowerBound + Double(index) * 0.1
+                        let sample = range.lowerBound + Double(index) * 0.5
                         let x = xPosition(sample, width: size.width, inset: inset)
-                        let major = index % 10 == 0
-                        let medium = index % 5 == 0
-                        let height: CGFloat = major ? 16 : (medium ? 11 : 7)
+                        let major = index % 2 == 0
+                        let height: CGFloat = major ? 16 : 11
                         var tick = Path()
                         tick.move(to: CGPoint(x: x, y: 24))
                         tick.addLine(to: CGPoint(x: x, y: 24 - height))
@@ -155,7 +154,7 @@ struct ExposureRuler: View {
         CameraColor.background.ignoresSafeArea()
         ExposureSheet(
             ev: -0.3,
-            range: -2...2,
+            range: -5...5,
             autoExposure: true,
             onEV: { _ in },
             onCommit: {},
