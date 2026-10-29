@@ -725,7 +725,9 @@ final class CameraSession: ObservableObject {
                         self.framingDeferred = false
                     }
                     DispatchQueue.main.async {
-                        self.statusMessage = "这一档暂时不能拍照。"
+                        if self.statusMessage == nil {
+                            self.statusMessage = "这一档暂时不能拍照。"
+                        }
                         completion(false)
                     }
                     return
@@ -741,7 +743,22 @@ final class CameraSession: ObservableObject {
                     self.framingDeferred = true
                     self.log.info("capture in flight; finder restore waits until the still finishes")
                 }
-                self.photoOutput.capturePhoto(with: prepared.settings, delegate: delegate)
+                var captureFailure: NSString?
+                let started = PHICapturePhoto(self.photoOutput, prepared.settings, delegate, &captureFailure)
+                guard started else {
+                    self.captureInFlight = false
+                    let reason = captureFailure as String? ?? "NSException"
+                    self.log.error("capturePhoto exception \(reason, privacy: .public)")
+                    if switching {
+                        self.applyFinderRestore()
+                    }
+                    self.framingDeferred = false
+                    DispatchQueue.main.async {
+                        self.statusMessage = "拍照设置被系统拒绝。"
+                        completion(false)
+                    }
+                    return
+                }
                 self.publishDeliveryLabel()
                 DispatchQueue.main.async {
                     completion(true)
@@ -972,14 +989,6 @@ final class CameraSession: ObservableObject {
             return nil
         }
         let processed: [String: Any] = [AVVideoCodecKey: chosenCodec.codec]
-        let settings: AVCapturePhotoSettings
-        // A RAW asset still needs Apple's processed file as `.photo`. Photos rejects a DNG with no primary.
-        // Mode 1 never requests RAW. ProRAW is already multi-frame, demosaiced, and denoised by Apple.
-        if let rawPixel {
-            settings = AVCapturePhotoSettings(rawPixelFormatType: rawPixel, processedFormat: processed)
-        } else {
-            settings = AVCapturePhotoSettings(format: processed)
-        }
         if let dimensions {
             let supported = device?.activeFormat.supportedMaxPhotoDimensions ?? []
             let listed = supported.isEmpty || supported.contains { photoDimensionsEqual($0, dimensions) }
@@ -987,21 +996,37 @@ final class CameraSession: ObservableObject {
                 log.error("refusing maxPhotoDimensions \(dimensions.width)x\(dimensions.height); not on the active format")
                 return nil
             }
-            settings.maxPhotoDimensions = dimensions
         }
-        // `.quality` throws when the active format's max is lower. Use the highest it actually allows.
-        settings.photoQualityPrioritization = photoOutput.maxPhotoQualityPrioritization
+        // Bayer RAW only allows .speed. ProRAW and processed-only shots may use up to the output's max.
+        let isBayerRaw = rawPixel.map { AVCapturePhotoOutput.isBayerRAWPixelFormat($0) } ?? false
+        let wanted: AVCapturePhotoOutput.QualityPrioritization = isBayerRaw ? .speed : .quality
+        let quality = wanted.rawValue <= photoOutput.maxPhotoQualityPrioritization.rawValue ? wanted : photoOutput.maxPhotoQualityPrioritization
+        let setFlash = photoOutput.supportedFlashModes.contains(flash)
+        // A RAW asset still needs Apple's processed file as `.photo`. Photos rejects a DNG with no primary.
+        // Construction and every setter run in ObjC @try. A rejected value returns nil instead of aborting.
+        var failure: NSString?
+        guard let settings = PHIMakePhotoSettings(
+            rawPixel != nil,
+            rawPixel ?? 0,
+            processed,
+            dimensions != nil,
+            dimensions?.width ?? 0,
+            dimensions?.height ?? 0,
+            quality.rawValue,
+            setFlash,
+            flash.rawValue,
+            &failure
+        ) else {
+            let reason = failure as String? ?? "NSException"
+            log.error("photo settings exception \(reason, privacy: .public)")
+            DispatchQueue.main.async {
+                self.statusMessage = "拍照设置被系统拒绝。"
+            }
+            return nil
+        }
         let shotDimensions = settings.maxPhotoDimensions
-        log.info("photo settings quality raw \(rawPixel != nil) codec \(chosenCodec.name, privacy: .public) dims \(shotDimensions.width)x\(shotDimensions.height)")
-        if photoOutput.supportedFlashModes.contains(flash) {
-            settings.flashMode = flash
-        }
-        // Preview formats belong to the settings object. The output no longer exposes them.
-        if let preview = settings.availablePreviewPhotoPixelFormatTypes.first {
-            settings.previewPhotoFormat = [
-                kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: preview)
-            ]
-        }
+        let qualityName = Self.qualityName(quality)
+        log.info("photo settings quality \(qualityName, privacy: .public) raw \(rawPixel != nil) codec \(chosenCodec.name, privacy: .public) dims \(shotDimensions.width)x\(shotDimensions.height)")
         let usingRaw = rawPixel != nil
         let codecName = chosenCodec.name
         let label = ProcessMode.label(mode: processMode, aspect: photoAspect.title)
@@ -1009,6 +1034,19 @@ final class CameraSession: ObservableObject {
             if self.formatLabel != label { self.formatLabel = label }
         }
         return (settings, usingRaw, codecName)
+    }
+
+    private static func qualityName(_ quality: AVCapturePhotoOutput.QualityPrioritization) -> String {
+        switch quality {
+        case .speed:
+            return "speed"
+        case .balanced:
+            return "balanced"
+        case .quality:
+            return "quality"
+        @unknown default:
+            return "\(quality.rawValue)"
+        }
     }
 
     /// RAW type the output lists right now. A stale type from the previous format makes `capturePhoto` throw.

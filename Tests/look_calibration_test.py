@@ -633,6 +633,10 @@ def check_capture_path(failures):
         failures.append("capture decodes the full-resolution still for the thumbnail")
     if "legalRawPixelFormat" not in CAMERA or "commitLegalOutputDimensions" not in CAMERA:
         failures.append("photo settings are not validated against the active output")
+    if "isBayerRAWPixelFormat" not in CAMERA or "let wanted: AVCapturePhotoOutput.QualityPrioritization = isBayerRaw ? .speed : .quality" not in CAMERA:
+        failures.append("Bayer RAW must set photoQualityPrioritization to .speed")
+    if "PHIMakePhotoSettings" not in CAMERA or "PHICapturePhoto" not in CAMERA:
+        failures.append("photo settings exceptions are not caught")
 
 
 def check_effects(failures):
