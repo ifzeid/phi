@@ -87,11 +87,16 @@ final class CameraSession: ObservableObject {
     private var framingDeferred = false
     /// The preview's rotation coordinator is created on the main thread. Suspend it before swapping inputs.
     let previewAnchor = PreviewAnchor()
+    /// Mode 0 live frames, toned with the same toe and shoulder as the still develop.
+    let finderTone = FinderTone()
 
     var videoDevice: AVCaptureDevice? { device }
 
     init() {
         session.automaticallyConfiguresApplicationAudioSession = false
+        finderTone.onFrame = { [weak self] image in
+            self?.previewAnchor.presentZero(image)
+        }
         let center = NotificationCenter.default
         notificationTokens.append(center.addObserver(
             forName: AVCaptureSession.runtimeErrorNotification,
@@ -608,6 +613,8 @@ final class CameraSession: ObservableObject {
 
     func setProcessMode(_ mode: ProcessMode) {
         processMode = mode
+        finderTone.isEnabled = mode == .bayer
+        previewAnchor.setZeroPreview(mode == .bayer)
         let label = ProcessMode.label(mode: mode, aspect: photoAspect.title)
         if Thread.isMainThread {
             formatLabel = label
@@ -825,6 +832,8 @@ final class CameraSession: ObservableObject {
         session.addInput(input)
         currentInput = input
         session.addOutput(photoOutput)
+        finderTone.install(on: session)
+        finderTone.isEnabled = processMode == .bayer
         // Speed is set before any AVCapturePhotoSettings is created. A higher value throws.
         // .speed delivers a fast, denoised, soft still. The shutter still uses one frame; quality is the photo.
         photoOutput.maxPhotoQualityPrioritization = .quality

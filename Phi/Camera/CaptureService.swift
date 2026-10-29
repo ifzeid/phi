@@ -747,7 +747,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     saveFailed: nil,
                     aspect: aspect.rawValue,
                     lensZoom: lensZoom > 1.01 ? lensZoom : nil,
-                    processMode: format.rawValue
+                    processMode: format.rawValue,
+                    captureEV: camera.exposureEV
                 )
                 PhiLocalShots.remember(localShot)
                 self.albumRevision += 1
@@ -921,12 +922,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true, location: location)
             if let identifier {
                 let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
+                let captureEV = PhiLocalShots.shot(id: localShotID)?.captureEV
                 PhiShotIndex.append(
                     localIdentifier: identifier,
                     hasRaw: hasRaw,
                     aspect: aspect.rawValue,
                     lensZoom: lensZoom > 1.01 ? lensZoom : nil,
-                    processMode: processMode?.rawValue
+                    processMode: processMode?.rawValue,
+                    captureEV: captureEV
                 )
                 PhiLocalShots.markSaved(id: localShotID, photosIdentifier: identifier)
                 if let thumb {

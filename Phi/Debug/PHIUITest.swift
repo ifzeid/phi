@@ -20,6 +20,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestEditorEVSweep` logs mean luma at −2, −1, −0.7, 0, +0.9, +2 for the open shot and fails if it rises as EV falls
 /// `-PHIUITestEditorHalo` logs 关/弱/强 on imported shots: far sky must stay put, bloom near lights must rise
 /// `-PHIUITestEditorNight` renders an imported night DNG at EV −2 and checks sky, beam neutrality, and sharpness
+/// `-PHIUITestEditorFinderEV` checks a finder-bias develop at EV 0 against the same file edited by that bias
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -163,6 +164,11 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorEVSweep")
     }
 
+    /// Finder EV baked into the pixels at editor 0 versus the same stop applied in post.
+    static var editorFinderEV: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorFinderEV")
+    }
+
     /// Night DNG at EV −2: sky percentiles, beam chroma, and Laplacian sharpness against a default RAW render.
     static var editorNight: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorNight")
@@ -237,7 +243,8 @@ enum PHIUITest {
                 saveFailed: false,
                 aspect: facts.aspect.rawValue,
                 lensZoom: facts.zoom,
-                processMode: ProcessMode.bayer.rawValue
+                processMode: ProcessMode.bayer.rawValue,
+                captureEV: facts.bias
             ))
             StillArchive.storeLastRecord(LibraryRecord(files: files))
             let zoomText = facts.zoom.map { String(format: "%.2f", $0) } ?? "1"
@@ -272,7 +279,10 @@ enum PHIUITest {
         if editorNight {
             runNightCheck(session)
         }
-        if editorEVSweep || editorHalo || editorNight {
+        if editorFinderEV {
+            runFinderEVCheck(session)
+        }
+        if editorEVSweep || editorHalo || editorNight || editorFinderEV {
             return
         }
         if editorDrag {
@@ -876,6 +886,121 @@ enum PHIUITest {
         return lumas
     }
 
+    /// Editor 0 on a frame already biased by N stops equals editing a meter-0 frame by N.
+    /// The sensor bias is simulated on the linear plate; clipping is left out of the mean.
+    private static func runFinderEVCheck(_ session: ProcessSession) {
+        logSweep("EDITOR FINDER EV dial 0 is the captured frame; meter total is captureEV + dial")
+        var stems = Set<String>()
+        if let open = openEditorBasename { stems.insert(open) }
+        let folder = StillArchive.directory
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        for url in urls where url.pathExtension.lowercased() == "dng" {
+            let stem = shotStem(url)
+            if stem.isEmpty == false { stems.insert(stem) }
+        }
+        if stems.isEmpty, let dng = session.sourceDNG {
+            let failed = finderPair(dng: dng, aspect: session.framedAspect, zoom: session.lensZoom, file: openEditorBasename ?? "shot", captureEV: nil)
+            if failed { assertionFailure("EDITOR FINDER EV FAILED") }
+            return
+        }
+        if stems.isEmpty {
+            logSweep("EDITOR FINDER EV FAILED no imported DNG")
+            assertionFailure("EDITOR FINDER EV FAILED")
+            return
+        }
+        var failed = false
+        for stem in stems.sorted() {
+            let shot = PhiLocalShots.shot(id: stem)
+            let aspect = shot?.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? session.framedAspect
+            let zoom = shot?.lensZoom ?? session.lensZoom
+            let captureEV = shot?.captureEV
+            let dngURL = folder.appendingPathComponent("\(stem).dng")
+            guard let dng = try? Data(contentsOf: dngURL) else { continue }
+            failed = finderPair(dng: dng, aspect: aspect, zoom: zoom, file: stem, captureEV: captureEV) || failed
+        }
+        if failed {
+            assertionFailure("EDITOR FINDER EV FAILED")
+        }
+    }
+
+    private static func finderPair(
+        dng: Data,
+        aspect: PhotoAspect,
+        zoom: Double,
+        file: String,
+        captureEV: Double?
+    ) -> Bool {
+        guard let plate = RawDevelop.scenePlate(
+            dng: dng,
+            aspect: aspect,
+            lensZoom: zoom,
+            maxSide: 512,
+            draft: false
+        ) else {
+            logSweep("EDITOR FINDER EV FAILED file=\(file) did not develop")
+            return true
+        }
+        let biasText = captureEV.map { String(format: "%.1f", $0) } ?? "none"
+        var failed = false
+        for stop in [-1.0, 1.0] {
+            guard let postMean = unclippedMean(StillPipeline.expose(plate, ev: stop)),
+                  let finderMean = unclippedMean(StillPipeline.expose(biased(plate, stops: stop), ev: 0)) else {
+                logSweep("EDITOR FINDER EV FAILED file=\(file) ev \(stop) did not render")
+                return true
+            }
+            let scale = max(postMean, 0.02)
+            let delta = abs(postMean - finderMean) / scale
+            logSweep(String(
+                format: "EDITOR FINDER EV file=%@ captureEV=%@ stop=%+.1f postMean=%.3f finderMean=%.3f delta=%.3f",
+                file, biasText, stop, Double(postMean), Double(finderMean), Double(delta)
+            ))
+            if delta > 0.08 {
+                logSweep(String(
+                    format: "EDITOR FINDER EV FAILED file=%@ stop=%+.1f post %.3f finder %.3f",
+                    file, stop, Double(postMean), Double(finderMean)
+                ))
+                failed = true
+            }
+        }
+        return failed
+    }
+
+    /// Sensor exposure changed by `stops` before a develop at EV 0.
+    private static func biased(_ plate: StillPipeline.LinearPlate, stops: Double) -> StillPipeline.LinearPlate {
+        var copy = plate
+        let factor = Float(pow(2, stops))
+        var index = 0
+        while index + 2 < copy.pixels.count {
+            copy.pixels[index] *= factor
+            copy.pixels[index + 1] *= factor
+            copy.pixels[index + 2] *= factor
+            index += 4
+        }
+        return copy
+    }
+
+    /// Mean display luma, skipping pixels that clipped in this render.
+    private static func unclippedMean(_ image: CIImage) -> Float? {
+        guard let cg = StillPipeline.displayImage(image), let plane = displayRGB(cg) else { return nil }
+        var sum = Float(0)
+        var count = 0
+        let pixels = plane.red.count
+        for index in 0..<pixels {
+            let red = plane.red[index]
+            let green = plane.green[index]
+            let blue = plane.blue[index]
+            if red >= 0.98 || green >= 0.98 || blue >= 0.98 { continue }
+            sum += 0.2126 * red + 0.7152 * green + 0.0722 * blue
+            count += 1
+        }
+        guard count > 0 else { return nil }
+        return sum / Float(count)
+    }
+
     /// Imported night DNG at EV −2, preview and export, against a default CIRAWFilter at the same stop.
     private static func runNightCheck(_ session: ProcessSession) {
         var stems = Set<String>()
@@ -1199,10 +1324,10 @@ enum PHIUITest {
     }
 
     /// Pixel aspect from the oriented HEIF. Digital zoom, when the file has one, is the crop.
-    private static func captureFacts(heifURL: URL) -> (aspect: PhotoAspect, zoom: Double?) {
+    private static func captureFacts(heifURL: URL) -> (aspect: PhotoAspect, zoom: Double?, bias: Double?) {
         guard let source = CGImageSourceCreateWithURL(heifURL as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else {
-            return (.threeByFour, nil)
+            return (.threeByFour, nil, nil)
         }
         var width = number(props[kCGImagePropertyPixelWidth as String])
         var height = number(props[kCGImagePropertyPixelHeight as String])
@@ -1227,7 +1352,10 @@ enum PHIUITest {
         let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any]
         let digital = number(exif?[kCGImagePropertyExifDigitalZoomRatio as String])
         let zoom = digital > 1.01 ? digital : nil
-        return (aspect, zoom)
+        let bias = exif?[kCGImagePropertyExifExposureBiasValue as String] == nil
+            ? nil
+            : number(exif?[kCGImagePropertyExifExposureBiasValue as String])
+        return (aspect, zoom, bias)
     }
 
     private static func number(_ value: Any?) -> Double {

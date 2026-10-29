@@ -698,6 +698,9 @@ def check_capture_path(failures):
         "-PHIUITestEditorNight",
         "EDITOR NIGHT",
         "EDITOR NIGHT FAILED",
+        "-PHIUITestEditorFinderEV",
+        "EDITOR FINDER EV",
+        "EDITOR FINDER EV FAILED",
     ):
         if flag not in UITEST and flag not in SESSION:
             failures.append(f"editor uitest missing {flag}")

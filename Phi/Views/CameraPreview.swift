@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import SwiftUI
 import UIKit
 
@@ -12,9 +13,28 @@ enum PreviewDrag {
 /// The coordinator has to be created and released on the main thread.
 final class PreviewAnchor {
     private weak var view: PreviewView?
+    private var zeroOn = false
 
     func attach(_ view: PreviewView) {
         self.view = view
+        view.setZeroPreview(zeroOn)
+    }
+
+    /// Mode 0 covers the system preview with the zero-process tone. The layer underneath still receives taps.
+    func setZeroPreview(_ on: Bool) {
+        zeroOn = on
+        let apply = { self.view?.setZeroPreview(on) }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
+    }
+
+    func presentZero(_ image: CIImage) {
+        DispatchQueue.main.async {
+            self.view?.presentZero(image)
+        }
     }
 
     func suspend() {
@@ -108,6 +128,8 @@ final class PreviewView: UIView {
 
     private var coordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
+    private let zeroCanvas = FinderToneView()
+    private var zeroWanted = false
 
     func detachCoordinator() {
         isCoordinatorPaused = true
@@ -128,10 +150,26 @@ final class PreviewView: UIView {
         coordinatorDevice = nil
     }
 
+    func setZeroPreview(_ on: Bool) {
+        zeroWanted = on
+        zeroCanvas.isHidden = on == false
+        if on == false {
+            zeroCanvas.clear()
+        }
+    }
+
+    func presentZero(_ image: CIImage) {
+        guard zeroWanted else { return }
+        zeroCanvas.present(image)
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         previewLayer.videoGravity = .resizeAspectFill
         backgroundColor = .clear
+        zeroCanvas.isHidden = true
+        zeroCanvas.isUserInteractionEnabled = false
+        addSubview(zeroCanvas)
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.maximumNumberOfTouches = 1
@@ -151,6 +189,7 @@ final class PreviewView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         previewLayer.frame = bounds
+        zeroCanvas.frame = bounds
         previewLayer.videoGravity = .resizeAspectFill
         guard let coordinator else { return }
         apply(coordinator.videoRotationAngleForHorizonLevelPreview)
@@ -173,6 +212,7 @@ final class PreviewView: UIView {
         previewLayer.videoGravity = .resizeAspectFill
         guard let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(angle) else { return }
         connection.videoRotationAngle = angle
+        FinderTone.sharedRotation = angle
     }
 
     @objc private func handleHold(_ hold: UILongPressGestureRecognizer) {

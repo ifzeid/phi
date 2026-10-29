@@ -44,17 +44,20 @@ enum PhiShotIndex {
         var lensZoom: Double?
         /// `ProcessMode.rawValue`. Nil on rows written before mode 0 had its own develop.
         var processMode: String?
+        /// Finder EV compensation in stops. Nil on older rows. Editor 0 is this capture, not a second copy of it.
+        var captureEV: Double?
 
         private enum CodingKeys: String, CodingKey {
-            case localIdentifier, hasRaw, aspect, lensZoom, processMode
+            case localIdentifier, hasRaw, aspect, lensZoom, processMode, captureEV
         }
 
-        init(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double?, processMode: String? = nil) {
+        init(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double?, processMode: String? = nil, captureEV: Double? = nil) {
             self.localIdentifier = localIdentifier
             self.hasRaw = hasRaw
             self.aspect = aspect
             self.lensZoom = lensZoom
             self.processMode = processMode
+            self.captureEV = captureEV
         }
 
         init(from decoder: Decoder) throws {
@@ -64,6 +67,7 @@ enum PhiShotIndex {
             aspect = try container.decodeIfPresent(String.self, forKey: .aspect)
             lensZoom = try container.decodeIfPresent(Double.self, forKey: .lensZoom)
             processMode = try container.decodeIfPresent(String.self, forKey: .processMode)
+            captureEV = try container.decodeIfPresent(Double.self, forKey: .captureEV)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -73,6 +77,7 @@ enum PhiShotIndex {
             try container.encodeIfPresent(aspect, forKey: .aspect)
             try container.encodeIfPresent(lensZoom, forKey: .lensZoom)
             try container.encodeIfPresent(processMode, forKey: .processMode)
+            try container.encodeIfPresent(captureEV, forKey: .captureEV)
         }
     }
 
@@ -81,7 +86,7 @@ enum PhiShotIndex {
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
     }
 
-    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double? = nil, processMode: String? = nil) {
+    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double? = nil, processMode: String? = nil, captureEV: Double? = nil) {
         var entries = load()
         entries.removeAll { $0.localIdentifier == localIdentifier }
         entries.append(Entry(
@@ -89,7 +94,8 @@ enum PhiShotIndex {
             hasRaw: hasRaw,
             aspect: aspect,
             lensZoom: lensZoom,
-            processMode: processMode
+            processMode: processMode,
+            captureEV: captureEV
         ))
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: fileURL, options: .atomic)
@@ -143,9 +149,11 @@ enum PhiLocalShots {
         var lensZoom: Double?
         /// `ProcessMode.rawValue`. Older records omit it.
         var processMode: String?
+        /// Finder EV in stops. Editor 0 is the captured frame; meter total is `captureEV + editorEV`.
+        var captureEV: Double?
 
         private enum CodingKeys: String, CodingKey {
-            case id, files, hasRaw, savedToPhotos, photosIdentifier, saveFailed, aspect, lensZoom, processMode
+            case id, files, hasRaw, savedToPhotos, photosIdentifier, saveFailed, aspect, lensZoom, processMode, captureEV
         }
 
         init(
@@ -157,7 +165,8 @@ enum PhiLocalShots {
             saveFailed: Bool?,
             aspect: String?,
             lensZoom: Double?,
-            processMode: String? = nil
+            processMode: String? = nil,
+            captureEV: Double? = nil
         ) {
             self.id = id
             self.files = files
@@ -168,6 +177,7 @@ enum PhiLocalShots {
             self.aspect = aspect
             self.lensZoom = lensZoom
             self.processMode = processMode
+            self.captureEV = captureEV
         }
 
         init(from decoder: Decoder) throws {
@@ -181,6 +191,7 @@ enum PhiLocalShots {
             aspect = try container.decodeIfPresent(String.self, forKey: .aspect)
             lensZoom = try container.decodeIfPresent(Double.self, forKey: .lensZoom)
             processMode = try container.decodeIfPresent(String.self, forKey: .processMode)
+            captureEV = try container.decodeIfPresent(Double.self, forKey: .captureEV)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -194,6 +205,7 @@ enum PhiLocalShots {
             try container.encodeIfPresent(aspect, forKey: .aspect)
             try container.encodeIfPresent(lensZoom, forKey: .lensZoom)
             try container.encodeIfPresent(processMode, forKey: .processMode)
+            try container.encodeIfPresent(captureEV, forKey: .captureEV)
         }
     }
 

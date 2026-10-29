@@ -20,6 +20,9 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// The file the user opened. Neutral edits show this, not a new render.
     let originalImage: UIImage?
     let originalData: Data?
+    /// Stops relative to the captured frame. 0 reproduces the viewfinder, including finder EV compensation,
+    /// because that bias is already in the sensor data and is not applied again. The meter-relative total
+    /// is `captureEV + exposureEV`. The album thumbnail is this develop at 0, the capture look.
     @Published var exposureEV: Double
     @Published var style: GrainStyle
     @Published var colorLook: ColorLook
