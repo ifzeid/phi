@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestEditorEV <value>` and `-PHIUITestEditorLook <name>` apply after open
 /// `-PHIUITestEditorEVSweep` logs mean luma at −2, −1, −0.7, 0, +0.9, +2 for the open shot and fails if it rises as EV falls
 /// `-PHIUITestEditorHalo` logs 关/弱/强 on imported shots: far sky must stay put, bloom near lights must rise
+/// `-PHIUITestEditorNight` renders an imported night DNG at EV −2 and checks sky, beam neutrality, and sharpness
 enum PHIUITest {
     enum Screen: String {
         case capture
@@ -162,6 +163,11 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorEVSweep")
     }
 
+    /// Night DNG at EV −2: sky percentiles, beam chroma, and Laplacian sharpness against a default RAW render.
+    static var editorNight: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorNight")
+    }
+
     /// 关 / 弱 / 强 on each imported still. Far pixels stay put; pixels near highlights get brighter.
     static var editorHalo: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorHalo")
@@ -263,7 +269,10 @@ enum PHIUITest {
         if editorHalo {
             runHaloSweep(session)
         }
-        if editorEVSweep || editorHalo {
+        if editorNight {
+            runNightCheck(session)
+        }
+        if editorEVSweep || editorHalo || editorNight {
             return
         }
         if editorDrag {
@@ -865,6 +874,286 @@ enum PHIUITest {
             lumas[index] = 0.2126 * red + 0.7152 * green + 0.0722 * blue
         }
         return lumas
+    }
+
+    /// Imported night DNG at EV −2, preview and export, against a default CIRAWFilter at the same stop.
+    private static func runNightCheck(_ session: ProcessSession) {
+        var stems = Set<String>()
+        if let open = openEditorBasename {
+            stems.insert(open)
+        }
+        let folder = StillArchive.directory
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        for url in urls where url.pathExtension.lowercased() == "dng" {
+            let stem = shotStem(url)
+            if stem.isEmpty == false {
+                stems.insert(stem)
+            }
+        }
+        if let dng = session.sourceDNG, stems.isEmpty {
+            let failed = nightDNG(dng, aspect: session.framedAspect, zoom: session.lensZoom, file: openEditorBasename ?? "shot")
+            if failed {
+                assertionFailure("EDITOR NIGHT FAILED")
+            }
+            return
+        }
+        if stems.isEmpty {
+            logSweep("EDITOR NIGHT FAILED no imported DNG")
+            assertionFailure("EDITOR NIGHT FAILED")
+            return
+        }
+        var failed = false
+        for stem in stems.sorted() {
+            let shot = PhiLocalShots.shot(id: stem)
+            let aspect = shot?.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? session.framedAspect
+            let zoom = shot?.lensZoom ?? session.lensZoom
+            let dngURL = folder.appendingPathComponent("\(stem).dng")
+            guard let dng = try? Data(contentsOf: dngURL) else {
+                if session.sourceDNG != nil, stem == openEditorBasename {
+                    failed = nightDNG(session.sourceDNG!, aspect: aspect, zoom: zoom, file: stem) || failed
+                }
+                continue
+            }
+            failed = nightDNG(dng, aspect: aspect, zoom: zoom, file: stem) || failed
+        }
+        if failed {
+            assertionFailure("EDITOR NIGHT FAILED")
+        }
+    }
+
+    private static func nightDNG(_ dng: Data, aspect: PhotoAspect, zoom: Double, file: String) -> Bool {
+        let ev = -2.0
+        var failed = false
+        failed = nightPair(dng: dng, aspect: aspect, zoom: zoom, file: file, ev: ev, maxSide: EditorMatch.previewMaxSide, kind: "preview") || failed
+        failed = nightPair(dng: dng, aspect: aspect, zoom: zoom, file: file, ev: ev, maxSide: nil, kind: "export") || failed
+        return failed
+    }
+
+    private static func nightPair(
+        dng: Data,
+        aspect: PhotoAspect,
+        zoom: Double,
+        file: String,
+        ev: Double,
+        maxSide: CGFloat?,
+        kind: String
+    ) -> Bool {
+        guard let ours = RawDevelop.image(
+            dng: dng,
+            exposureEV: ev,
+            style: .off,
+            look: .none,
+            halo: .off,
+            aspect: aspect,
+            lensZoom: zoom,
+            maxSide: maxSide,
+            draft: false
+        ), let reference = referenceRAW(dng: dng, ev: ev, aspect: aspect, zoom: zoom, maxSide: maxSide) else {
+            logSweep("EDITOR NIGHT FAILED file=\(file) kind=\(kind) did not render")
+            return true
+        }
+        guard let oursRGB = displayRGB(ours), let referenceRGB = displayRGB(reference) else {
+            logSweep("EDITOR NIGHT FAILED file=\(file) kind=\(kind) pixels missing")
+            return true
+        }
+        let sky = skyPercentiles(oursRGB)
+        let beam = beamChroma(oursRGB)
+        let oursSharp = normalizedLaplacian(oursRGB)
+        let referenceSharp = normalizedLaplacian(referenceRGB)
+        let ratio = referenceSharp > 0.0000001 ? oursSharp / referenceSharp : 1
+        logSweep(String(
+            format: "EDITOR NIGHT file=%@ kind=%@ ev=%.0f skyP1=%.3f,%.3f,%.3f skyP5=%.3f,%.3f,%.3f beamChroma=%.3f sharp=%.5f ref=%.5f ratio=%.3f",
+            file,
+            kind,
+            ev,
+            Double(sky.p1.0), Double(sky.p1.1), Double(sky.p1.2),
+            Double(sky.p5.0), Double(sky.p5.1), Double(sky.p5.2),
+            Double(beam),
+            Double(oursSharp),
+            Double(referenceSharp),
+            Double(ratio)
+        ))
+        var failed = false
+        let skySpread = max(sky.p5.0, sky.p5.1, sky.p5.2) - min(sky.p5.0, sky.p5.1, sky.p5.2)
+        if sky.p5.0 > 0.07 || sky.p5.1 > 0.07 || sky.p5.2 > 0.07 || skySpread > 0.03 {
+            logSweep(String(
+                format: "EDITOR NIGHT FAILED file=%@ kind=%@ sky p5 %.3f %.3f %.3f is not a neutral black",
+                file, kind, sky.p5.0, sky.p5.1, sky.p5.2
+            ))
+            failed = true
+        }
+        if beam > 0.08 {
+            logSweep(String(format: "EDITOR NIGHT FAILED file=%@ kind=%@ beam chroma %.3f", file, kind, beam))
+            failed = true
+        }
+        if ratio < 0.85 {
+            logSweep(String(
+                format: "EDITOR NIGHT FAILED file=%@ kind=%@ sharpness %.5f is below 85%% of reference %.5f",
+                file, kind, oursSharp, referenceSharp
+            ))
+            failed = true
+        }
+        return failed
+    }
+
+    /// Default CIRAWFilter at this EV, same crop and long side as our develop. Draft stays off.
+    private static func referenceRAW(
+        dng: Data,
+        ev: Double,
+        aspect: PhotoAspect,
+        zoom: Double,
+        maxSide: CGFloat?
+    ) -> CGImage? {
+        guard let filter = CIRAWFilter(imageData: dng, identifierHint: nil) else { return nil }
+        filter.isDraftModeEnabled = false
+        filter.scaleFactor = 1
+        filter.exposure = Float(ev)
+        guard let output = filter.outputImage else { return nil }
+        let zoomed = zoom > 1 ? zoom : 1
+        var framed = aspect.cropped(LensCrop.cropped(output, zoom: zoomed))
+        if let maxSide {
+            framed = StillPipeline.scaledToSide(framed, maxSide: maxSide)
+        }
+        return StillPipeline.displayImage(framed)
+    }
+
+    private struct RGBPlane {
+        var red: [Float]
+        var green: [Float]
+        var blue: [Float]
+        var width: Int
+        var height: Int
+    }
+
+    private static func displayRGB(_ image: CGImage) -> RGBPlane? {
+        let width = image.width
+        let height = image.height
+        guard width > 2, height > 2 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        let drew = bytes.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            guard let context = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: space,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drew else { return nil }
+        var red = [Float](repeating: 0, count: width * height)
+        var green = [Float](repeating: 0, count: width * height)
+        var blue = [Float](repeating: 0, count: width * height)
+        for index in 0..<(width * height) {
+            let offset = index * 4
+            red[index] = Float(bytes[offset]) / 255
+            green[index] = Float(bytes[offset + 1]) / 255
+            blue[index] = Float(bytes[offset + 2]) / 255
+        }
+        return RGBPlane(red: red, green: green, blue: blue, width: width, height: height)
+    }
+
+    /// p1 and p5 of each channel inside the darkest fifth. On a night frame that region is the sky.
+    private static func skyPercentiles(_ plane: RGBPlane) -> (p1: (Float, Float, Float), p5: (Float, Float, Float)) {
+        let count = plane.red.count
+        var order = Array(0..<count)
+        order.sort { lhs, rhs in
+            let left = 0.2126 * plane.red[lhs] + 0.7152 * plane.green[lhs] + 0.0722 * plane.blue[lhs]
+            let right = 0.2126 * plane.red[rhs] + 0.7152 * plane.green[rhs] + 0.0722 * plane.blue[rhs]
+            return left < right
+        }
+        let take = max(1, count / 5)
+        var red = [Float]()
+        var green = [Float]()
+        var blue = [Float]()
+        red.reserveCapacity(take)
+        for index in 0..<take {
+            let pixel = order[index]
+            red.append(plane.red[pixel])
+            green.append(plane.green[pixel])
+            blue.append(plane.blue[pixel])
+        }
+        red.sort()
+        green.sort()
+        blue.sort()
+        func pick(_ values: [Float], _ fraction: Int) -> Float {
+            values[min(values.count - 1, values.count * fraction / 100)]
+        }
+        return (
+            (pick(red, 1), pick(green, 1), pick(blue, 1)),
+            (pick(red, 5), pick(green, 5), pick(blue, 5))
+        )
+    }
+
+    /// Mean chroma of bright pixels that are already close to neutral: the searchlight beams, not the orange tower.
+    private static func beamChroma(_ plane: RGBPlane) -> Float {
+        var samples = [Float]()
+        var bright = 0
+        let count = plane.red.count
+        for index in 0..<count {
+            let red = plane.red[index]
+            let green = plane.green[index]
+            let blue = plane.blue[index]
+            let luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+            let peak = max(red, max(green, blue))
+            let floor = min(red, min(green, blue))
+            guard luma >= 0.72, peak > 0.04 else { continue }
+            bright += 1
+            let chroma = (peak - floor) / peak
+            if chroma <= 0.2 {
+                samples.append(chroma)
+            }
+        }
+        if bright == 0 { return 0 }
+        guard samples.isEmpty == false else { return 1 }
+        return samples.reduce(0, +) / Float(samples.count)
+    }
+
+    /// Laplacian variance divided by luma variance, so a darker exposure is not scored as blur.
+    private static func normalizedLaplacian(_ plane: RGBPlane) -> Float {
+        let width = plane.width
+        let height = plane.height
+        let count = width * height
+        var luma = [Float](repeating: 0, count: count)
+        var lumaSum = Float(0)
+        for index in 0..<count {
+            let sample = 0.2126 * plane.red[index] + 0.7152 * plane.green[index] + 0.0722 * plane.blue[index]
+            luma[index] = sample
+            lumaSum += sample
+        }
+        let lumaMean = lumaSum / Float(count)
+        var lumaSquare = Float(0)
+        for sample in luma {
+            let delta = sample - lumaMean
+            lumaSquare += delta * delta
+        }
+        let lumaVar = lumaSquare / Float(count)
+        var sum = Float(0)
+        var square = Float(0)
+        var seen = 0
+        for y in 1..<(height - 1) {
+            for x in 1..<(width - 1) {
+                let center = y * width + x
+                let response = luma[center - 1] + luma[center + 1] + luma[center - width] + luma[center + width] - 4 * luma[center]
+                sum += response
+                square += response * response
+                seen += 1
+            }
+        }
+        guard seen > 0 else { return 0 }
+        let mean = sum / Float(seen)
+        let variance = square / Float(seen) - mean * mean
+        return variance / max(lumaVar, 0.000001)
     }
 
     /// Thirty EV steps on the warm 800 px proxy. Prints the median and the 95th percentile.

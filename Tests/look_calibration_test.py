@@ -695,6 +695,9 @@ def check_capture_path(failures):
         "-PHIUITestEditorHalo",
         "EDITOR HALO",
         "EDITOR HALO FAILED",
+        "-PHIUITestEditorNight",
+        "EDITOR NIGHT",
+        "EDITOR NIGHT FAILED",
     ):
         if flag not in UITEST and flag not in SESSION:
             failures.append(f"editor uitest missing {flag}")
@@ -722,8 +725,16 @@ def check_capture_path(failures):
         failures.append("RAW filter exposure is the baseline plus a later gain")
     if "baselineExposure = 0" not in RAW_SWIFT or "filter.exposure = 0" not in RAW_SWIFT:
         failures.append("RAW baseline is still applied inside CIRAWFilter")
-    if "isGamutMappingEnabled = false" not in RAW_SWIFT:
-        failures.append("RAW gamut map can refit highlights after the dial")
+    if "isGamutMappingEnabled = true" not in RAW_SWIFT:
+        failures.append("RAW highlights are not gamut-mapped into Display P3")
+    if "filter.scaleFactor = 1" not in RAW_SWIFT:
+        failures.append("RAW demosaic is not full resolution")
+    if "isDraftModeEnabled = false" not in RAW_SWIFT:
+        failures.append("RAW demosaic can run in draft mode")
+    if "neutralTemperature = asShotTemperature" not in RAW_SWIFT:
+        failures.append("as-shot white balance is not restored after develop setup")
+    if "toneMapValue" not in RAW_SWIFT or "filmic: true" not in RAW_SWIFT:
+        failures.append("mode 0 EV 0 is missing the filmic curve after BaselineExposure")
     if "shadowBias = 0" not in RAW_SWIFT:
         failures.append("RAW shadow bias is still the display pedestal")
     if "StillPipeline.expose(" not in RAW_SWIFT or "StillPipeline.expose(" not in STILL:

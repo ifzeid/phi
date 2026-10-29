@@ -103,25 +103,42 @@ static func renderLinear(
     }
 
     /// Scene-linear samples. `baseline` is the DNG BaselineExposure tag, in stops. HEIF uses 0.
+    /// `filmic` is the mode 0 toe and contrast. HEIF stays on the highlight shoulder only.
     struct LinearPlate {
         var pixels: [Float]
         var baseline: Float
         var extent: CGRect
+        var filmic: Bool = false
     }
 
     /// One decode into extended-linear Display P3. The dial does not render this plate again.
-    static func linearPlate(of image: CIImage, baseline: Float) -> LinearPlate? {
+    static func linearPlate(of image: CIImage, baseline: Float, filmic: Bool = false) -> LinearPlate? {
         let bounds = image.extent.integral
         guard let pixels = linearPixels(image, bounds: bounds) else { return nil }
-        return LinearPlate(pixels: pixels, baseline: baseline, extent: bounds)
+        return LinearPlate(pixels: pixels, baseline: baseline, extent: bounds, filmic: filmic)
     }
 
-    /// `2^(baseline + ev)` on scene-linear RGB, then the highlight shoulder. Preview and export both call this.
-    /// The multiply is on these samples. Nothing after it rescales the frame to its own maximum.
+    /// Lanczos to `maxSide` on the long edge. The RAW filter has already demosaiced at full resolution.
+    static func scaledToSide(_ image: CIImage, maxSide: CGFloat) -> CIImage {
+        let extent = image.extent.integral
+        let longest = max(extent.width, extent.height)
+        guard longest > maxSide, longest > 0, maxSide > 1 else { return image }
+        let scale = maxSide / longest
+        guard let filter = CIFilter(name: "CILanczosScaleTransform") else {
+            return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)).cropped(to: image.extent)
+        }
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(scale, forKey: kCIInputScaleKey)
+        filter.setValue(1.0, forKey: kCIInputAspectRatioKey)
+        guard let output = filter.outputImage else { return image }
+        return output.cropped(to: output.extent.integral)
+    }
+
+    /// `2^(baseline + ev)` on scene-linear RGB, then the mode 0 filmic or the highlight shoulder.
+    /// Preview and export both call this. The multiply is on these samples.
     static func expose(_ plate: LinearPlate, ev: Double, shoulder: Bool = true) -> CIImage {
         var pixels = plate.pixels
-        let stops = Double(plate.baseline) + min(5, max(-5, ev))
-        let gain = Float(pow(2, stops))
+        let gain = RawDevelop.sceneGain(baseline: plate.baseline, ev: ev)
         let count = pixels.count / 4
         var index = 0
         while index < count {
@@ -130,9 +147,15 @@ static func renderLinear(
             let green = pixels[offset + 1] * gain
             let blue = pixels[offset + 2] * gain
             if shoulder {
-                pixels[offset] = RawDevelop.baseShoulderValue(red)
-                pixels[offset + 1] = RawDevelop.baseShoulderValue(green)
-                pixels[offset + 2] = RawDevelop.baseShoulderValue(blue)
+                if plate.filmic {
+                    pixels[offset] = RawDevelop.toneMapValue(red)
+                    pixels[offset + 1] = RawDevelop.toneMapValue(green)
+                    pixels[offset + 2] = RawDevelop.toneMapValue(blue)
+                } else {
+                    pixels[offset] = RawDevelop.baseShoulderValue(red)
+                    pixels[offset + 1] = RawDevelop.baseShoulderValue(green)
+                    pixels[offset + 2] = RawDevelop.baseShoulderValue(blue)
+                }
             } else {
                 pixels[offset] = max(red, 0)
                 pixels[offset + 1] = max(green, 0)

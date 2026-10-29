@@ -5,9 +5,9 @@ import os
 /// because scale can restore defaults. The 无 look does not grade the file. Other looks are the
 /// `LookRecipe` cubes. Only the CCD look resamples and sharpens.
 /// ProRAW files are already multi-frame, demosaiced, and denoised by Apple; the same zeros still apply.
-/// The EV dial is one `pow(2, baseline + ev)` multiply on scene-linear samples, then the highlight shoulder.
-/// The RAW filter's exposure, baseline, boost, and gamut map stay off so they cannot apply a second gain
-/// or refit a tone curve after the dial. Apple's HEIF is not an input.
+/// EV 0 is the DNG BaselineExposure tag, applied once as `2^baseline`, then a gentle filmic curve.
+/// The dial is the same multiply (`2^(baseline + ev)`) before that curve. The filter does not add a second gain.
+/// Demosaic stays full resolution and draft stays off. Apple's HEIF is not an input.
 enum RawDevelop {
     static let exportQuality: CGFloat = 0.98
     /// Last develop, for the on-screen line and the log. Not a user setting.
@@ -57,8 +57,12 @@ enum RawDevelop {
             maxSide: maxSide,
             draft: draft
         ) else { return nil }
-        let cropped = aspect.cropped(developed.image)
-        return StillPipeline.linearPlate(of: cropped, baseline: developed.baseline)
+        var cropped = aspect.cropped(developed.image)
+        if let maxSide {
+            // Full-res demosaic, then a sharp downsample. Scaling inside CIRAWFilter softens the Bayer grid.
+            cropped = StillPipeline.scaledToSide(cropped, maxSide: maxSide)
+        }
+        return StillPipeline.linearPlate(of: cropped, baseline: developed.baseline, filmic: true)
     }
 
     /// `pow(2, ev)` while the data is still scene-linear, then the highlight shoulder.
@@ -76,29 +80,24 @@ enum RawDevelop {
         draft: Bool
     ) -> (image: CIImage, baseline: Float)? {
         guard let filter = CIRAWFilter(imageData: dng, identifierHint: nil) else { return nil }
-        filter.isDraftModeEnabled = draft
+        _ = draft
+        _ = maxSide
+        filter.isDraftModeEnabled = false
         let asShotTemperature = filter.neutralTemperature
         let asShotTint = filter.neutralTint
+        let asShotSharpness = filter.sharpnessAmount
         let zoom = lensZoom > 1 ? lensZoom : 1
         let native = filter.nativeSize
-        if let maxSide {
-            let native = filter.nativeSize
-            let longest = Swift.max(native.width, native.height)
-            let needed = maxSide * zoom
-            if longest > needed, longest > 0 {
-                filter.scaleFactor = Float(needed / longest)
-            } else {
-                filter.scaleFactor = 1
-            }
-        } else {
-            filter.scaleFactor = 1
-        }
+        // Full-resolution demosaic. A scaleFactor below 1 is a softer Bayer reconstruction.
+        filter.scaleFactor = 1
+        let baseline = silenceProcessing(filter)
+        filter.sharpnessAmount = min(max(asShotSharpness, Float(0)), Float(0.35))
+        // Other inputs reset the as-shot neutral. Put it back last so beams stay neutral.
         filter.neutralTemperature = asShotTemperature
         filter.neutralTint = asShotTint
-        let baseline = silenceProcessing(filter)
         guard let output = filter.outputImage else { return nil }
         Self.lastReport = report(filter, native: native, output: output.extent, baseline: baseline)
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) applied once as 2^baseline before the shoulder, filter exposure 0")
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("baselineExposure \(baseline) as-shot WB \(asShotTemperature) tint \(asShotTint), full-res demosaic, filmic after 2^EV")
         // `outputImage` is already upright: a 4032×3024 buffer tagged orientation 6 comes out 3024×4032.
         // Applying that EXIF tag again turns the portrait frame sideways.
         let framed = LensCrop.cropped(output, zoom: zoom)
@@ -138,12 +137,13 @@ enum RawDevelop {
         filter.shadowBias = 0
         filter.boostAmount = 0
         filter.localToneMapAmount = 0
-        filter.isGamutMappingEnabled = false
-        filter.extendedDynamicRangeAmount = 0
+        // Keep highlights inside Display P3 so a clipped channel does not turn a beam cyan.
+        filter.isGamutMappingEnabled = true
+        // Leave headroom above 1 so the filmic shoulder, not an SDR lift, rolls off the lights.
+        filter.extendedDynamicRangeAmount = 1
         filter.luminanceNoiseReductionAmount = 0
         filter.colorNoiseReductionAmount = 0
         filter.moireReductionAmount = 0
-        filter.sharpnessAmount = 0
         filter.detailAmount = 0
         filter.contrastAmount = 0
         filter.isLensCorrectionEnabled = false
@@ -157,6 +157,32 @@ enum RawDevelop {
         let line = "native \(Int(native.width))x\(Int(native.height)) out \(Int(output.width))x\(Int(output.height)) scale \(filter.scaleFactor) draft \(filter.isDraftModeEnabled) exp \(filter.exposure) base \(baseline) nr \(filter.luminanceNoiseReductionAmount)/\(filter.colorNoiseReductionAmount) sharp \(filter.sharpnessAmount) detail \(filter.detailAmount) moire \(filter.moireReductionAmount) ltm \(filter.localToneMapAmount) lens \(filter.isLensCorrectionEnabled)"
         Logger(subsystem: "com.zeid.phi", category: "develop").info("\(line, privacy: .public)")
         return line
+    }
+
+    /// `2^(baseline + ev)` before any tone curve. HEIF passes a baseline of 0.
+    static func sceneGain(baseline: Float, ev: Double) -> Float {
+        let stops = Double(baseline) + min(5, max(-5, ev))
+        return Float(pow(2, stops))
+    }
+
+    /// Gentle filmic for mode 0. A toe pulls night sky toward black, a small S adds contrast, then the highlight shoulder.
+    /// The same curve on each channel, so a neutral beam stays neutral. EV 0 already includes BaselineExposure.
+    static func toneMapValue(_ linear: Float) -> Float {
+        let x = max(linear, 0)
+        let toeEnd: Float = 0.045
+        let toed: Float
+        if x <= 0 {
+            toed = 0
+        } else if x >= toeEnd {
+            toed = x
+        } else {
+            let t = x / toeEnd
+            toed = toeEnd * t * t
+        }
+        let pivot: Float = 0.18
+        let contrast: Float = 1.2
+        let contrasted = toed <= 0 ? Float(0) : pivot * pow(toed / pivot, contrast)
+        return baseShoulderValue(contrasted)
     }
 
     /// Global shoulder. Midtones below the knee stay put, so a sunset is not lifted into a pale frame.
@@ -178,6 +204,32 @@ enum RawDevelop {
         let high = baseShoulderValue(2)
         if high >= 1 || high <= baseShoulderValue(0.62) {
             notes.append("base shoulder did not keep a highlight")
+        }
+        if toneMapValue(0) != 0 {
+            notes.append("filmic lifted black")
+        }
+        if toneMapValue(0.01) > 0.004 {
+            notes.append("filmic left a night sky gray")
+        }
+        let mid = toneMapValue(0.18)
+        if abs(mid - 0.18) > 0.02 {
+            notes.append("filmic moved mid gray")
+        }
+        var previous = Float(0)
+        for sample in [Float(0), 0.01, 0.04, 0.18, 0.45, 1, 2] {
+            let tone = toneMapValue(sample)
+            if tone + 0.0001 < previous {
+                notes.append("filmic is not monotonic")
+                break
+            }
+            previous = tone
+        }
+        if toneMapValue(0.85 * Float(pow(2, 0.9))) >= 0.985 {
+            notes.append("filmic clipped a white wall at +0.9")
+        }
+        let gain = sceneGain(baseline: 0.5, ev: -2)
+        if abs(gain - Float(pow(2, 0.5 - 2))) > 0.0001 {
+            notes.append("scene gain is not 2^(baseline+EV)")
         }
         return notes
     }
