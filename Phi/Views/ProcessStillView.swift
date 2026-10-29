@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Post-capture develop surface. Exposure here changes the rendered still, not the camera meter.
 /// Grain is a named look. The original RAW file is never rewritten.
@@ -59,13 +60,9 @@ struct ProcessStillView: View {
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())
-        .alert("放弃这次调整？", isPresented: $confirmDiscard) {
-            Button("放弃调整", role: .destructive) {
-                onClose()
-            }
-            Button("继续编辑", role: .cancel) {}
-        } message: {
-            Text("未保存的调整将丢失，原片不会改变。")
+        .background {
+            DiscardEditAlert(isPresented: $confirmDiscard, onDiscard: onClose)
+                .allowsHitTesting(false)
         }
         .onAppear {
             captureBaseline()
@@ -241,33 +238,38 @@ struct ProcessStillView: View {
     }
 
     private var effectsTool: some View {
-        HStack(spacing: 18) {
-            effectGroup(title: "光晕") {
+        VStack(spacing: 8) {
+            effectRow(title: "光晕") {
                 ForEach(HaloLevel.allCases) { level in
-                    SelectPill(title: level.title, selected: session.halo == level, width: 48, height: 34) {
+                    SelectPill(title: level.title, selected: session.halo == level, width: 56, height: 44) {
                         session.setHalo(level)
                     }
                     .accessibilityLabel(level == .off ? "关闭光晕" : "\(level.title)光晕")
                 }
             }
-            effectGroup(title: "颗粒") {
-                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 34) {
+            effectRow(title: "颗粒") {
+                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 44) {
                     session.setStyle(.off)
                 }
-                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 34) {
+                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 44) {
                     session.setStyle(.fine)
                 }
             }
         }
+        .padding(.horizontal, 24)
     }
 
-    private func effectGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func effectRow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 8) {
             Text(title)
-                .font(CameraFont.interface(11))
-                .foregroundStyle(CameraColor.textSecondary)
-            HStack(spacing: 8) { content() }
+                .font(CameraFont.fixed(14, weight: .regular))
+                .foregroundStyle(CameraColor.textPrimary)
+            Spacer(minLength: 8)
+            HStack(spacing: 4) {
+                content()
+            }
         }
+        .frame(height: 44)
     }
 
     private var toast: some View {
@@ -416,6 +418,63 @@ struct HaloToggle: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// System alert. The app tint is vermilion, which would paint the cancel action red.
+/// The alert's own tint stays ivory, so only the destructive action is red.
+private struct DiscardEditAlert: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    var onDiscard: () -> Void
+
+    func makeUIViewController(context: Context) -> DiscardAlertHost {
+        let host = DiscardAlertHost()
+        host.view.backgroundColor = .clear
+        return host
+    }
+
+    func updateUIViewController(_ host: DiscardAlertHost, context: Context) {
+        host.onDiscard = onDiscard
+        host.onDismiss = { isPresented = false }
+        host.isPresented = isPresented
+        if isPresented {
+            host.showIfNeeded()
+        }
+    }
+}
+
+private final class DiscardAlertHost: UIViewController {
+    var isPresented = false
+    var onDiscard: () -> Void = {}
+    var onDismiss: () -> Void = {}
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        showIfNeeded()
+    }
+
+    func showIfNeeded() {
+        guard isPresented, presentedViewController == nil, view.window != nil else { return }
+        let alert = UIAlertController(
+            title: "放弃这次调整？",
+            message: "未保存的调整将丢失，原片不会改变。",
+            preferredStyle: .alert
+        )
+        alert.overrideUserInterfaceStyle = .dark
+        alert.view.tintColor = UIColor(red: 244.0 / 255.0, green: 243.0 / 255.0, blue: 238.0 / 255.0, alpha: 1)
+        let discard = UIAlertAction(title: "放弃调整", style: .destructive) { [weak self] _ in
+            self?.onDismiss()
+            self?.onDiscard()
+        }
+        let stay = UIAlertAction(title: "继续编辑", style: .cancel) { [weak self] _ in
+            self?.onDismiss()
+        }
+        alert.addAction(discard)
+        alert.addAction(stay)
+        let ivory = alert.view.tintColor
+        present(alert, animated: true) {
+            alert.view.tintColor = ivory
+        }
     }
 }
 
