@@ -30,6 +30,9 @@ final class ProcessSession: ObservableObject, Identifiable {
 
     private var renderTicket = 0
     private var rendering = false
+    #if DEBUG
+    private var renderStarted: [Int: CFAbsoluteTime] = [:]
+    #endif
     private let previewCache = PreviewCache()
     private var oriented: CGImage?
 
@@ -101,6 +104,9 @@ final class ProcessSession: ObservableObject, Identifiable {
 
     func schedule() {
         renderTicket += 1
+        #if DEBUG
+        renderStarted[renderTicket] = CFAbsoluteTimeGetCurrent()
+        #endif
         if isNeutral {
             showOriginal()
             return
@@ -182,6 +188,9 @@ final class ProcessSession: ObservableObject, Identifiable {
                     Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
                     self.preview = image
                     self.onPreview?(image)
+                    #if DEBUG
+                    self.logRenderLatency(ticket: snap.ticket)
+                    #endif
                 }
                 self.rendering = false
                 return false
@@ -189,6 +198,17 @@ final class ProcessSession: ObservableObject, Identifiable {
             if stale == false { return }
         }
     }
+
+    #if DEBUG
+    private func logRenderLatency(ticket: Int) {
+        guard let start = renderStarted.removeValue(forKey: ticket) else { return }
+        renderStarted = renderStarted.filter { $0.key > ticket }
+        let ms = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        let line = String(format: "EDITOR RENDER LATENCY %.1f ms", ms)
+        print(line)
+        Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
+    }
+    #endif
 
     /// Bake the proxy before the first drag so the dial does not wait on a full-frame decode.
     func warmPreview() {
@@ -313,6 +333,50 @@ enum EditorMatch {
             notes.append("preview side \(ProcessSession.previewSide) is above \(previewMaxSide)")
         }
         return notes
+    }
+
+    /// Mean absolute channel difference after drawing both images into the editor frame's size.
+    static func logNeutralDiff(heif: CGImage, editor: CGImage) {
+        let fitted = fittedSize(width: editor.width, height: editor.height, longSide: 256)
+        guard fitted.width > 1, fitted.height > 1,
+              let left = draw(heif, size: fitted),
+              let right = draw(editor, size: fitted),
+              let diff = meanAbsDiff(left, right) else {
+            print("EDITOR NEUTRAL DIFF failed")
+            return
+        }
+        let line = String(format: "EDITOR NEUTRAL DIFF %.3f", diff)
+        print(line)
+        Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
+    }
+
+    private static func fittedSize(width: Int, height: Int, longSide: Int) -> CGSize {
+        let longest = max(width, height)
+        guard longest > longSide, longest > 0 else {
+            return CGSize(width: CGFloat(width), height: CGFloat(height))
+        }
+        let scale = CGFloat(longSide) / CGFloat(longest)
+        let fittedWidth = max(CGFloat(1), (CGFloat(width) * scale).rounded(.down))
+        let fittedHeight = max(CGFloat(1), (CGFloat(height) * scale).rounded(.down))
+        return CGSize(width: fittedWidth, height: fittedHeight)
+    }
+
+    private static func draw(_ image: CGImage, size: CGSize) -> CGImage? {
+        let width = max(1, Int(size.width.rounded(.down)))
+        let height = max(1, Int(size.height.rounded(.down)))
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     private static func checkerImage() -> CGImage? {

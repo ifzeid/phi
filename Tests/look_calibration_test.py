@@ -28,6 +28,7 @@ CAMERA = (ROOT / "Phi/Camera/CameraSession.swift").read_text()
 LIBRARY = (ROOT / "Phi/Camera/PhotoLibrary.swift").read_text()
 META = (ROOT / "Phi/Camera/PhotoMetadata.swift").read_text()
 SESSION = (ROOT / "Phi/Camera/ProcessSession.swift").read_text()
+UITEST = (ROOT / "Phi/Debug/PHIUITest.swift").read_text()
 
 
 def clamp(value):
@@ -657,6 +658,16 @@ def check_capture_path(failures):
         failures.append("editor preview is not capped")
     if "func warmPreview" not in SESSION:
         failures.append("editor does not warm the preview proxy")
+    for flag in (
+        "-PHIUITestImport",
+        "-PHIUITestOpenEditor",
+        "-PHIUITestEditorEV",
+        "-PHIUITestEditorLook",
+        "EDITOR NEUTRAL DIFF",
+        "EDITOR RENDER LATENCY",
+    ):
+        if flag not in UITEST and flag not in SESSION:
+            failures.append(f"editor uitest missing {flag}")
     if "RawDevelop.image" in CAPTURE:
         failures.append("saving an edit still redevelops the DNG")
     if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:

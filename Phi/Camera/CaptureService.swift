@@ -900,6 +900,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         session.preview = session.originalImage ?? UIImage(cgImage: pixels)
         session.developInfo = "原片 · \(session.preview?.size.width ?? 0)x\(session.preview?.size.height ?? 0)"
         session.warmPreview()
+        #if DEBUG
+        PHIUITest.measureOpenedEditor(source: source, framed: framed, session: session)
+        #endif
         processSession = session
     }
 

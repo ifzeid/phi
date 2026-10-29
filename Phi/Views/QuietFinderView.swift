@@ -163,6 +163,10 @@ struct QuietFinderView: View {
         .modifier(HiddenSystemChrome())
         .onAppear {
             #if DEBUG
+            PHIUITest.importPairsIfRequested()
+            if let name = PHIUITest.openEditorOnce() {
+                capture.openLocalShot(id: name)
+            }
             if let aspect = PHIUITest.aspect {
                 capture.setPhotoAspect(aspect)
             }
