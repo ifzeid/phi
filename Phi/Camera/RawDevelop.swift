@@ -16,7 +16,7 @@ enum RawDevelop {
         exposureEV: Double,
         style: GrainStyle,
         look: ColorLook,
-        halo: Bool,
+        halo: HaloLevel,
         aspect: PhotoAspect,
         lensZoom: Double = 1,
         maxSide: CGFloat?,

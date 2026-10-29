@@ -4,10 +4,7 @@ import CoreImage
 /// Input and output are in the linear working space. 无 is identity: no base curve.
 /// A selected look's cube runs in a temporary gamma so it is not crushed, then the image is linear again.
 enum ColorLooks {
-    /// How much of the blurred highlight luminance is added back. Not a slider.
-    static let haloMix: CGFloat = 0.30
-
-    static func apply(_ image: CIImage, look: ColorLook, halo: Bool) -> CIImage {
+    static func apply(_ image: CIImage, look: ColorLook, halo: HaloLevel) -> CIImage {
         var current = image
         if look != .none {
             current = toPerceptual(current)
@@ -25,8 +22,8 @@ enum ColorLooks {
             }
             current = toLinear(current)
         }
-        if halo {
-            current = highlightDiffusion(current)
+        if halo != .off {
+            current = highlightDiffusion(current, level: halo)
         }
         return current
     }
@@ -134,38 +131,108 @@ enum ColorLooks {
         return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
-    /// Ricoh-style highlight diffusion. Linear light, source chromaticity, no vignette and no tint.
-    /// The blurred highlight is added as luminance (`haloMix`), so a neutral stays neutral and a
-    /// flat tone below the knee is unchanged. Runs after the look is back in linear light, before grain.
-    private static func highlightDiffusion(_ image: CIImage) -> CIImage {
+    /// Physical highlight diffusion in linear light. A fraction of every tone, weighted toward
+    /// highlights, is lifted out of the sharp image and returned as a tight bloom plus a wide veil.
+    /// Glow colour is the source colour. Edges are clamped, so there is no vignette.
+    /// `out = (1-k)*img + k*multiscaleGaussian(img * emphasis)`, then the glow is scaled so its
+    /// mean luma matches the image. A flat field stays put. Runs after the look is linear again, before grain.
+    private static func highlightDiffusion(_ image: CIImage, level: HaloLevel) -> CIImage {
         let extent = image.extent
         let longest = Swift.max(extent.width, extent.height)
-        guard longest > 2 else { return image }
-        let highlights = tone(image, points: [
-            (0.00, 0.00),
-            (0.80, 0.00),
-            (0.88, 0.35),
-            (0.94, 0.72),
-            (1.00, 1.00)
+        guard level != .off, longest > 2 else { return image }
+        let weighted = image.applyingFilter("CIColorCube", parameters: [
+            "inputCubeDimension": NSNumber(value: HaloWeight.dimension),
+            "inputCubeData": HaloWeight.data
         ])
-        let clamped = highlights.clampedToExtent()
-        let wide = clamped.applyingGaussianBlur(sigma: longest * 0.028).cropped(to: extent)
-        let tight = clamped.applyingGaussianBlur(sigma: longest * 0.016).cropped(to: extent)
+        let source = weighted.clampedToExtent()
+        let tight = source.applyingGaussianBlur(sigma: longest * HaloOptics.tightRadius).cropped(to: extent)
+        let wide = source.applyingGaussianBlur(sigma: longest * HaloOptics.wideRadius).cropped(to: extent)
         guard let scales = CIFilter(name: "CIDissolveTransition") else { return image }
         scales.setValue(tight, forKey: kCIInputImageKey)
         scales.setValue(wide, forKey: kCIInputTargetImageKey)
-        scales.setValue(0.5, forKey: kCIInputTimeKey)
+        scales.setValue(Double(1 - HaloOptics.tightMix), forKey: kCIInputTimeKey)
         let glow = (scales.outputImage ?? wide).cropped(to: extent)
-        return StillPipeline.applyingHighlight(image, glow: glow, amount: haloMix)
+        return StillPipeline.applyingDiffusion(image, glow: glow, scatter: level.scatter)
+    }
+}
+
+/// Scatter fractions and radii for 光晕. Weak and strong match a diffusion filter's two steps, not a slider.
+enum HaloOptics {
+    static let weakScatter: CGFloat = 0.18
+    static let strongScatter: CGFloat = 0.36
+    /// Share of the scattered light that stays in the tight bloom. The rest is the wide veil.
+    static let tightMix: CGFloat = 0.38
+    /// Radii as a fraction of the long side.
+    static let tightRadius: CGFloat = 0.02
+    static let wideRadius: CGFloat = 0.18
+    /// Every tone scatters at least this much. The rest of the weight rises toward highlights.
+    static let emphasisFloor: CGFloat = 0.16
+
+    static func emphasis(_ luma: Float) -> Float {
+        let y = min(max(luma, Float(0)), Float(1))
+        let t = smooth(0.04, 1, y)
+        let shaped = t * t
+        let floor = Float(emphasisFloor)
+        return floor + (1 - floor) * shaped
     }
 
-    private static func tone(_ image: CIImage, points: [(CGFloat, CGFloat)]) -> CIImage {
-        var parameters: [String: Any] = [:]
-        for (index, point) in points.enumerated() {
-            parameters["inputPoint\(index)"] = CIVector(x: point.0, y: point.1)
-        }
-        return image.applyingFilter("CIToneCurve", parameters: parameters)
+    private static func smooth(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
+        let span = edge1 - edge0
+        if span == 0 { return value < edge0 ? 0 : 1 }
+        let t = min(max((value - edge0) / span, Float(0)), Float(1))
+        return t * t * (3 - 2 * t)
     }
+}
+
+enum HaloLevel: String, CaseIterable, Identifiable, Codable {
+    case off
+    case weak
+    case strong
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .off: "关"
+        case .weak: "弱"
+        case .strong: "强"
+        }
+    }
+
+    var scatter: CGFloat {
+        switch self {
+        case .off: 0
+        case .weak: HaloOptics.weakScatter
+        case .strong: HaloOptics.strongScatter
+        }
+    }
+}
+
+/// `rgb * emphasis(luma)` in linear light. The same factor on every channel, so a neutral stays neutral.
+private enum HaloWeight {
+    static let dimension = 17
+    static let data: Data = {
+        let size = dimension
+        var samples = [Float](repeating: 0, count: size * size * size * 4)
+        let last = Float(size - 1)
+        var offset = 0
+        for blue in 0..<size {
+            for green in 0..<size {
+                for red in 0..<size {
+                    let r = Float(red) / last
+                    let g = Float(green) / last
+                    let b = Float(blue) / last
+                    let gain = HaloOptics.emphasis(GrainField.rec709(red: r, green: g, blue: b))
+                    samples[offset] = r * gain
+                    samples[offset + 1] = g * gain
+                    samples[offset + 2] = b * gain
+                    samples[offset + 3] = 1
+                    offset += 4
+                }
+            }
+        }
+        return samples.withUnsafeBytes { Data($0) }
+    }()
 }
 
 enum ColorLook: String, CaseIterable, Identifiable, Codable {

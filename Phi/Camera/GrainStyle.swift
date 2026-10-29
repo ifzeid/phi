@@ -55,9 +55,9 @@ struct StillRecipe: Codable, Equatable {
     var style: GrainStyle
     var originalWasRaw: Bool
     var colorLook: ColorLook
-    var halo: Bool
+    var halo: HaloLevel
 
-    static let zero = StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false, colorLook: .none, halo: false)
+    static let zero = StillRecipe(exposureEV: 0, style: .off, originalWasRaw: false, colorLook: .none, halo: .off)
 
     enum CodingKeys: String, CodingKey {
         case exposureEV
@@ -67,7 +67,7 @@ struct StillRecipe: Codable, Equatable {
         case halo
     }
 
-    init(exposureEV: Double, style: GrainStyle, originalWasRaw: Bool, colorLook: ColorLook = .none, halo: Bool = false) {
+    init(exposureEV: Double, style: GrainStyle, originalWasRaw: Bool, colorLook: ColorLook = .none, halo: HaloLevel = .off) {
         self.exposureEV = exposureEV
         self.style = style
         self.originalWasRaw = originalWasRaw
@@ -81,7 +81,11 @@ struct StillRecipe: Codable, Equatable {
         style = try container.decodeIfPresent(GrainStyle.self, forKey: .style) ?? .off
         originalWasRaw = try container.decodeIfPresent(Bool.self, forKey: .originalWasRaw) ?? false
         colorLook = try container.decodeIfPresent(ColorLook.self, forKey: .colorLook) ?? .none
-        halo = try container.decodeIfPresent(Bool.self, forKey: .halo) ?? false
+        if let flag = try? container.decode(Bool.self, forKey: .halo) {
+            halo = flag ? .strong : .off
+        } else {
+            halo = try container.decodeIfPresent(HaloLevel.self, forKey: .halo) ?? .off
+        }
     }
 
     func encode(to encoder: Encoder) throws {

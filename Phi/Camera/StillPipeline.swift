@@ -42,7 +42,7 @@ enum StillPipeline {
         exposureEV: Double,
         style: GrainStyle,
         look: ColorLook = .none,
-        halo: Bool = false,
+        halo: HaloLevel = .off,
         lensZoom: Double = 1,
         maxSide: CGFloat?
     ) -> CGImage? {
@@ -71,34 +71,34 @@ enum StillPipeline {
         return applyingGrain(image, profile: profile)
     }
 
-    /// Adds `amount` of the glow's luminance. Chromaticity is unchanged. A flat tone below the
-    /// highlight knee (glow 0) stays put, so 光晕 alone does not retint a neutral frame.
-    static func applyingHighlight(_ image: CIImage, glow: CIImage, amount: CGFloat) -> CIImage {
+    /// `glow` is the multiscale blur of `img * emphasis`, in source colour.
+    /// Scales that glow so its mean luma matches the image, then `out = (1 - k) * img + k * glow`.
+    static func applyingDiffusion(_ image: CIImage, glow: CIImage, scatter: CGFloat) -> CIImage {
         let bounds = image.extent.integral
         guard let base = linearPixels(image, bounds: bounds),
               let glowPixels = linearPixels(glow, bounds: bounds),
               base.count == glowPixels.count else { return image }
         var pixels = base
-        let mix = Float(amount)
         let count = pixels.count / 4
+        var imageSum = 0.0
+        var glowSum = 0.0
         for index in 0..<count {
             let offset = index * 4
-            let red = pixels[offset]
-            let green = pixels[offset + 1]
-            let blue = pixels[offset + 2]
-            let y = GrainField.rec709(red: red, green: green, blue: blue)
-            let glowLuma = GrainField.rec709(
+            imageSum += Double(GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2]))
+            glowSum += Double(GrainField.rec709(
                 red: glowPixels[offset],
                 green: glowPixels[offset + 1],
                 blue: glowPixels[offset + 2]
-            )
-            var delta = mix * max(glowLuma, 0) * max(0, 1 - y)
-            let room = max(0, 1 - y)
-            if delta > room { delta = room }
-            let factor: Float = y > 0.0001 ? (y + delta) / y : 1
-            pixels[offset] = red * factor
-            pixels[offset + 1] = green * factor
-            pixels[offset + 2] = blue * factor
+            ))
+        }
+        let scale: Float = glowSum > 1e-8 ? Float(imageSum / glowSum) : 1
+        let k = Float(scatter)
+        let kept = 1 - k
+        for index in 0..<count {
+            let offset = index * 4
+            pixels[offset] = pixels[offset] * kept + k * scale * glowPixels[offset]
+            pixels[offset + 1] = pixels[offset + 1] * kept + k * scale * glowPixels[offset + 1]
+            pixels[offset + 2] = pixels[offset + 2] * kept + k * scale * glowPixels[offset + 2]
         }
         return image(pixels, bounds: bounds)
     }
