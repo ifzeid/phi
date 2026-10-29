@@ -113,16 +113,17 @@ struct ProcessStillView: View {
         PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
             ZStack {
                 CameraColor.background
+                EditorMetalPreview(frame: session.liveFrame, onPresented: { ticket in
+                    session.notePresented(ticket: ticket)
+                }, onFirstPixels: { image in
+                    #if DEBUG
+                    session.deliverFirstPixels(image)
+                    #endif
+                })
                 if holdingOriginal {
                     Image(uiImage: session.originalImage ?? UIImage(cgImage: session.base))
                         .resizable()
                         .scaledToFit()
-                } else if let preview = session.preview {
-                    Image(uiImage: preview)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    ProgressView().tint(CameraColor.accent)
                 }
             }
         }
@@ -201,9 +202,11 @@ struct ProcessStillView: View {
             label: editTickLabel,
             snap: snapEditEV,
             onChange: { next in
-                session.setExposure(next)
+                session.setExposure(next, interactive: true)
             },
-            onCommit: {}
+            onCommit: {
+                session.refinePreview()
+            }
         )
         .frame(maxWidth: 342)
         .frame(maxWidth: .infinity)

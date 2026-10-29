@@ -1,3 +1,4 @@
+import CoreImage
 import CoreLocation
 import os
 import UIKit
@@ -22,14 +23,30 @@ final class ProcessSession: ObservableObject, Identifiable {
     @Published var colorLook: ColorLook
     @Published var halo: HaloLevel
     @Published var preview: UIImage?
+    /// What the Metal preview draws. Ticket 0 is the framed HEIF, before any edit.
+    @Published var liveFrame: LiveFrame?
     @Published var isExporting = false
     @Published var status: String?
     @Published var developInfo: String
 
     var onPreview: ((UIImage) -> Void)?
+    #if DEBUG
+    var onFirstDrawn: ((CGImage) -> Void)?
+    #endif
+
+    struct LiveFrame {
+        var ticket: Int
+        var image: CIImage
+    }
 
     private var renderTicket = 0
     private var rendering = false
+    private var exposureDrag = false
+    private var presentedTicket = -1
+    private var warmTask: Task<Void, Never>?
+    #if DEBUG
+    private var presentWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    #endif
     #if DEBUG
     private var renderStarted: [Int: CFAbsoluteTime] = [:]
     #endif
@@ -72,6 +89,8 @@ final class ProcessSession: ObservableObject, Identifiable {
         if let originalImage {
             self.preview = originalImage
         }
+        let display = originalImage?.cgImage ?? base
+        self.liveFrame = LiveFrame(ticket: 0, image: CIImage(cgImage: display))
         _ = DevelopEffectCheck.confirm
     }
 
@@ -80,24 +99,41 @@ final class ProcessSession: ObservableObject, Identifiable {
     }
 
     func setExposure(_ value: Double) {
+        setExposure(value, interactive: false)
+    }
+
+    /// `interactive` uses the 800 px proxy. The idle refine after the finger lifts uses 1280.
+    func setExposure(_ value: Double, interactive: Bool) {
+        exposureDrag = interactive
         exposureEV = (min(5, max(-5, value)) * 10).rounded() / 10
+        schedule()
+    }
+
+    /// After a dial drag, replace the small proxy with the idle one.
+    func refinePreview() {
+        guard exposureDrag else { return }
+        exposureDrag = false
+        guard isNeutral == false else { return }
         schedule()
     }
 
     func setStyle(_ next: GrainStyle) {
         guard next != style else { return }
+        exposureDrag = false
         style = next
         schedule()
     }
 
     func setColorLook(_ next: ColorLook) {
         guard next != colorLook else { return }
+        exposureDrag = false
         colorLook = next
         schedule()
     }
 
     func setHalo(_ level: HaloLevel) {
         guard level != halo else { return }
+        exposureDrag = false
         halo = level
         schedule()
     }
@@ -126,6 +162,8 @@ final class ProcessSession: ObservableObject, Identifiable {
             preview = UIImage(cgImage: base)
             developInfo = "原片 · \(base.width)×\(base.height)"
         }
+        let display = originalImage?.cgImage ?? base
+        liveFrame = LiveFrame(ticket: renderTicket, image: CIImage(cgImage: display))
     }
 
     private struct DevelopRequest {
@@ -135,6 +173,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         var style: GrainStyle
         var look: ColorLook
         var halo: HaloLevel
+        var interactive: Bool
         var maxSide: CGFloat
         var base: CGImage
         var original: UIImage?
@@ -149,7 +188,8 @@ final class ProcessSession: ObservableObject, Identifiable {
             style: style,
             look: colorLook,
             halo: halo,
-            maxSide: Self.previewSide,
+            interactive: exposureDrag,
+            maxSide: exposureDrag ? EditorMatch.dragSide : EditorMatch.previewMaxSide,
             base: base,
             original: originalImage,
             aspect: framedAspect
@@ -159,7 +199,6 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// Latest request wins. The camera still is already cropped; exposure hits the baked proxy.
     private func pump() async {
         while true {
-            await Task.yield()
             let snap = await MainActor.run { self.makeSnapshot() }
             if snap.neutral {
                 await MainActor.run {
@@ -169,7 +208,7 @@ final class ProcessSession: ObservableObject, Identifiable {
                 return
             }
             let source = upright(snap.original, fallback: snap.base)
-            let rendered = previewCache.cgImage(
+            let rendered = previewCache.previewImage(
                 source: source,
                 dng: nil,
                 aspect: snap.aspect,
@@ -183,14 +222,14 @@ final class ProcessSession: ObservableObject, Identifiable {
             let stale = await MainActor.run { () -> Bool in
                 guard self.renderTicket == snap.ticket else { return true }
                 if let rendered {
-                    let image = UIImage(cgImage: rendered)
-                    self.developInfo = "HEIF · \(rendered.width)×\(rendered.height)"
+                    let side = Int(rendered.extent.integral.width.rounded())
+                    let other = Int(rendered.extent.integral.height.rounded())
+                    self.developInfo = "HEIF · \(side)×\(other)"
                     Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
-                    self.preview = image
-                    self.onPreview?(image)
-                    #if DEBUG
-                    self.logRenderLatency(ticket: snap.ticket)
-                    #endif
+                    self.liveFrame = LiveFrame(ticket: snap.ticket, image: rendered)
+                    if snap.interactive == false {
+                        self.publishThumbnail(rendered)
+                    }
                 }
                 self.rendering = false
                 return false
@@ -199,34 +238,91 @@ final class ProcessSession: ObservableObject, Identifiable {
         }
     }
 
+    /// Called from the Metal view once that ticket's drawable has been presented.
+    func notePresented(ticket: Int) {
+        presentedTicket = max(presentedTicket, ticket)
+        #if DEBUG
+        logRenderLatency(ticket: ticket)
+        let ready = presentWaiters.filter { $0.0 <= ticket }
+        presentWaiters.removeAll { $0.0 <= ticket }
+        ready.forEach { $0.1.resume() }
+        #endif
+    }
+
+    func deliverFirstPixels(_ image: CGImage) {
+        #if DEBUG
+        onFirstDrawn?(image)
+        onFirstDrawn = nil
+        #endif
+    }
+
+    #if DEBUG
+    func waitUntilWarm() async {
+        await warmTask?.value
+    }
+
+    /// Applies one edit and waits until the Metal view presents it. Returns milliseconds.
+    func measureEdit(_ body: @escaping (ProcessSession) -> Void) async -> Double {
+        let started = CFAbsoluteTimeGetCurrent()
+        let ticket = await MainActor.run { () -> Int in
+            body(self)
+            return self.renderTicket
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async {
+                if self.presentedTicket >= ticket {
+                    continuation.resume()
+                } else {
+                    self.presentWaiters.append((ticket, continuation))
+                }
+            }
+        }
+        return (CFAbsoluteTimeGetCurrent() - started) * 1000
+    }
+
+    func resetLatencySamples() {
+        latencySamples.removeAll()
+    }
+
+    private(set) var latencySamples: [Double] = []
+    #endif
+
+    private func publishThumbnail(_ image: CIImage) {
+        let picture = image
+        let callback = onPreview
+        Task.detached(priority: .utility) { [weak self] in
+            guard let cg = StillPipeline.displayImage(picture) else { return }
+            let ui = UIImage(cgImage: cg)
+            await MainActor.run {
+                self?.preview = ui
+                callback?(ui)
+            }
+        }
+    }
+
     #if DEBUG
     private func logRenderLatency(ticket: Int) {
         guard let start = renderStarted.removeValue(forKey: ticket) else { return }
         renderStarted = renderStarted.filter { $0.key > ticket }
         let ms = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        latencySamples.append(ms)
         let line = String(format: "EDITOR RENDER LATENCY %.1f ms", ms)
         print(line)
         Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
     }
     #endif
 
-    /// Bake the proxy before the first drag so the dial does not wait on a full-frame decode.
+    /// Bake the 800 px and 1280 px proxies, and every look cube, before the first edit.
     func warmPreview() {
-        let source = base
+        guard warmTask == nil else { return }
+        let source = upright(originalImage, fallback: base)
         let aspect = framedAspect
         let cache = previewCache
-        let side = Self.previewSide
-        Task.detached(priority: .userInitiated) {
-            _ = cache.cgImage(
+        warmTask = Task.detached(priority: .userInitiated) {
+            cache.prewarm(
                 source: source,
-                dng: nil,
                 aspect: aspect,
-                exposureEV: 0,
-                style: .off,
-                look: .none,
-                halo: .off,
-                lensZoom: 1,
-                maxSide: side
+                sides: [EditorMatch.dragSide, EditorMatch.previewMaxSide]
             )
         }
     }
@@ -278,6 +374,7 @@ final class ProcessSession: ObservableObject, Identifiable {
 
 /// Neutral edit frame versus the album still, and a proof that the dial changes the proxy.
 enum EditorMatch {
+    static let dragSide: CGFloat = 800
     static let previewMaxSide: CGFloat = 1280
 
     static func failures() -> [String] {

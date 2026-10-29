@@ -665,9 +665,19 @@ def check_capture_path(failures):
         "-PHIUITestEditorLook",
         "EDITOR NEUTRAL DIFF",
         "EDITOR RENDER LATENCY",
+        "-PHIUITestEditorDrag",
+        "EDITOR DRAG p50",
     ):
         if flag not in UITEST and flag not in SESSION:
             failures.append(f"editor uitest missing {flag}")
+    if "MTKView" not in (ROOT / "Phi/Views/EditorMetalPreview.swift").read_text():
+        failures.append("editor preview does not draw with MTKView")
+    if "CIRenderDestination" not in STILL:
+        failures.append("editor preview does not render through CIRenderDestination")
+    if "cacheIntermediates: true" not in STILL:
+        failures.append("preview context does not cache intermediates")
+    if "dragSide: CGFloat = 800" not in SESSION:
+        failures.append("drag proxy is not 800 px")
     if "RawDevelop.image" in CAPTURE:
         failures.append("saving an edit still redevelops the DNG")
     if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:

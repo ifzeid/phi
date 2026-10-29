@@ -24,7 +24,9 @@ enum StillPipeline {
             CIContextOption.workingColorSpace: linearP3,
             CIContextOption.outputColorSpace: displayP3,
             CIContextOption.workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
-            CIContextOption.cacheIntermediates: false,
+            // Preview repeats the same graph with a new exposure. Keep intermediates.
+            // The proxy is at most 1280 px, so the cache stays small.
+            CIContextOption.cacheIntermediates: true,
             CIContextOption.useSoftwareRenderer: false
         ]
         let device: MTLDevice? = MTLCreateSystemDefaultDevice()
@@ -354,6 +356,16 @@ enum StillPipeline {
         renderLock.unlock()
         let luma = GrainField.rec709(red: bitmap[0], green: bitmap[1], blue: bitmap[2])
         return luma.isFinite ? luma : nil
+    }
+
+    /// Encode a preview into a Metal texture. Callers present the command buffer.
+    static func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer) throws {
+        renderLock.lock()
+        defer { renderLock.unlock() }
+        let destination = CIRenderDestination(mtlTexture: texture, commandBuffer: commandBuffer)
+        destination.colorSpace = displayP3
+        destination.isFlipped = true
+        _ = try context.startTask(toRender: image, to: destination)
     }
 
     static func displayImage(_ image: CIImage) -> CGImage? {
@@ -744,24 +756,29 @@ enum StillPipeline {
 }
 
 /// Screen-sized develop cache. Exposure is a gain on the baked bitmap.
-/// The bake key includes look, halo strength, and grain. Full resolution is `StillPipeline.render`.
+/// Each long side and each look keeps its own bake. Full resolution is `StillPipeline.render`.
 final class PreviewCache {
     private let lock = NSLock()
-    private var proxyID: ObjectIdentifier?
-    private var proxyZoom = 0.0
-    private var proxySide = 0
-    private var proxyDNG = -1
-    private var proxyAspect: PhotoAspect?
-    private var proxy: CIImage?
+    private var sourceID: ObjectIdentifier?
+    private var sourceZoom = 0.0
+    private var sourceDNG = -1
+    private var sourceAspect: PhotoAspect?
+    private var bases: [Int: CIImage] = [:]
+    private var grades: [String: CIImage] = [:]
 
-    private var gradedLook: ColorLook?
-    private var graded: CIImage?
-    private var bakedLook: ColorLook?
-    private var bakedHalo: HaloLevel?
-    private var bakedStyle: GrainStyle?
-    private var baked: CIImage?
+    /// Drag and idle proxies, and every look cube, so the first edit does not compile them.
+    func prewarm(source: CGImage, aspect: PhotoAspect, sides: [CGFloat]) {
+        lock.lock()
+        defer { lock.unlock() }
+        for side in sides {
+            guard let base = linearBase(source: source, dng: nil, aspect: aspect, zoom: 1, maxSide: side) else { continue }
+            for look in ColorLook.allCases {
+                _ = grade(base, look: look, halo: .off, style: .off)
+            }
+        }
+    }
 
-    func cgImage(
+    func previewImage(
         source: CGImage,
         dng: Data?,
         aspect: PhotoAspect,
@@ -771,14 +788,14 @@ final class PreviewCache {
         halo: HaloLevel,
         lensZoom: Double,
         maxSide: CGFloat
-    ) -> CGImage? {
+    ) -> CIImage? {
         lock.lock()
         defer { lock.unlock() }
         guard let base = linearBase(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
             return nil
         }
-        let developed = develop(base, look: look, halo: halo, style: style)
-        return StillPipeline.displayImage(StillPipeline.applyingExposure(developed, ev: exposureEV))
+        let developed = grade(base, look: look, halo: halo, style: style)
+        return StillPipeline.applyingExposure(developed, ev: exposureEV)
     }
 
     private func linearBase(
@@ -791,14 +808,15 @@ final class PreviewCache {
         let side = Int(maxSide.rounded())
         let dngCount = dng?.count ?? 0
         let identity = ObjectIdentifier(source)
-        if proxyID == identity,
-           proxyZoom == zoom,
-           proxySide == side,
-           proxyDNG == dngCount,
-           proxyAspect == aspect,
-           let proxy {
-            return proxy
+        if sourceID != identity || sourceAspect != aspect || abs(sourceZoom - zoom) > 0.001 || sourceDNG != dngCount {
+            bases.removeAll()
+            grades.removeAll()
+            sourceID = identity
+            sourceAspect = aspect
+            sourceZoom = zoom
+            sourceDNG = dngCount
         }
+        if let cached = bases[side] { return cached }
         let prepared: CIImage?
         if let dng {
             prepared = RawDevelop.linearBase(
@@ -813,39 +831,26 @@ final class PreviewCache {
         }
         guard let prepared else { return nil }
         let bakedProxy = StillPipeline.materialize(prepared) ?? prepared
-        proxy = bakedProxy
-        proxyID = identity
-        proxyZoom = zoom
-        proxySide = side
-        proxyDNG = dngCount
-        proxyAspect = aspect
-        graded = nil
-        gradedLook = nil
-        baked = nil
+        bases[side] = bakedProxy
         return bakedProxy
     }
 
-    private func develop(_ base: CIImage, look: ColorLook, halo: HaloLevel, style: GrainStyle) -> CIImage {
-        if graded == nil || gradedLook != look {
-            if look == .none {
-                graded = base
-            } else {
-                let graph = ColorLooks.graded(base, look: look)
-                graded = StillPipeline.materialize(graph) ?? graph
-            }
-            gradedLook = look
-            baked = nil
+    private func grade(_ base: CIImage, look: ColorLook, halo: HaloLevel, style: GrainStyle) -> CIImage {
+        let width = Int(base.extent.integral.width.rounded())
+        let height = Int(base.extent.integral.height.rounded())
+        let bakedLook = look
+        let bakedHalo = halo
+        let bakedStyle = style
+        let key = "\(width)x\(height)|\(bakedLook.rawValue)|\(bakedHalo.rawValue)|\(bakedStyle.rawValue)"
+        if let cached = grades[key], bakedHalo == halo, bakedLook == look, bakedStyle == style {
+            return cached
         }
-        guard let graded else { return base }
-        if let baked, bakedLook == look, bakedHalo == halo, bakedStyle == style {
-            return baked
-        }
-        if halo == .off, style == .off {
-            baked = graded
-            bakedLook = look
-            bakedHalo = halo
-            bakedStyle = style
-            return graded
+        let graded: CIImage
+        if look == .none {
+            graded = base
+        } else {
+            let graph = ColorLooks.graded(base, look: look)
+            graded = StillPipeline.materialize(graph) ?? graph
         }
         var current = graded
         if halo != .off {
@@ -853,11 +858,9 @@ final class PreviewCache {
         }
         if style != .off {
             current = StillPipeline.grained(current, style: style)
+            current = StillPipeline.materialize(current) ?? current
         }
-        baked = current
-        bakedLook = look
-        bakedHalo = halo
-        bakedStyle = style
+        grades[key] = current
         return current
     }
 }

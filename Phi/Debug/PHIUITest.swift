@@ -151,6 +151,10 @@ enum PHIUITest {
         return ColorLook.allCases.first { $0.title == raw }
     }
 
+    static var editorDrag: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorDrag")
+    }
+
     /// Copies each same-basename HEIC+DNG pair into the local shot store. Safe to call once per launch.
     static func importPairsIfRequested() {
         guard didImport == false else { return }
@@ -224,23 +228,51 @@ enum PHIUITest {
         }
     }
 
-    /// Neutral diff against the HEIF, then the requested EV / look. Latency is logged when the frame is shown.
-    static func measureOpenedEditor(source: UIImage, framed: UIImage, session: ProcessSession) {
+    /// Diff the HEIF against the first Metal frame, after the proxies are warm, then apply EV, look, or the drag run.
+    static func measureOpenedEditor(source: UIImage, session: ProcessSession) {
         guard openEditorBasename != nil else { return }
-        if let heif = source.cgImage, let editor = framed.cgImage {
-            EditorMatch.logNeutralDiff(heif: heif, editor: editor)
+        let heif = source.cgImage
+        session.onFirstDrawn = { drawn in
+            if let heif {
+                EditorMatch.logNeutralDiff(heif: heif, editor: drawn)
+            }
+            Task {
+                await session.waitUntilWarm()
+                await applyLaunchEdits(session)
+            }
         }
-        guard editorEV != nil || editorLook != nil else { return }
-        let started = CFAbsoluteTimeGetCurrent()
-        if let editorEV {
-            session.setExposure(editorEV)
+    }
+
+    private static func applyLaunchEdits(_ session: ProcessSession) async {
+        if editorDrag {
+            await runDrag(session)
+            return
         }
         if let editorLook {
-            session.setColorLook(editorLook)
+            _ = await session.measureEdit { $0.setColorLook(editorLook) }
         }
-        guard session.isNeutral else { return }
-        let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
-        let line = String(format: "EDITOR RENDER LATENCY %.1f ms", ms)
+        if let editorEV {
+            _ = await session.measureEdit { $0.setExposure(editorEV, interactive: true) }
+            await MainActor.run { session.refinePreview() }
+        }
+    }
+
+    /// Thirty EV steps on the warm 800 px proxy. Prints the median and the 95th percentile.
+    private static func runDrag(_ session: ProcessSession) async {
+        await MainActor.run { session.resetLatencySamples() }
+        var samples: [Double] = []
+        samples.reserveCapacity(30)
+        for index in 0..<30 {
+            let step = Double((index % 10) + 1) * 0.1
+            let ev = index % 2 == 0 ? step : -step
+            let ms = await session.measureEdit { $0.setExposure(ev, interactive: true) }
+            samples.append(ms)
+        }
+        await MainActor.run { session.refinePreview() }
+        samples.sort()
+        let p50 = samples[(samples.count - 1) / 2]
+        let p95Index = min(samples.count - 1, Int((Double(samples.count) * 0.95).rounded(.up)) - 1)
+        let line = String(format: "EDITOR DRAG p50 %.1f ms p95 %.1f ms", p50, samples[p95Index])
         print(line)
         Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
     }
