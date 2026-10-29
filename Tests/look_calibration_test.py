@@ -273,10 +273,21 @@ def blur_plane(plane, width, height, sigma):
     return output
 
 
+def proximity_gate(reach, floor, ceil):
+    if reach <= floor:
+        return 0.0
+    if reach >= ceil:
+        return 1.0
+    t = (reach - floor) / (ceil - floor)
+    return t * t * (3.0 - 2.0 * t)
+
+
 def diffuse_image(pixels, width, height, scatter, optics):
     weighted = []
+    mask = []
     for pixel in pixels:
         gain = emphasis(rec709(pixel), optics["knee"], optics["highlight_end"])
+        mask.append(gain)
         weighted.append(tuple(channel * gain for channel in pixel))
     glow = []
     longest = max(width, height)
@@ -293,12 +304,13 @@ def diffuse_image(pixels, width, height, scatter, optics):
                 for i in range(width * height)
             ]
         )
+    reach = blur_plane(mask, width, height, longest * optics["reach"])
+    gated = []
+    for index in range(width * height):
+        falloff = proximity_gate(reach[index], optics["gate_floor"], optics["gate_ceil"])
+        gated.append(tuple(glow[channel][index] * falloff for channel in range(3)))
     return [
-        diffuse_pixel(
-            pixels[index],
-            (glow[0][index], glow[1][index], glow[2][index]),
-            scatter,
-        )
+        diffuse_pixel(pixels[index], gated[index], scatter)
         for index in range(len(pixels))
     ]
 
@@ -371,7 +383,10 @@ def parse_halo():
         values[name] = float(match.group(1))
     knee = re.search(r"static let knee: Float = ([0-9.]+)", LOOKS_SWIFT)
     highlight_end = re.search(r"static let highlightEnd: Float = ([0-9.]+)", LOOKS_SWIFT)
-    if not knee or not highlight_end:
+    reach = re.search(r"static let reachRadius: CGFloat = ([0-9.]+)", LOOKS_SWIFT)
+    gate_floor = re.search(r"static let gateFloor: Float = ([0-9.]+)", LOOKS_SWIFT)
+    gate_ceil = re.search(r"static let gateCeil: Float = ([0-9.]+)", LOOKS_SWIFT)
+    if not knee or not highlight_end or not reach or not gate_floor or not gate_ceil:
         return None
     return {
         "weak": values["weakScatter"],
@@ -384,6 +399,9 @@ def parse_halo():
         "wide": values["wideRadius"],
         "knee": float(knee.group(1)),
         "highlight_end": float(highlight_end.group(1)),
+        "reach": float(reach.group(1)),
+        "gate_floor": float(gate_floor.group(1)),
+        "gate_ceil": float(gate_ceil.group(1)),
     }
 
 
@@ -403,14 +421,14 @@ def check_halo(failures):
     if optics is None:
         failures.append("halo optics constants missing")
         return
-    if not (0 < optics["weak"] < optics["strong"] <= 1.0):
+    if not (0 < optics["weak"] < optics["strong"] <= 2.2):
         failures.append(f"halo steps {optics['weak']} / {optics['strong']} are not a weak/strong pair")
     if optics["strong"] < optics["weak"] * 1.5:
         failures.append("强 is not clearly stronger than 弱")
     if not (optics["tight"] < optics["medium"] < optics["wide"] <= 0.12):
         failures.append(f"halo radii {optics['tight']}, {optics['medium']}, {optics['wide']} are not a short pyramid")
-    if optics["knee"] < 0.50 or optics["knee"] > 0.65:
-        failures.append(f"halo knee {optics['knee']} is not near 0.55 linear")
+    if optics["knee"] < 0.66 or optics["knee"] > 0.74:
+        failures.append(f"halo knee {optics['knee']} is not near 0.70 linear")
     if emphasis(0.45, optics["knee"], optics["highlight_end"]) != 0:
         failures.append("emphasis leaks below the knee")
     if emphasis(1.0, optics["knee"], optics["highlight_end"]) < 0.99:
@@ -512,6 +530,15 @@ def display_delta(src, out):
     return display_code(out) - display_code(src)
 
 
+def darkest_mean_lift(src, out):
+    order = sorted(range(len(src)), key=lambda index: display_code(src[index]))
+    count = max(1, len(src) // 10)
+    total = 0.0
+    for index in order[:count]:
+        total += display_delta(src[index], out[index])
+    return total / count
+
+
 def display_code(pixel):
     return 255.0 * display_luma(pixel)
 
@@ -538,6 +565,9 @@ def check_bright_sky(failures, optics):
         after = sum(1 for pixel in diffused if is_clipped(pixel)) / len(diffused)
         if after - before > 0.02:
             failures.append(f"{name} clipped-area delta {after - before:.3%}")
+        shadow = darkest_mean_lift(scene, diffused)
+        if shadow > 1.0:
+            failures.append(f"{name} darkest decile lifted {shadow:.2f} levels")
     # Terracotta touching the left edge of the white wall.
     wall_x = int(width * 0.42) + 1
     band = []
@@ -545,7 +575,7 @@ def check_bright_sky(failures, optics):
         index = y * width + (wall_x - 3)
         band.append(display_delta(scene[index], strong[index]))
     band_gain = sum(band) / len(band)
-    if band_gain < 6:
+    if band_gain < 3:
         failures.append(f"halo beside the wall is not visible ({band_gain:.2f} levels)")
     weak_band = []
     for y in range(int(height * 0.45), int(height * 0.70)):

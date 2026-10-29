@@ -191,6 +191,7 @@ enum StillPipeline {
         let shrink = CGAffineTransform(scaleX: scale, y: scale)
         let scaled = source.transformed(by: shift.concatenating(shrink)).cropped(to: small)
         guard var reduced = linearPixels(scaled, bounds: small) else { return nil }
+        let mask = emphasisField(reduced, bounds: small)
         emphasize(&reduced)
         let emphasized = bitmapImage(reduced, bounds: small)
         let tight = pyramidBlur(emphasized, sigma: max(tightSigma * scale, 0.5), extent: small)
@@ -217,6 +218,23 @@ enum StillPipeline {
                 glow[glowOffset + channel] = tightShare * tightSample + mediumShare * mediumSample + wideShare * wideSample
             }
         }
+        let reachSigma = longest * HaloOptics.reachRadius
+        let reached = pyramidBlur(mask, sigma: max(reachSigma * scale, 0.5), extent: small)
+        if let reachPixels = linearPixels(reached, bounds: small), reachPixels.count == reduced.count {
+            for index in 0..<count {
+                let sourceOffset = index * 4
+                let reachLuma = GrainField.rec709(
+                    red: reachPixels[sourceOffset],
+                    green: reachPixels[sourceOffset + 1],
+                    blue: reachPixels[sourceOffset + 2]
+                )
+                let falloff = HaloOptics.proximityGate(reachLuma)
+                let glowOffset = index * 3
+                glow[glowOffset] *= falloff
+                glow[glowOffset + 1] *= falloff
+                glow[glowOffset + 2] *= falloff
+            }
+        }
         return GlowMap(
             samples: glow,
             width: smallW,
@@ -224,6 +242,21 @@ enum StillPipeline {
             scaleX: Float(smallW) / Float(extent.width),
             scaleY: Float(smallH) / Float(extent.height)
         )
+    }
+
+    private static func emphasisField(_ pixels: [Float], bounds: CGRect) -> CIImage {
+        var mask = [Float](repeating: 0, count: pixels.count)
+        let count = pixels.count / 4
+        for index in 0..<count {
+            let offset = index * 4
+            let luma = GrainField.rec709(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
+            let gain = HaloOptics.emphasis(luma)
+            mask[offset] = gain
+            mask[offset + 1] = gain
+            mask[offset + 2] = gain
+            mask[offset + 3] = 1
+        }
+        return bitmapImage(mask, bounds: bounds)
     }
 
     private static func emphasize(_ pixels: inout [Float]) {
@@ -629,6 +662,11 @@ enum StillPipeline {
         if strongRise < weakRise + 1 {
             notes.append(String(format: "弱 and 强 too close (%.2f vs %.2f)", weakRise, strongRise))
         }
+        let weakShadow = darkestByteLift(plainBytes, weakBytes)
+        let strongShadow = darkestByteLift(plainBytes, strongBytes)
+        if weakShadow > 1.25 || strongShadow > 1.25 {
+            notes.append(String(format: "darkest decile lift weak %.2f strong %.2f", weakShadow, strongShadow))
+        }
         if notes.isEmpty == false {
             notes.append(String(format: "means plain %.2f weak %.2f strong %.2f", plainMean, weakMean, strongMean))
         }
@@ -668,6 +706,26 @@ enum StillPipeline {
             }
         }
         return Float(clipped) / Float(count)
+    }
+
+    private static func darkestByteLift(_ before: [UInt8], _ after: [UInt8]) -> Float {
+        let count = min(before.count, after.count) / 4
+        guard count > 0 else { return 0 }
+        var levels = [(Float, Float)]()
+        levels.reserveCapacity(count)
+        for index in 0..<count {
+            let offset = index * 4
+            let source = 0.2126 * Float(before[offset]) + 0.7152 * Float(before[offset + 1]) + 0.0722 * Float(before[offset + 2])
+            let result = 0.2126 * Float(after[offset]) + 0.7152 * Float(after[offset + 1]) + 0.0722 * Float(after[offset + 2])
+            levels.append((source, result - source))
+        }
+        levels.sort { $0.0 < $1.0 }
+        let take = max(1, count / 10)
+        var sum = Float(0)
+        for index in 0..<take {
+            sum += levels[index].1
+        }
+        return sum / Float(take)
     }
 
     private static func byteMean(_ bytes: [UInt8]) -> Float {
