@@ -746,6 +746,7 @@ enum StillPipeline {
 /// Screen-sized develop cache. Exposure is a gain on the baked bitmap.
 /// The bake key includes look, halo strength, and grain. Full resolution is `StillPipeline.render`.
 final class PreviewCache {
+    private let lock = NSLock()
     private var proxyID: ObjectIdentifier?
     private var proxyZoom = 0.0
     private var proxySide = 0
@@ -771,6 +772,8 @@ final class PreviewCache {
         lensZoom: Double,
         maxSide: CGFloat
     ) -> CGImage? {
+        lock.lock()
+        defer { lock.unlock() }
         guard let base = linearBase(source: source, dng: dng, aspect: aspect, zoom: lensZoom, maxSide: maxSide) else {
             return nil
         }

@@ -649,6 +649,16 @@ def check_capture_path(failures):
         failures.append("3300 comments still blame HEIF rewrite or pixel mismatch")
     if "ImageOrientation.upright" in RAW_SWIFT:
         failures.append("CIRAWFilter output is rotated a second time")
+    if "AlbumImage.framed" not in CAPTURE:
+        failures.append("editor does not crop with the album frame")
+    if "dng: nil" not in SESSION:
+        failures.append("editor preview still develops the DNG")
+    if "previewMaxSide: CGFloat = 1280" not in SESSION:
+        failures.append("editor preview is not capped")
+    if "func warmPreview" not in SESSION:
+        failures.append("editor does not warm the preview proxy")
+    if "RawDevelop.image" in CAPTURE:
+        failures.append("saving an edit still redevelops the DNG")
     if "portraitOrientationFailures" not in RAW_SWIFT or "portrait DNG developed" not in RAW_SWIFT:
         failures.append("missing portrait DNG orientation check")
 

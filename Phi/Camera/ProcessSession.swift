@@ -2,8 +2,7 @@ import CoreLocation
 import os
 import UIKit
 
-/// One developed still. When `sourceDNG` is set, exposure and grain re-develop that Bayer file.
-/// Otherwise exposure is applied to `base`. Preview and export share the recipe.
+/// One developed still. Neutral shows the framed camera HEIF. Edits are gains on that still, at preview size until export.
 final class ProcessSession: ObservableObject, Identifiable {
     let id = UUID()
     let base: CGImage
@@ -130,11 +129,9 @@ final class ProcessSession: ObservableObject, Identifiable {
         var style: GrainStyle
         var look: ColorLook
         var halo: HaloLevel
-        var zoom: Double
         var maxSide: CGFloat
         var base: CGImage
         var original: UIImage?
-        var dng: Data?
         var aspect: PhotoAspect
     }
 
@@ -146,18 +143,17 @@ final class ProcessSession: ObservableObject, Identifiable {
             style: style,
             look: colorLook,
             halo: halo,
-            zoom: lensZoom,
             maxSide: Self.previewSide,
             base: base,
             original: originalImage,
-            dng: sourceDNG,
             aspect: framedAspect
         )
     }
 
-    /// Latest request wins. Exposure hits the baked proxy; look, 光晕, and grain rebuild it.
+    /// Latest request wins. The camera still is already cropped; exposure hits the baked proxy.
     private func pump() async {
         while true {
+            await Task.yield()
             let snap = await MainActor.run { self.makeSnapshot() }
             if snap.neutral {
                 await MainActor.run {
@@ -169,21 +165,20 @@ final class ProcessSession: ObservableObject, Identifiable {
             let source = upright(snap.original, fallback: snap.base)
             let rendered = previewCache.cgImage(
                 source: source,
-                dng: snap.dng,
+                dng: nil,
                 aspect: snap.aspect,
                 exposureEV: snap.exposureEV,
                 style: snap.style,
                 look: snap.look,
                 halo: snap.halo,
-                lensZoom: snap.zoom,
+                lensZoom: 1,
                 maxSide: snap.maxSide
             )
             let stale = await MainActor.run { () -> Bool in
                 guard self.renderTicket == snap.ticket else { return true }
                 if let rendered {
                     let image = UIImage(cgImage: rendered)
-                    let label = snap.dng == nil ? "source HEIF" : "source DNG"
-                    self.developInfo = "\(label) · \(rendered.width)×\(rendered.height) · \(RawDevelop.lastReport)"
+                    self.developInfo = "HEIF · \(rendered.width)×\(rendered.height)"
                     Logger(subsystem: "com.zeid.phi", category: "develop").info("\(self.developInfo, privacy: .public)")
                     self.preview = image
                     self.onPreview?(image)
@@ -192,6 +187,27 @@ final class ProcessSession: ObservableObject, Identifiable {
                 return false
             }
             if stale == false { return }
+        }
+    }
+
+    /// Bake the proxy before the first drag so the dial does not wait on a full-frame decode.
+    func warmPreview() {
+        let source = base
+        let aspect = framedAspect
+        let cache = previewCache
+        let side = Self.previewSide
+        Task.detached(priority: .userInitiated) {
+            _ = cache.cgImage(
+                source: source,
+                dng: nil,
+                aspect: aspect,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: .off,
+                lensZoom: 1,
+                maxSide: side
+            )
         }
     }
 
@@ -208,13 +224,14 @@ final class ProcessSession: ObservableObject, Identifiable {
         return resolved
     }
 
-    /// Screen pixels, not the 1600px draft scale. Full export still uses scale 1.
+    /// Interactive proxy. Full resolution is only the export render.
     static var previewSide: CGFloat {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let screen = scene?.screen
         let bounds = screen?.bounds ?? CGRect(x: 0, y: 0, width: 402, height: 874)
         let scale = screen?.scale ?? 3
-        return max(bounds.width, bounds.height) * max(scale, 1)
+        let pixels = max(bounds.width, bounds.height) * max(scale, 1)
+        return min(EditorMatch.previewMaxSide, max(640, pixels))
     }
 
     static func syntheticPreview() -> ProcessSession {
@@ -236,5 +253,136 @@ final class ProcessSession: ObservableObject, Identifiable {
         let session = ProcessSession(base: image, exposureEV: 0, style: .off, isSample: true, originalWasRaw: false, status: "预览渐变，不是照片。")
         session.schedule()
         return session
+    }
+}
+
+/// Neutral edit frame versus the album still, and a proof that the dial changes the proxy.
+enum EditorMatch {
+    static let previewMaxSide: CGFloat = 1280
+
+    static func failures() -> [String] {
+        guard let source = checkerImage() else { return ["editor checker image failed"] }
+        let wrapped = UIImage(cgImage: source)
+        guard let album = AlbumImage.framed(wrapped, aspect: .threeByFour, zoom: 2).cgImage,
+              let editor = AlbumImage.framed(wrapped, aspect: .threeByFour, zoom: 2).cgImage else {
+            return ["editor frame missing"]
+        }
+        var notes: [String] = []
+        if album.width != editor.width || album.height != editor.height {
+            notes.append("editor frame \(editor.width)x\(editor.height) is not the album frame \(album.width)x\(album.height)")
+        }
+        let ratio = CGFloat(editor.width) / CGFloat(max(editor.height, 1))
+        if abs(ratio - PhotoAspect.threeByFour.widthOverHeight) > 0.03 {
+            notes.append("editor frame aspect \(ratio)")
+        }
+        if editor.width >= source.width || editor.height >= source.height {
+            notes.append("2× frame did not crop")
+        }
+        if let diff = meanAbsDiff(album, editor), diff > 0.5 {
+            notes.append("album and editor frames differ by \(diff)")
+        }
+        if let neutral = StillPipeline.render(
+            editor,
+            exposureEV: 0,
+            style: .off,
+            look: .none,
+            halo: .off,
+            lensZoom: 1,
+            maxSide: nil
+        ) {
+            if neutral.width != editor.width || neutral.height != editor.height {
+                notes.append("neutral render \(neutral.width)x\(neutral.height) does not match \(editor.width)x\(editor.height)")
+            } else if let diff = meanAbsDiff(editor, neutral), diff > 8 {
+                notes.append("neutral render differs from the saved still by \(diff)")
+            }
+        } else {
+            notes.append("neutral render failed")
+        }
+        guard let proxy = StillPipeline.render(editor, exposureEV: 0, style: .off, lensZoom: 1, maxSide: 96),
+              let lifted = StillPipeline.render(editor, exposureEV: 1, style: .off, lensZoom: 1, maxSide: 96) else {
+            notes.append("preview proxy failed")
+            return notes
+        }
+        if max(proxy.width, proxy.height) > 96 {
+            notes.append("preview proxy is \(max(proxy.width, proxy.height)) px")
+        }
+        if meanLuma(lifted) < meanLuma(proxy) + 8 {
+            notes.append("exposure dial did not brighten the proxy")
+        }
+        if ProcessSession.previewSide > previewMaxSide {
+            notes.append("preview side \(ProcessSession.previewSide) is above \(previewMaxSide)")
+        }
+        return notes
+    }
+
+    private static func checkerImage() -> CGImage? {
+        let width = 320
+        let height = 240
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        for y in 0..<height {
+            let t = CGFloat(y) / CGFloat(height)
+            let fill = CGColor(colorSpace: space, components: [0.85, 0.35 + 0.2 * t, 0.12, 1])
+                ?? CGColor(srgbRed: 0.85, green: 0.35 + 0.2 * t, blue: 0.12, alpha: 1)
+            context.setFillColor(fill)
+            context.fill(CGRect(x: 0, y: y, width: width, height: 1))
+        }
+        return context.makeImage()
+    }
+
+    private static func meanAbsDiff(_ left: CGImage, _ right: CGImage) -> Float? {
+        guard left.width == right.width, left.height == right.height, left.width > 0 else { return nil }
+        guard let a = rgba(left), let b = rgba(right), a.count == b.count, a.isEmpty == false else { return nil }
+        var sum = Float(0)
+        let pixels = a.count / 4
+        for index in 0..<pixels {
+            let offset = index * 4
+            sum += abs(Float(a[offset]) - Float(b[offset]))
+            sum += abs(Float(a[offset + 1]) - Float(b[offset + 1]))
+            sum += abs(Float(a[offset + 2]) - Float(b[offset + 2]))
+        }
+        return sum / Float(pixels * 3)
+    }
+
+    private static func meanLuma(_ image: CGImage) -> Float {
+        guard let bytes = rgba(image), bytes.isEmpty == false else { return 0 }
+        var sum = Float(0)
+        let pixels = bytes.count / 4
+        for index in 0..<pixels {
+            let offset = index * 4
+            sum += 0.2126 * Float(bytes[offset]) + 0.7152 * Float(bytes[offset + 1]) + 0.0722 * Float(bytes[offset + 2])
+        }
+        return sum / Float(pixels)
+    }
+
+    private static func rgba(_ image: CGImage) -> [UInt8]? {
+        let width = image.width
+        let height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        let drew = bytes.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            guard let context = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: space,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drew ? bytes : nil
     }
 }

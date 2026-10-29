@@ -112,8 +112,8 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let zoom = shot.lensZoom ?? 1
         Task {
             let displayURL = displayStored.flatMap { StillArchive.resolve($0) }
+            let displayImage = displayURL.flatMap { AlbumImage.fileImage(url: $0, maxSide: nil) }
             let displayData = displayURL.flatMap { try? Data(contentsOf: $0) }
-            let displayImage = displayData.flatMap { UIImage(data: $0) }
             let dngURL = dngStored.flatMap { StillArchive.resolve($0) }
             let dng = dngURL.flatMap { try? Data(contentsOf: $0) }
             if let displayImage, let pixels = displayImage.cgImage {
@@ -290,26 +290,15 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             let rendered: CGImage?
             if job.neutral {
                 rendered = job.originalPixels ?? job.base
-            } else if let dng = job.dng {
-                rendered = RawDevelop.image(
-                    dng: dng,
-                    exposureEV: job.ev,
-                    style: job.style,
-                    look: job.look,
-                    halo: job.halo,
-                    aspect: job.aspect,
-                    lensZoom: job.zoom,
-                    maxSide: nil,
-                    draft: false
-                )
             } else {
+                // The edit base is the framed camera still. A fresh DNG develop replaces that tone.
                 rendered = StillPipeline.render(
                     job.base,
                     exposureEV: job.ev,
                     style: job.style,
                     look: job.look,
                     halo: job.halo,
-                    lensZoom: job.zoom,
+                    lensZoom: 1,
                     maxSide: nil
                 )
             }
@@ -861,8 +850,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         originalImage: UIImage? = nil,
         originalData: Data? = nil
     ) {
+        let source = originalImage ?? UIImage(cgImage: base)
+        let framed = AlbumImage.framed(source, aspect: aspect, zoom: lensZoom)
+        let pixels = framed.cgImage ?? base
         let session = ProcessSession(
-            base: base,
+            base: pixels,
             exposureEV: 0,
             style: .off,
             isSample: isSample,
@@ -871,11 +863,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             sourceDNG: sourceDNG,
             sourceMetadata: sourceMetadata,
             framedAspect: aspect,
-            lensZoom: lensZoom,
+            lensZoom: 1,
             captureLocation: location,
             colorLook: .none,
             halo: .off,
-            originalImage: originalImage ?? UIImage(cgImage: base),
+            originalImage: framed,
             originalData: originalData
         )
         if isSample == false {
@@ -905,8 +897,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     : "导出时另存处理图，不覆盖刚拍的原片。"
             }
         }
-        session.preview = session.originalImage ?? UIImage(cgImage: base)
+        session.preview = session.originalImage ?? UIImage(cgImage: pixels)
         session.developInfo = "原片 · \(session.preview?.size.width ?? 0)x\(session.preview?.size.height ?? 0)"
+        session.warmPreview()
         processSession = session
     }
 
