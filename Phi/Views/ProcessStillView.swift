@@ -107,7 +107,8 @@ struct ProcessStillView: View {
     }
 
     private var titleBar: some View {
-        HStack {
+        HStack(spacing: 20) {
+            NativeCloseButton(label: "离开编辑") { requestClose() }
             Text(savedCopy ? "编辑后的照片" : "编辑照片")
                 .font(CameraFont.interface(14, weight: .medium))
                 .foregroundStyle(CameraColor.textPrimary)
@@ -119,7 +120,8 @@ struct ProcessStillView: View {
                         .onEnded { _ in holdingOriginal = false }
                 )
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, 13)
+        .padding(.trailing, 15)
         .frame(height: 52)
     }
 
@@ -313,11 +315,16 @@ struct ProcessStillView: View {
             Spacer(minLength: 0)
             PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
             Spacer(minLength: 0)
-            if canRetryOriginal, savedCopy == false {
-                Button("重试", action: onRetryOriginal)
-                    .font(CameraFont.fixed(13, weight: .medium))
-                    .foregroundStyle(CameraColor.textSecondary)
-                    .padding(.trailing, 8)
+            if showsRetry {
+                Button(action: onRetryOriginal) {
+                    Text("重试")
+                        .font(CameraFont.fixed(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 16)
             }
             Button(action: onExport) {
                 Text(session.isExporting ? "保存中…" : "另存照片")
@@ -331,6 +338,19 @@ struct ProcessStillView: View {
         .padding(.leading, 16)
         .padding(.trailing, 16)
         .frame(height: 44)
+    }
+
+    private var showsRetry: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PHIUITestSaveFailed") { return true }
+        #endif
+        return canRetryOriginal && saveFailed
+    }
+
+    /// '重试' appears only after this edit's photo-library save failed.
+    private var saveFailed: Bool {
+        guard savedCopy == false, let status = session.status else { return false }
+        return status.hasPrefix("未能写入相册")
     }
 
     private var savedCopy: Bool {

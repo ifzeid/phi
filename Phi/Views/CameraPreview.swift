@@ -151,9 +151,17 @@ final class PreviewView: UIView {
     }
 
     func setZeroPreview(_ on: Bool) {
+        guard on != zeroWanted || on == false else { return }
         zeroWanted = on
-        zeroCanvas.isHidden = on == false
-        if on == false {
+        // Stay hidden until a real toned frame is on screen; the system preview shows meanwhile.
+        zeroCanvas.isHidden = true
+        if on {
+            zeroCanvas.resetFirstFrame()
+            zeroCanvas.onFirstFrame = { [weak self] in
+                guard let self, self.zeroWanted else { return }
+                self.zeroCanvas.isHidden = false
+            }
+        } else {
             zeroCanvas.clear()
         }
     }

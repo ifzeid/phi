@@ -65,15 +65,12 @@ struct WhiteShutterButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .stroke(CameraColor.shutterRing, lineWidth: 1.5)
-                    .frame(width: 76.5, height: 76.5)
-                Circle()
-                    .fill(CameraColor.textPrimary)
-                    .frame(width: 64, height: 64)
-            }
-            .frame(width: 80, height: 80)
+            // Solid #F4F3EE disc, no outer ring (Zeid, build 31). 64 pt as measured on Figma 01; 80 pt hit area.
+            Circle()
+                .fill(CameraColor.textPrimary)
+                .frame(width: 64, height: 64)
+                .frame(width: 80, height: 80)
+                .contentShape(Circle())
             .opacity(isReady ? 1 : 0.4)
         }
         .buttonStyle(ShutterPressStyle())
@@ -298,5 +295,41 @@ struct FlashChoiceMenu: View {
         .buttonStyle(.plain)
         .disabled(enabled == false)
         .accessibilityAddTraits(selection == mode ? .isSelected : [])
+    }
+}
+
+/// iOS-native close control: system xmark in a Liquid Glass circle with the `.close` role on iOS 26+,
+/// a dark material circle before that. Used by the library, photo viewer, editor and settings card.
+struct NativeCloseButton: View {
+    var label: String
+    var diameter: CGFloat = 36
+    var action: () -> Void
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            Button(role: .close, action: action) {
+                mark
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .frame(width: 44, height: 44)
+            .accessibilityLabel(label)
+        } else {
+            Button(action: action) {
+                mark
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44, height: 44)
+            .accessibilityLabel(label)
+        }
+    }
+
+    private var mark: some View {
+        Image(systemName: "xmark")
+            .font(.system(size: diameter * 0.42, weight: .semibold))
+            .foregroundStyle(CameraColor.textPrimary)
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
     }
 }

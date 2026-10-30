@@ -62,14 +62,8 @@ struct SettingsHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: onClose) {
-                PhiGlyphImage(glyph: .close)
-                    .foregroundStyle(CameraColor.textPrimary)
-                    .frame(width: SettingsToken.headerHeight, height: SettingsToken.headerHeight)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(closeLabel)
+            NativeCloseButton(label: closeLabel, action: onClose)
+                .frame(width: SettingsToken.headerHeight, height: SettingsToken.headerHeight)
             Text(title)
                 .font(SettingsToken.titleFont())
                 .foregroundStyle(CameraColor.textPrimary)

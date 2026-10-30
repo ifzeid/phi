@@ -106,10 +106,21 @@ final class ProcessSession: ObservableObject, Identifiable {
         DispatchQueue.global(qos: .utility).async {
             _ = DevelopEffectCheck.confirm
         }
+        if rendersFromDNG, sourceDNG != nil {
+            // The saved file above is the placeholder for the first frame; the develop replaces it.
+            schedule()
+        }
     }
 
     var isNeutral: Bool {
         exposureEV == 0 && style == .off && colorLook == .none && halo == .off
+    }
+
+    /// Mode 0 with a DNG shows PHI's own zero-processing develop at every EV, 0 included, so the dial
+    /// moves smoothly through the detent. The saved file is only a placeholder until that develop lands,
+    /// and the settled frame without a DNG.
+    var showsSavedFile: Bool {
+        isNeutral && (rendersFromDNG == false || sourceDNG == nil)
     }
 
     func setExposure(_ value: Double) {
@@ -127,7 +138,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     func refinePreview() {
         guard exposureDrag else { return }
         exposureDrag = false
-        guard isNeutral == false else { return }
+        guard showsSavedFile == false else { return }
         schedule()
     }
 
@@ -157,7 +168,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         #if DEBUG
         renderStarted[renderTicket] = CFAbsoluteTimeGetCurrent()
         #endif
-        if isNeutral {
+        if showsSavedFile {
             showOriginal()
             return
         }
@@ -197,7 +208,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     private func makeSnapshot() -> DevelopRequest {
         DevelopRequest(
             ticket: renderTicket,
-            neutral: isNeutral,
+            neutral: showsSavedFile,
             exposureEV: exposureEV,
             style: style,
             look: colorLook,
@@ -258,7 +269,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         sourceMetadata = metadata
         developInfo = "来源 DNG"
         warmPreview()
-        if isNeutral == false {
+        if showsSavedFile == false {
             schedule()
         }
     }

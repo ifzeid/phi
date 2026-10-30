@@ -106,9 +106,11 @@ enum RawDevelop {
         // Full-resolution demosaic. A scaleFactor below 1 is a softer Bayer reconstruction.
         filter.scaleFactor = 1
         let baseline = silenceProcessing(filter)
-        // Very light. The camera default is often strong enough to smear a night beam.
+        // Exactly 0 bypasses CIRAWFilter's sharpen/denoise stage. Any value above 0 (0.1 in f9ee4aa) turns that
+        // stage on, and at full resolution it smooths fine detail: the 21:39 night save fell from 1.05 to 0.76
+        // of a matched reference. Zero keeps the demosaic as sharp as the sensor gives it.
         _ = asShotSharpness
-        filter.sharpnessAmount = Float(0.1)
+        filter.sharpnessAmount = 0
         // AsShotNeutral through the camera matrix, once. Temperature after that would be a second white.
         if let neutral = DNGAsShot.chromaticity(in: dng) {
             filter.neutralChromaticity = CGPoint(x: CGFloat(neutral.x), y: CGFloat(neutral.y))

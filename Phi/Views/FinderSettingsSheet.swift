@@ -336,16 +336,9 @@ struct FinderSettingsCard<Exposure: View>: View {
     }
 
     private var closeButton: some View {
-        Button(action: onClose) {
-            Text("×")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(CameraColor.textPrimary)
-                .frame(width: 44, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .offset(x: 10)
-        .accessibilityLabel("关闭设置")
+        NativeCloseButton(label: "关闭设置", diameter: 30, action: onClose)
+            .frame(height: 28)
+            .offset(x: 7)
     }
 }
 

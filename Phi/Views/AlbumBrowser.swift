@@ -33,9 +33,9 @@ struct AlbumBrowser: View {
     }
 
     private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
+        GridItem(.flexible(), spacing: 3),
+        GridItem(.flexible(), spacing: 3),
+        GridItem(.flexible(), spacing: 3)
     ]
 
     var body: some View {
@@ -110,30 +110,36 @@ struct AlbumBrowser: View {
         }
     }
 
+    /// Figma 05: close at x 13, title at x 77, 选择 / 取消 pill 64×44 r22 on the right.
     private var header: some View {
-        HStack {
-            PhiGlyphButton(glyph: .close, label: "关闭相册", action: onClose)
-            Spacer()
+        HStack(spacing: 20) {
+            NativeCloseButton(label: "关闭相册", action: onClose)
             Text(selecting ? "已选择 \(selected.count) 张" : "照片")
                 .font(CameraFont.interface(14, weight: .medium))
                 .foregroundStyle(CameraColor.textPrimary)
-            Spacer()
+            Spacer(minLength: 0)
             if phase == .ready, shots.isEmpty == false {
-                Button(selecting ? "取消" : "选择") {
+                Button {
                     selecting.toggle()
                     if selecting == false { selected = [] }
+                } label: {
+                    Text(selecting ? "取消" : "选择")
+                        .font(CameraFont.interface(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .frame(width: 64, height: 44)
+                        .contentShape(Capsule())
                 }
-                .font(CameraFont.interface(14, weight: .medium))
-                .foregroundStyle(CameraColor.textPrimary)
-                .frame(minWidth: 44, minHeight: 44)
+                .buttonStyle(.plain)
             } else {
-                Color.clear.frame(width: 44, height: 44)
+                Color.clear.frame(width: 64, height: 44)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 13)
+        .padding(.trailing, 19)
         .frame(height: 56)
     }
 
+    /// Figma 05/06 footer: h52, px20. `N 张照片` 12 secondary; `返回拍摄` pill 112×44 r22, or trash · count · share.
     private var albumBar: some View {
         HStack {
             if selecting {
@@ -142,7 +148,7 @@ struct AlbumBrowser: View {
                 }
                 Spacer()
                 Text("\(selected.count) 张照片")
-                    .font(CameraFont.interface(13))
+                    .font(CameraFont.interface(12))
                     .foregroundStyle(CameraColor.textSecondary)
                 Spacer()
                 PhiGlyphButton(glyph: .share, label: "分享所选照片", enabled: selected.isEmpty == false) {
@@ -150,19 +156,21 @@ struct AlbumBrowser: View {
                 }
             } else {
                 Text("\(shots.count) 张照片")
-                    .font(CameraFont.interface(13))
+                    .font(CameraFont.interface(12))
                     .foregroundStyle(CameraColor.textSecondary)
                 Spacer()
-                Button("返回拍摄", action: onClose)
-                    .font(CameraFont.interface(14, weight: .medium))
-                    .foregroundStyle(CameraColor.accent)
-                    .padding(.horizontal, 16)
-                    .frame(height: 36)
-                    .background(CameraColor.surface, in: Capsule())
+                Button(action: onClose) {
+                    Text("返回拍摄")
+                        .font(CameraFont.interface(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .frame(width: 112, height: 44)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 56)
+        .padding(.horizontal, 20)
+        .frame(height: 52)
         .background(CameraColor.background)
     }
 
@@ -199,18 +207,23 @@ struct AlbumBrowser: View {
 
     private var grid: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 ForEach(monthSections) { section in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Text(section.title)
                             .font(CameraFont.interface(22, weight: .medium))
                             .foregroundStyle(CameraColor.textPrimary)
-                            .padding(.horizontal, 20)
+                            .frame(height: 32, alignment: .leading)
+                            .padding(.horizontal, 19)
+                            .padding(.top, 4)
                         Text(section.subtitle)
-                            .font(CameraFont.interface(13))
+                            .font(CameraFont.interface(12))
                             .foregroundStyle(CameraColor.textSecondary)
-                            .padding(.horizontal, 20)
-                        LazyVGrid(columns: columns, spacing: 2) {
+                            .frame(height: 17, alignment: .leading)
+                            .padding(.horizontal, 19)
+                            .padding(.top, 4)
+                            .padding(.bottom, 16)
+                        LazyVGrid(columns: columns, spacing: 3) {
                             ForEach(section.items) { item in
                                 Button {
                                     toggle(item)
@@ -221,7 +234,6 @@ struct AlbumBrowser: View {
                                 .accessibilityLabel(accessibilityName(item.shot, index: item.offset))
                             }
                         }
-                        .padding(.horizontal, 2)
                     }
                 }
             }
@@ -531,14 +543,14 @@ private struct AlbumThumb: View {
 
     var body: some View {
         Color.clear
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(128.0 / 127.0, contentMode: .fit)
             .overlay {
                 if shot.missing {
                     VStack(spacing: 6) {
                         PhiGlyphImage(glyph: .missing)
                             .foregroundStyle(CameraColor.textSecondary)
                         Text("文件不可用")
-                            .font(CameraFont.interface(11))
+                            .font(CameraFont.interface(10))
                             .foregroundStyle(CameraColor.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -551,30 +563,21 @@ private struct AlbumThumb: View {
                     CameraColor.surface
                 }
             }
-            .overlay(alignment: .bottomLeading) {
-                if shot.hasRaw {
-                    Text("RAW")
-                        .font(CameraFont.parameter(9, medium: true))
-                        .foregroundStyle(CameraColor.accent)
-                        .padding(5)
-                }
-            }
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .bottomTrailing) {
                 if let marked {
                     ZStack {
                         Circle()
-                            .stroke(CameraColor.textPrimary, lineWidth: 1.5)
-                            .frame(width: 18, height: 18)
+                            .fill(marked ? CameraColor.accent : CameraColor.background)
+                        Circle()
+                            .stroke(CameraColor.textPrimary, lineWidth: 1)
                         if marked {
-                            Circle()
-                                .fill(CameraColor.accent)
-                                .frame(width: 18, height: 18)
                             PhiGlyphImage(glyph: .check)
                                 .foregroundStyle(CameraColor.textPrimary)
                                 .scaleEffect(0.6)
                         }
                     }
-                    .padding(6)
+                    .frame(width: 24, height: 24)
+                    .padding(8)
                     .accessibilityHidden(true)
                 }
             }
@@ -702,13 +705,7 @@ private struct AlbumPager: View {
                     .foregroundStyle(CameraColor.textPrimary)
             }
             HStack {
-                Button(action: onClose) {
-                    PhiIcon(symbol: .close, color: CameraColor.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭")
+                NativeCloseButton(label: "关闭", action: onClose)
                 Spacer()
                 Text("\(index + 1)/\(shots.count)")
                     .font(CameraFont.parameter(12, medium: true))

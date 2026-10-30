@@ -106,7 +106,9 @@ final class FinderToneView: MTKView, MTKViewDelegate {
         colorPixelFormat = .bgra8Unorm
         isPaused = true
         enableSetNeedsDisplay = true
-        framebufferOnly = true
+        // Core Image writes the drawable from compute, so it must not be framebuffer-only.
+        // With `true` every render threw and the opaque canvas showed black over the live preview (build 30).
+        framebufferOnly = false
         isOpaque = true
         delegate = self
         clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
@@ -126,33 +128,65 @@ final class FinderToneView: MTKView, MTKViewDelegate {
         image = nil
     }
 
+    /// Set when the canvas becomes wanted. The first presented frame logs `PREVIEW FIRST FRAME <ms>`.
+    var shownAt: CFAbsoluteTime?
+    /// Called on main after the first real frame lands, so the owner can reveal the canvas.
+    var onFirstFrame: (() -> Void)?
+    private var hasFrame = false
+
+    func resetFirstFrame() {
+        hasFrame = false
+        shownAt = CFAbsoluteTimeGetCurrent()
+    }
+
     func draw(in view: MTKView) {
-        guard drawing == false, let image, let drawable = currentDrawable, drawableSize.width > 1,
-              let commandBuffer = commandQueue?.makeCommandBuffer() else { return }
+        guard drawing == false, let image, drawableSize.width > 1, let queue = commandQueue else { return }
         drawing = true
-        let fitted = Self.aspectFill(image, in: CGSize(width: drawable.texture.width, height: drawable.texture.height))
-        do {
-            try StillPipeline.render(fitted, to: drawable.texture, commandBuffer: commandBuffer)
-        } catch is StillPipeline.ContextBusy {
-            commandBuffer.present(drawable)
-            commandBuffer.addCompletedHandler { [weak self] _ in
-                self?.drawing = false
-                DispatchQueue.main.async { self?.setNeedsDisplay() }
-            }
-            commandBuffer.commit()
+        // Render into the finder's own context before taking a drawable, so a failed or busy frame
+        // never presents an empty (black) drawable over the preview.
+        guard let drawable = currentDrawable, let commandBuffer = queue.makeCommandBuffer() else {
+            drawing = false
             return
+        }
+        let fitted = Self.aspectFill(image, in: CGSize(width: drawable.texture.width, height: drawable.texture.height))
+        let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commandBuffer)
+        destination.colorSpace = StillPipeline.displayP3
+        destination.isFlipped = true
+        do {
+            _ = try Self.context.startTask(toRender: fitted, to: destination)
         } catch {
-            commandBuffer.present(drawable)
-            commandBuffer.commit()
+            NSLog("PREVIEW RENDER FAILED %@", String(describing: error))
             drawing = false
             return
         }
         commandBuffer.present(drawable)
         commandBuffer.addCompletedHandler { [weak self] _ in
-            self?.drawing = false
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.drawing = false
+                if self.hasFrame == false {
+                    self.hasFrame = true
+                    let ms = (CFAbsoluteTimeGetCurrent() - (self.shownAt ?? CFAbsoluteTimeGetCurrent())) * 1000
+                    NSLog("PREVIEW FIRST FRAME %.0f", ms)
+                    self.onFirstFrame?()
+                }
+            }
         }
         commandBuffer.commit()
     }
+
+    /// Finder-only context: the shared still context is often locked by editor/save work.
+    private static let context: CIContext = {
+        let device = MTLCreateSystemDefaultDevice()
+        let options: [CIContextOption: Any] = [
+            .workingColorSpace: StillPipeline.linearP3,
+            .outputColorSpace: StillPipeline.displayP3,
+            .workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
+            .cacheIntermediates: false
+        ]
+        if let device { return CIContext(mtlDevice: device, options: options) }
+        return CIContext(options: options)
+    }()
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 

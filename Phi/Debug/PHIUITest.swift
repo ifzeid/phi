@@ -362,7 +362,7 @@ enum PHIUITest {
         for ev in sweepStops {
             _ = await session.measureEdit { $0.setExposure(ev, interactive: false) }
             let mean = await MainActor.run { () -> Float? in
-                if abs(ev) < 0.0001 {
+                if abs(ev) < 0.0001, session.showsSavedFile {
                     let original = session.originalImage?.cgImage ?? session.base
                     return EditorMatch.displayMeanLuma(original)
                 }
@@ -1193,6 +1193,14 @@ enum PHIUITest {
         let oursSharp = normalizedLaplacian(oursRGB)
         let referenceSharp = normalizedLaplacian(referenceRGB)
         let ratio = referenceSharp > 0.0000001 ? oursSharp / referenceSharp : 1
+        if let apple = referenceRAW(dng: dng, ev: ev, aspect: aspect, zoom: zoom, maxSide: maxSide, apple: true),
+           let appleRGB = displayRGB(apple) {
+            let appleSharp = normalizedLaplacian(appleRGB)
+            logSweep(String(
+                format: "EDITOR NIGHT file=%@ kind=%@ appleDefaultRef=%.5f ratioVsAppleTone=%.3f (tone differs; not the gate)",
+                file, kind, Double(appleSharp), Double(appleSharp > 0.0000001 ? oursSharp / appleSharp : 1)
+            ))
+        }
         logSweep(String(
             format: "EDITOR NIGHT file=%@ kind=%@ ev=%.0f skyP1=%.3f,%.3f,%.3f skyP5=%.3f,%.3f,%.3f beamChroma=%.3f sharp=%.5f ref=%.5f ratio=%.3f",
             file,
@@ -1228,25 +1236,46 @@ enum PHIUITest {
         return failed
     }
 
-    /// Default CIRAWFilter at this EV, same crop and long side as our develop. Draft stays off.
+    /// Sharpness reference: CIRAWFilter with its own default detail stage (as-shot noise reduction,
+    /// sharpness, detail), but the same tone path as PHI (baseline gain + EV, filmic toe and shoulder).
+    /// Apple's default tone curve and local tone map change the edge-to-variance ratio by themselves,
+    /// so a reference with a different curve measured tone, not softness. `apple` keeps that old reference for the log.
     private static func referenceRAW(
         dng: Data,
         ev: Double,
         aspect: PhotoAspect,
         zoom: Double,
-        maxSide: CGFloat?
+        maxSide: CGFloat?,
+        apple: Bool = false
     ) -> CGImage? {
         guard let filter = CIRAWFilter(imageData: dng, identifierHint: nil) else { return nil }
         filter.isDraftModeEnabled = false
         filter.scaleFactor = 1
-        filter.exposure = Float(ev)
+        let baseline = filter.baselineExposure
+        if apple {
+            filter.exposure = Float(ev)
+        } else {
+            filter.baselineExposure = 0
+            filter.exposure = 0
+            filter.shadowBias = 0
+            filter.boostAmount = 0
+            filter.localToneMapAmount = 0
+            filter.isGamutMappingEnabled = true
+            filter.extendedDynamicRangeAmount = 1
+            filter.contrastAmount = 0
+            filter.isLensCorrectionEnabled = false
+        }
         guard let output = filter.outputImage else { return nil }
         let zoomed = zoom > 1 ? zoom : 1
         var framed = aspect.cropped(LensCrop.cropped(output, zoom: zoomed))
         if let maxSide {
             framed = StillPipeline.scaledToSide(framed, maxSide: maxSide)
         }
-        return StillPipeline.displayImage(framed)
+        if apple {
+            return StillPipeline.displayImage(framed)
+        }
+        guard let plate = StillPipeline.linearPlate(of: framed, baseline: baseline, filmic: true) else { return nil }
+        return StillPipeline.displayImage(StillPipeline.expose(plate, ev: ev))
     }
 
     private struct RGBPlane {

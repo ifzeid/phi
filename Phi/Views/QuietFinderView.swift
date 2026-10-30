@@ -88,10 +88,11 @@ private struct CaptureChromeLayout {
             width: width,
             height: height,
             home: home,
-            flashCenter: CGPoint(x: 39, y: flashCenterY),
+            // Mirrors the right column: settings and grid glyphs end 29 pt from the edge, flash and RAW start 29 pt in.
+            flashCenter: CGPoint(x: 41, y: flashCenterY),
             settingsCenter: CGPoint(x: width - 41, y: settingsCenterY),
             gridCenter: CGPoint(x: width - 41, y: rowCenterY),
-            rawCenter: CGPoint(x: 53, y: rowCenterY),
+            rawCenter: CGPoint(x: 29 + 36, y: rowCenterY),
             aspectCenter: CGPoint(x: width / 2, y: rowCenterY),
             photoFrame: CGRect(x: 0, y: photoTop, width: width, height: photoHeight),
             rulerFrame: CGRect(x: rulerX, y: rulerTop, width: rulerWidth, height: rulerHeight),
@@ -282,11 +283,10 @@ struct QuietFinderView: View {
                 gridButton
                     .position(layout.gridCenter)
 
-                // Always on screen. Hidden only while the settings card covers it.
+                // Always on screen and never moves. The settings card floats over it.
                 captureRuler
                     .frame(width: layout.rulerFrame.width, height: layout.rulerFrame.height)
                     .position(x: layout.rulerFrame.midX, y: layout.rulerFrame.midY)
-                    .opacity(settingsPage == nil ? 1 : 0)
                     .allowsHitTesting(settingsPage == nil)
 
                 if settingsPage != nil {
@@ -313,15 +313,10 @@ struct QuietFinderView: View {
         .ignoresSafeArea()
     }
 
-    /// Hidden under the main card. Lifted above a sub-card: row bottom 20 pt over the card (Figma 163:1207).
+    /// Fixed in place. An open settings card or sub-card overlays it (Zeid: no lift, unlike Figma 163:1207).
     @ViewBuilder
     private func bottomRow(_ layout: CaptureChromeLayout) -> some View {
-        let lifted: CGFloat? = {
-            guard let page = settingsPage, page != .main else { return nil }
-            return layout.cardFrame(for: page).minY - 60
-        }()
-        let rowY = lifted ?? layout.rowCenterY
-        let hidden = settingsPage == .main
+        let rowY = layout.rowCenterY
         Group {
             thumbnailButton
                 .position(x: layout.thumbCenter.x, y: rowY)
@@ -334,8 +329,7 @@ struct QuietFinderView: View {
             }
             .position(x: layout.zoomCenter.x, y: rowY)
         }
-        .opacity(hidden ? 0 : 1)
-        .allowsHitTesting(hidden == false)
+        .allowsHitTesting(settingsPage == nil)
     }
 
     private var settingsCard: some View {
@@ -385,7 +379,7 @@ struct QuietFinderView: View {
                 .font(CameraFont.parameter(13))
                 .foregroundStyle(CameraColor.textPrimary)
                 .lineLimit(1)
-                .frame(width: 72, height: 44)
+                .frame(width: 72, height: 44, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .menuStyle(.button)
