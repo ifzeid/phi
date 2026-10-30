@@ -197,6 +197,125 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorFinderEV")
     }
 
+    /// DNG develop at EV 0 against the Apple-processed companion of the same frame.
+    static var editorBrightness: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorBrightness")
+    }
+
+    private static func lumaStats(_ image: CGImage) -> (Double, Double) {
+        let w = 128, h = max(8, Int(128.0 * Double(image.height) / Double(image.width)))
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpace(name: CGColorSpace.displayP3)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return (0, 0) }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var l: [Double] = []
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            l.append((0.2126 * Double(bytes[i]) + 0.7152 * Double(bytes[i + 1]) + 0.0722 * Double(bytes[i + 2])) / 255)
+        }
+        l.sort()
+        return (l.reduce(0, +) / Double(l.count), l[l.count / 2])
+    }
+
+    /// Mean R/G/B over pixels that are near-neutral and mid-bright in the Apple reference, same pixels in each other render.
+    private static func neutralRGB(reference: CGImage, others: [CGImage]) -> (count: Int, rgb: [(Double, Double, Double)]) {
+        let w = 96, h = max(8, Int(96.0 * Double(reference.height) / Double(reference.width)))
+        func px(_ image: CGImage) -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: w * h * 4)
+            if let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                   space: CGColorSpace(name: CGColorSpace.displayP3)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            }
+            return bytes
+        }
+        let ref = px(reference)
+        var mask: [Int] = []
+        for i in stride(from: 0, to: ref.count, by: 4) {
+            let r = Double(ref[i]), g = Double(ref[i + 1]), b = Double(ref[i + 2])
+            let mx = max(r, g, b), mn = min(r, g, b)
+            if mx > 60, mx < 245, (mx - mn) / mx < 0.08 { mask.append(i) }
+        }
+        func avg(_ bytes: [UInt8]) -> (Double, Double, Double) {
+            guard mask.isEmpty == false else { return (0, 0, 0) }
+            var r = 0.0, g = 0.0, b = 0.0
+            for i in mask { r += Double(bytes[i]); g += Double(bytes[i + 1]); b += Double(bytes[i + 2]) }
+            let n = Double(mask.count) * 255
+            return (r / n, g / n, b / n)
+        }
+        return (mask.count, [avg(ref)] + others.map { avg(px($0)) })
+    }
+
+    private static func runBrightnessCheck() {
+        let folder = StillArchive.directory
+        let urls = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        var failed = false
+        for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where url.pathExtension.lowercased() == "dng" {
+            let stem = shotStem(url)
+            guard let shot = PhiLocalShots.shot(id: stem), let dng = try? Data(contentsOf: url),
+                  let apple = UIImage(contentsOfFile: folder.appendingPathComponent("\(stem).apple.heic").path).flatMap({ StillPipeline.normalizedCGImage(from: $0) }) else { continue }
+            let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? .threeByFour
+            let zoom = (shot.lensZoom ?? 1) > 1 ? (shot.lensZoom ?? 1) : 1
+            guard let plate = RawDevelop.scenePlate(dng: dng, aspect: aspect, lensZoom: zoom, maxSide: 512, draft: false),
+                  let now = StillPipeline.displayImage(StillPipeline.expose(plate, ev: 0)),
+                  let old = StillPipeline.displayImage(StillPipeline.expose(plate, ev: plate.baseline > 0 ? -1.5 : 0)) else { continue }
+            let a = lumaStats(apple), n = lumaStats(now), o = lumaStats(old)
+            RawDevelop.legacyMatrix1Neutral = true
+            let legacy = RawDevelop.scenePlate(dng: dng, aspect: aspect, lensZoom: zoom, maxSide: 512, draft: false)
+                .flatMap { StillPipeline.displayImage(StillPipeline.expose($0, ev: plate.baseline > 0 ? -1.5 : 0)) }
+            RawDevelop.legacyMatrix1Neutral = false
+            if let legacy {
+                let wb = neutralRGB(reference: apple, others: [legacy, now])
+                logSweep(String(format: "EDITOR WB file=%@ neutralPixels=%d apple R/G/B=%.3f/%.3f/%.3f b/r=%.3f | old R/G/B=%.3f/%.3f/%.3f b/r=%.3f | new R/G/B=%.3f/%.3f/%.3f b/r=%.3f",
+                                stem, wb.count, wb.rgb[0].0, wb.rgb[0].1, wb.rgb[0].2, wb.rgb[0].2 / max(wb.rgb[0].0, 0.001),
+                                wb.rgb[1].0, wb.rgb[1].1, wb.rgb[1].2, wb.rgb[1].2 / max(wb.rgb[1].0, 0.001),
+                                wb.rgb[2].0, wb.rgb[2].1, wb.rgb[2].2, wb.rgb[2].2 / max(wb.rgb[2].0, 0.001)))
+            }
+            let stops = log2(max(n.1, 0.01) / max(a.1, 0.01))
+            // EV 0 within ~2/3 stop of Apple's metered median; night scenes are dark in both.
+            let ok = abs(stops) < 0.67 || (a.1 < 0.08 && n.1 < 0.12)
+            if ok == false { failed = true }
+            logSweep(String(format: "EDITOR BRIGHTNESS file=%@ baseline=%.2f apple mean=%.3f median=%.3f | phi EV0 mean=%.3f median=%.3f | old(-1.5 trim) mean=%.3f median=%.3f | medianStops=%+.2f %@",
+                            stem, Double(plate.baseline), a.0, a.1, n.0, n.1, o.0, o.1, stops, ok ? "ok" : "FAILED"))
+        }
+        logSweep("EDITOR BRIGHTNESS \(failed ? "FAILED" : "PASS")")
+    }
+
+    /// Open, change EV, save, close: no discard dialog; change again: dialog.
+    static var editorDiscard: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorDiscard")
+    }
+    static let discardSave = Notification.Name("PHIUITestDiscardSave")
+    static let discardProbe = Notification.Name("PHIUITestDiscardProbe")
+    private static var discardSeen: [String: Bool] = [:]
+
+    static func noteDiscardState(dirty: Bool, step: String) {
+        discardSeen[step] = dirty
+        logSweep("EDITOR DISCARD step=\(step) dialog=\(dirty ? "yes" : "no")")
+    }
+
+    private static func runDiscardCheck(_ session: ProcessSession) async {
+        func probe(_ step: String) async -> Bool? {
+            await MainActor.run { NotificationCenter.default.post(name: discardProbe, object: step) }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            return await MainActor.run { discardSeen[step] }
+        }
+        _ = await session.measureEdit { $0.setExposure(1, interactive: false) }
+        let edited = await probe("edited")
+        let before = await MainActor.run { session.savedEdits }
+        await MainActor.run { NotificationCenter.default.post(name: discardSave, object: nil) }
+        var waited = 0
+        while await MainActor.run(body: { session.savedEdits }) == before, waited < 300 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            waited += 1
+        }
+        let saveStatus = await MainActor.run { session.status ?? "nil" }
+        logSweep("EDITOR DISCARD save status=\(saveStatus) waited=\(waited)")
+        let saved = await probe("afterSave")
+        _ = await session.measureEdit { $0.setExposure(0.5, interactive: false) }
+        let changed = await probe("changedAgain")
+        let ok = edited == true && saved == false && changed == true
+        logSweep("EDITOR DISCARD \(ok ? "PASS" : "FAILED") edited=\(String(describing: edited)) afterSave=\(String(describing: saved)) changedAgain=\(String(describing: changed))")
+    }
+
     /// Editor DNG develop keeps the captured crop (zoom and aspect) of the album HEIC.
     static var editorFraming: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorFraming")
@@ -332,7 +451,13 @@ enum PHIUITest {
         if editorFraming {
             runFramingCheck(session)
         }
-        if editorEVSweep || editorHalo || editorNight || editorFinderEV || editorFraming {
+        if editorDiscard {
+            await runDiscardCheck(session)
+        }
+        if editorBrightness {
+            runBrightnessCheck()
+        }
+        if editorEVSweep || editorHalo || editorNight || editorFinderEV || editorFraming || editorDiscard || editorBrightness {
             return
         }
         if editorDrag {

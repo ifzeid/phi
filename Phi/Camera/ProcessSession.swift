@@ -34,6 +34,8 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// 0...1 while a full-res export is on the background queue.
     @Published var exportProgress: Double = 0
     @Published var status: String?
+    /// Bumped after each successful save; the editor rebaselines its discard check on it.
+    @Published var savedEdits = 0
     @Published var developInfo: String
 
     var onPreview: ((UIImage) -> Void)?

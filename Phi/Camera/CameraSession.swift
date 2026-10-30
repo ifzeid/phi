@@ -27,6 +27,7 @@ final class CameraSession: ObservableObject {
     @Published private(set) var focalStops: [FocalStop] = []
     @Published private(set) var selectedStopID: String?
     @Published private(set) var exposureEV: Double = 0
+    private var lastFinderScale: CGFloat = 1
     @Published private(set) var exposureRange: ClosedRange<Double> = -5...5
     @Published private(set) var autoExposure = true
     @Published private(set) var manualExposureSupported = false
@@ -669,6 +670,7 @@ final class CameraSession: ObservableObject {
             do {
                 try performSelect(stop)
                 log.info("finder framing restored to \(stop.millimeters)mm")
+                publishFinderScale(reason: "restore")
             } catch {
                 log.error("finder restore failed \(error.localizedDescription, privacy: .public)")
                 DispatchQueue.main.async {
@@ -723,6 +725,7 @@ final class CameraSession: ObservableObject {
             let switching = self.needsPhysicalRawSwitch() || self.needsStillFormatWork()
             let shoot = {
                 self.settleRawCamera()
+                self.publishFinderScale(reason: "capture")
                 self.logActiveCamera("capture")
                 guard let prepared = self.makeSettings(flash: flash) else {
                     self.captureInFlight = false
@@ -1159,6 +1162,7 @@ final class CameraSession: ObservableObject {
             }
         }
         session.commitConfiguration()
+        publishFinderScale(reason: "switch")
         if sameDevice == false {
             self.engageContinuousAutofocus()
             observeMeter(newDevice)
@@ -1458,6 +1462,30 @@ final class CameraSession: ObservableObject {
         }
         device.unlockForConfiguration()
         session.commitConfiguration()
+        publishFinderScale(reason: "still-format")
+    }
+
+    /// The RAW capture moves a crop stop (2×, 4× digital) to the physical camera at zoom 1.
+    /// The finder view is scaled by selected / actual framing so it never jumps while that happens.
+    private func publishFinderScale(reason: String) {
+        guard let device else { return }
+        let actualMM = Self.equivalentMillimeters(device)
+        var scale: CGFloat = 1
+        if let stop = lensStops.first(where: { $0.id == selectedStopID }), actualMM > 0 {
+            let ratio = CGFloat(Double(stop.millimeters) / actualMM)
+            if ratio.isFinite, abs(ratio - 1) > 0.04 { scale = ratio }
+        }
+        if abs(scale - lastFinderScale) > 0.001 || reason == "capture" {
+            lastFinderScale = scale
+            NSLog("FINDER SCALE %.3f reason=%@ zoom=%.2f mm=%.0f stop=%d", Double(scale), reason, Double(device.videoZoomFactor), actualMM, lensStops.first(where: { $0.id == selectedStopID })?.millimeters ?? 0)
+        }
+        previewAnchor.setFinderScale(scale)
+    }
+
+    private static func equivalentMillimeters(_ device: AVCaptureDevice) -> Double {
+        let fov = Double(device.activeFormat.videoFieldOfView)
+        let zoom = Double(device.videoZoomFactor)
+        return FocalLengthMath.equivalentMillimeters(horizontalFOVDegrees: fov, zoom: zoom) ?? 0
     }
 
     /// Picks the largest `maxPhotoDimensions` that still lists the RAW format. A too-large size clears the list.

@@ -18,7 +18,8 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let lock = NSLock()
     private var busy = false
     private var installed = false
-    private var appliedRotation: CGFloat = -1
+    private var loggedSize = (0, 0)
+    private var loggedAngle: CGFloat = -1
 
     func install(on session: AVCaptureSession) {
         guard installed == false else { return }
@@ -28,7 +29,7 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
         installed = true
-        alignRotation()
+        if let connection = output.connection(with: .video) { alignRotation(connection) }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -41,8 +42,30 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         }
         busy = true
         lock.unlock()
-        alignRotation()
-        let source = CIImage(cvPixelBuffer: buffer)
+        alignRotation(connection)
+        var source = CIImage(cvPixelBuffer: buffer)
+        // A lens switch rebuilds the connection at 0°; until the new angle takes, turn the buffer here.
+        let want = Self.sharedRotation
+        if abs(connection.videoRotationAngle - want) > 0.5 {
+            let turn = Int(((want - connection.videoRotationAngle).truncatingRemainder(dividingBy: 360) + 360).rounded()) % 360
+            switch turn {
+            case 90: source = source.oriented(.right)
+            case 180: source = source.oriented(.down)
+            case 270: source = source.oriented(.left)
+            default: break
+            }
+        }
+        // Transition frames after a lens switch can still be sensor-landscape while the connection reports the new angle.
+        let portrait = abs(want - 90) < 0.5 || abs(want - 270) < 0.5
+        if portrait, source.extent.width > source.extent.height {
+            source = source.oriented(abs(want - 270) < 0.5 ? .left : .right)
+        }
+        let size = source.extent.integral.size
+        if Int(size.width) != loggedSize.0 || Int(size.height) != loggedSize.1 || abs(connection.videoRotationAngle - loggedAngle) > 0.5 {
+            loggedSize = (Int(size.width), Int(size.height))
+            loggedAngle = connection.videoRotationAngle
+            NSLog("PREVIEW ORIENTATION %.0f %dx%d", want, Int(size.width), Int(size.height))
+        }
         let toned = Self.toned(source)
         onFrame?(toned)
         lock.lock()
@@ -50,12 +73,12 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         lock.unlock()
     }
 
-    private func alignRotation() {
+    /// Checks the live connection every frame: lens switches replace it, so a cached angle goes stale.
+    private func alignRotation(_ connection: AVCaptureConnection) {
         let angle = Self.sharedRotation
-        guard abs(angle - appliedRotation) > 0.5, let connection = output.connection(with: .video) else { return }
+        guard abs(connection.videoRotationAngle - angle) > 0.5 else { return }
         guard connection.isVideoRotationAngleSupported(angle) else { return }
         connection.videoRotationAngle = angle
-        appliedRotation = angle
     }
 
     /// Display-referred preview frames arrive in the linear working space, then this matches the still curve.

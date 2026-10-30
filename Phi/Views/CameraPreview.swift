@@ -41,6 +41,16 @@ final class PreviewAnchor {
         view?.detachCoordinator()
     }
 
+    /// Selected framing over the device's current framing. 1 except while a crop stop shoots RAW at zoom 1.
+    func setFinderScale(_ scale: CGFloat) {
+        let apply = {
+            guard let view = self.view else { return }
+            let next = CGAffineTransform(scaleX: scale, y: scale)
+            if view.transform != next { view.transform = next }
+        }
+        if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
+    }
+
     func resume(device: AVCaptureDevice?) {
         let apply = {
             self.view?.resumeCoordinator(device: device)

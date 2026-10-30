@@ -516,6 +516,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 session.setExportProgress(1)
                 session.isExporting = false
                 session.status = successNote
+                session.savedEdits += 1
                 PerfTrace.endSave()
                 if self.camera.statusMessage?.contains("相册") == true {
                     self.camera.statusMessage = nil

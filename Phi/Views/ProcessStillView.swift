@@ -82,6 +82,15 @@ struct ProcessStillView: View {
         .onAppear {
             captureBaseline()
         }
+        .onChange(of: session.savedEdits) { _, _ in
+            rebaselineAfterSave()
+        }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: PHIUITest.discardSave)) { _ in onExport() }
+        .onReceive(NotificationCenter.default.publisher(for: PHIUITest.discardProbe)) { note in
+            PHIUITest.noteDiscardState(dirty: dirty, step: note.object as? String ?? "probe")
+        }
+        #endif
     }
 
     private static var initialTab: EditorTab {
@@ -383,8 +392,23 @@ struct ProcessStillView: View {
         capturedBaseline = true
     }
 
+    /// The saved photo is the new reference: closing with no further change leaves without asking.
+    private func rebaselineAfterSave() {
+        baseEV = session.exposureEV
+        baseLook = session.colorLook
+        baseHalo = session.halo
+        baseGrain = session.style
+        capturedBaseline = true
+        #if DEBUG
+        PHIUITest.noteDiscardState(dirty: dirty, step: "saved")
+        #endif
+    }
+
     private func requestClose() {
-        if dirty && savedCopy == false {
+        #if DEBUG
+        PHIUITest.noteDiscardState(dirty: dirty, step: "close")
+        #endif
+        if dirty {
             confirmDiscard = true
         } else {
             onClose()

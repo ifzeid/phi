@@ -191,6 +191,9 @@ struct QuietFinderView: View {
             if PHIUITest.settingsTour {
                 Task { await runSettingsTour() }
             }
+            if ProcessInfo.processInfo.arguments.contains("-PHIUITestFinderCycle") || ProcessInfo.processInfo.environment["PHI_FINDER_CYCLE"] != nil {
+                Task { await runFinderCycle() }
+            }
             if uiTestCapture {
                 return
             }
@@ -568,6 +571,8 @@ struct QuietFinderView: View {
         ).equatable()
         return preview
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The finder scale (crop stop during a RAW capture) must not spill past the frame.
+            .clipped()
             .overlay {
                 #if DEBUG
                 if PHIUITest.capturesSample, let sample = PHIUITest.sample {
@@ -865,6 +870,26 @@ struct QuietFinderView: View {
         }
         return zoomChoice
     }
+
+    #if DEBUG
+    /// Device check: step through every zoom stop, then optionally shoot once at 2×.
+    /// `-PHIUITestFinderCycle` (add `-PHIUITestShootAt2` to capture). Logs FINDER CYCLE lines next to FINDER SCALE.
+    private func runFinderCycle() async {
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        for step in 0..<5 {
+            await MainActor.run { cycleZoom() }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            NSLog("FINDER CYCLE step=%d zoom=%@", step, String(describing: activeZoom))
+            if activeZoom == .two, ProcessInfo.processInfo.arguments.contains("-PHIUITestShootAt2") || ProcessInfo.processInfo.environment["PHI_FINDER_CYCLE"] == "shoot2" {
+                NSLog("FINDER CYCLE shutter at 2x")
+                await MainActor.run { capture.capture() }
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                NSLog("FINDER CYCLE after capture")
+                return
+            }
+        }
+    }
+    #endif
 
     private func cycleZoom() {
         guard let next = ZoomCycle.next(after: activeZoom, in: shownStops) else { return }

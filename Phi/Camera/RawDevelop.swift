@@ -111,14 +111,20 @@ enum RawDevelop {
         // of a matched reference. Zero keeps the demosaic as sharp as the sensor gives it.
         _ = asShotSharpness
         filter.sharpnessAmount = 0
-        // AsShotNeutral through the camera matrix, once. Temperature after that would be a second white.
-        if let neutral = DNGAsShot.chromaticity(in: dng) {
+        // White balance is the DNG's as-shot neutral as CIRAWFilter resolves it (both ColorMatrix tags,
+        // interpolated by the illuminant). The old override pushed AsShotNeutral through ColorMatrix1 only,
+        // which is the tungsten (StdA) matrix on iPhone DNGs, so daylight shots came out blue.
+        #if DEBUG
+        if legacyMatrix1Neutral, let neutral = DNGAsShot.chromaticity(in: dng) {
             filter.neutralChromaticity = CGPoint(x: CGFloat(neutral.x), y: CGFloat(neutral.y))
-            Logger(subsystem: "com.zeid.phi", category: "develop").info("AsShotNeutral xy \(neutral.x) \(neutral.y) once through ColorMatrix1")
         } else {
             filter.neutralTemperature = asShotTemperature
             filter.neutralTint = asShotTint
         }
+        #else
+        filter.neutralTemperature = asShotTemperature
+        filter.neutralTint = asShotTint
+        #endif
         guard let output = filter.outputImage else { return nil }
         let applied = Self.appliedBaseline(baseline)
         Self.lastBaseline = baseline
@@ -186,11 +192,14 @@ enum RawDevelop {
         return line
     }
 
-    /// Stops removed from a positive DNG BaselineExposure so EV 0 matches Halide Process Zero.
-    /// The tag is the JPEG match. On the 21:39 night DNG, the full tag left PHI at −3 still brighter
-    /// than Halide at −2, so EV 0 was more than one stop hot. 1.5 stops under the tag is that normal.
-    /// A baseline of 0 (HEIF, or a tag that is already zero) is not trimmed.
-    static let processZeroBaselineTrim: Float = 1.5
+    /// Stops removed from the DNG BaselineExposure tag. Was 1.5 (a "Halide Process Zero" match) and made
+    /// every RAW develop 1.5 stops darker than the metered exposure. EV 0 now applies the tag as written,
+    /// which is Apple's own metered brightness for the frame; only the ruler moves it.
+    static let processZeroBaselineTrim: Float = 0
+    #if DEBUG
+    /// Before/after measurement only: the build-32 ColorMatrix1 white.
+    static var legacyMatrix1Neutral = false
+    #endif
     /// Last file's tag and the stops actually multiplied in. The night UITest logs both.
     static var lastBaseline: Float = 0
     static var lastAppliedBaseline: Float = 0
@@ -279,8 +288,8 @@ enum RawDevelop {
         if abs(heif - Float(0.5)) > 0.0001 {
             notes.append("a zero baseline was trimmed")
         }
-        if appliedBaseline(2) >= 2 {
-            notes.append("Process Zero still uses the full JPEG baseline")
+        if appliedBaseline(2) != 2 {
+            notes.append("EV 0 hides a baseline offset")
         }
         if toneMapValue(0.4) != 0.4 {
             notes.append("filmic slope moved a midtone")
