@@ -2,10 +2,16 @@ import SwiftUI
 
 @main
 struct PhiApp: App {
+    init() {
+        PerfTrace.boot()
+    }
+
     @ViewBuilder
     private var root: some View {
         #if DEBUG
-        if let screen = PHIUITest.screen {
+        if PHIUITest.openEditorBasename != nil {
+            QuietFinderView()
+        } else if let screen = PHIUITest.screen {
             PHIUITestHost(screen: screen)
         } else {
             QuietFinderView()

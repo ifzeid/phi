@@ -1,0 +1,229 @@
+import AVFoundation
+import CoreImage
+import Metal
+import MetalKit
+import UIKit
+
+/// Mode 0 viewfinder. The system preview is Apple's bright video; this redraws the same frames
+/// with `RawDevelop.toneMapValue` (toe, linear middle, shoulder) so the finder matches the still.
+final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    /// Portrait angle until the preview coordinator publishes the real one.
+    static var sharedRotation: CGFloat = 90
+
+    let output = AVCaptureVideoDataOutput()
+    var onFrame: ((CIImage) -> Void)?
+    var isEnabled = false
+
+    private let queue = DispatchQueue(label: "com.zeid.phi.finder-tone")
+    private let lock = NSLock()
+    private var busy = false
+    private var installed = false
+    private var loggedSize = (0, 0)
+    private var loggedAngle: CGFloat = -1
+
+    func install(on session: AVCaptureSession) {
+        guard installed == false else { return }
+        output.alwaysDiscardsLateVideoFrames = true
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        output.setSampleBufferDelegate(self, queue: queue)
+        guard session.canAddOutput(output) else { return }
+        session.addOutput(output)
+        installed = true
+        if let connection = output.connection(with: .video) { alignRotation(connection) }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard isEnabled, busy == false else { return }
+        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        lock.lock()
+        if busy {
+            lock.unlock()
+            return
+        }
+        busy = true
+        lock.unlock()
+        alignRotation(connection)
+        var source = CIImage(cvPixelBuffer: buffer)
+        // A lens switch rebuilds the connection at 0°; until the new angle takes, turn the buffer here.
+        let want = Self.sharedRotation
+        if abs(connection.videoRotationAngle - want) > 0.5 {
+            let turn = Int(((want - connection.videoRotationAngle).truncatingRemainder(dividingBy: 360) + 360).rounded()) % 360
+            switch turn {
+            case 90: source = source.oriented(.right)
+            case 180: source = source.oriented(.down)
+            case 270: source = source.oriented(.left)
+            default: break
+            }
+        }
+        // Transition frames after a lens switch can still be sensor-landscape while the connection reports the new angle.
+        let portrait = abs(want - 90) < 0.5 || abs(want - 270) < 0.5
+        if portrait, source.extent.width > source.extent.height {
+            source = source.oriented(abs(want - 270) < 0.5 ? .left : .right)
+        }
+        let size = source.extent.integral.size
+        if Int(size.width) != loggedSize.0 || Int(size.height) != loggedSize.1 || abs(connection.videoRotationAngle - loggedAngle) > 0.5 {
+            loggedSize = (Int(size.width), Int(size.height))
+            loggedAngle = connection.videoRotationAngle
+            NSLog("PREVIEW ORIENTATION %.0f %dx%d", want, Int(size.width), Int(size.height))
+        }
+        let toned = Self.toned(source)
+        onFrame?(toned)
+        lock.lock()
+        busy = false
+        lock.unlock()
+    }
+
+    /// Checks the live connection every frame: lens switches replace it, so a cached angle goes stale.
+    private func alignRotation(_ connection: AVCaptureConnection) {
+        let angle = Self.sharedRotation
+        guard abs(connection.videoRotationAngle - angle) > 0.5 else { return }
+        guard connection.isVideoRotationAngleSupported(angle) else { return }
+        connection.videoRotationAngle = angle
+    }
+
+    /// Display-referred preview frames arrive in the linear working space, then this matches the still curve.
+    private static func toned(_ image: CIImage) -> CIImage {
+        let extent = image.extent.integral
+        let longest = max(extent.width, extent.height)
+        let scaled: CIImage
+        if longest > 960, longest > 0 {
+            let factor = 960 / longest
+            scaled = image.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
+        } else {
+            scaled = image
+        }
+        guard let kernel = toneKernel, let output = kernel.apply(extent: scaled.extent, arguments: [scaled]) else {
+            return scaled
+        }
+        return output
+    }
+
+    /// Same toe (0.045), identity through the middle, and shoulder (knee 0.62, softness 0.55) as `toneMapValue`.
+    private static let toneKernel: CIColorKernel? = CIColorKernel(source: """
+        kernel vec4 phiZeroPreview(__sample s) {
+            vec3 x = max(s.rgb, vec3(0.0));
+            float toe = 0.045;
+            vec3 t = min(x / toe, vec3(1.0));
+            vec3 crushed = toe * t * t;
+            vec3 toed = mix(crushed, x, step(vec3(toe), x));
+            float knee = 0.62;
+            float softness = 0.55;
+            vec3 span = max(toed - vec3(knee), vec3(0.0));
+            vec3 compressed = vec3(knee) + vec3(1.0 - knee) * (span / (span + vec3(softness)));
+            vec3 y = mix(toed, min(compressed, vec3(1.0)), step(vec3(knee), toed));
+            return vec4(y, 1.0);
+        }
+        """)
+}
+
+/// Covers the system preview in mode 0. Touches pass through to the preview layer.
+final class FinderToneView: MTKView, MTKViewDelegate {
+    private var image: CIImage?
+    private let commandQueue: MTLCommandQueue?
+    private var drawing = false
+
+    override init(frame frameRect: CGRect, device: MTLDevice?) {
+        let metal = device ?? MTLCreateSystemDefaultDevice()
+        commandQueue = metal?.makeCommandQueue()
+        super.init(frame: frameRect, device: metal)
+        colorPixelFormat = .bgra8Unorm
+        isPaused = true
+        enableSetNeedsDisplay = true
+        // Core Image writes the drawable from compute, so it must not be framebuffer-only.
+        // With `true` every render threw and the opaque canvas showed black over the live preview (build 30).
+        framebufferOnly = false
+        isOpaque = true
+        delegate = self
+        clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("FinderToneView is created in code")
+    }
+
+    func present(_ image: CIImage) {
+        self.image = image
+        setNeedsDisplay()
+    }
+
+    func clear() {
+        image = nil
+    }
+
+    /// Set when the canvas becomes wanted. The first presented frame logs `PREVIEW FIRST FRAME <ms>`.
+    var shownAt: CFAbsoluteTime?
+    /// Called on main after the first real frame lands, so the owner can reveal the canvas.
+    var onFirstFrame: (() -> Void)?
+    private var hasFrame = false
+
+    func resetFirstFrame() {
+        hasFrame = false
+        shownAt = CFAbsoluteTimeGetCurrent()
+    }
+
+    func draw(in view: MTKView) {
+        guard drawing == false, let image, drawableSize.width > 1, let queue = commandQueue else { return }
+        drawing = true
+        // Render into the finder's own context before taking a drawable, so a failed or busy frame
+        // never presents an empty (black) drawable over the preview.
+        guard let drawable = currentDrawable, let commandBuffer = queue.makeCommandBuffer() else {
+            drawing = false
+            return
+        }
+        let fitted = Self.aspectFill(image, in: CGSize(width: drawable.texture.width, height: drawable.texture.height))
+        let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commandBuffer)
+        destination.colorSpace = StillPipeline.displayP3
+        destination.isFlipped = true
+        do {
+            _ = try Self.context.startTask(toRender: fitted, to: destination)
+        } catch {
+            NSLog("PREVIEW RENDER FAILED %@", String(describing: error))
+            drawing = false
+            return
+        }
+        commandBuffer.present(drawable)
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.drawing = false
+                if self.hasFrame == false {
+                    self.hasFrame = true
+                    let ms = (CFAbsoluteTimeGetCurrent() - (self.shownAt ?? CFAbsoluteTimeGetCurrent())) * 1000
+                    NSLog("PREVIEW FIRST FRAME %.0f", ms)
+                    self.onFirstFrame?()
+                }
+            }
+        }
+        commandBuffer.commit()
+    }
+
+    /// Finder-only context: the shared still context is often locked by editor/save work.
+    private static let context: CIContext = {
+        let device = MTLCreateSystemDefaultDevice()
+        let options: [CIContextOption: Any] = [
+            .workingColorSpace: StillPipeline.linearP3,
+            .outputColorSpace: StillPipeline.displayP3,
+            .workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
+            .cacheIntermediates: false
+        ]
+        if let device { return CIContext(mtlDevice: device, options: options) }
+        return CIContext(options: options)
+    }()
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+    private static func aspectFill(_ image: CIImage, in pixelSize: CGSize) -> CIImage {
+        let extent = image.extent.integral
+        guard extent.width > 1, extent.height > 1, pixelSize.width > 1, pixelSize.height > 1 else { return image }
+        let scale = max(pixelSize.width / extent.width, pixelSize.height / extent.height)
+        let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let scaledExtent = scaled.extent
+        let dx = (pixelSize.width - scaledExtent.width) / 2 - scaledExtent.origin.x
+        let dy = (pixelSize.height - scaledExtent.height) / 2 - scaledExtent.origin.y
+        let placed = scaled.transformed(by: CGAffineTransform(translationX: dx, y: dy))
+        let canvas = CGRect(origin: .zero, size: pixelSize)
+        let black = CIImage(color: CIColor.black).cropped(to: canvas)
+        return placed.cropped(to: canvas).composited(over: black)
+    }
+}

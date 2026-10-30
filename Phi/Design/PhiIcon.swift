@@ -174,30 +174,25 @@ struct IconHitButton: View {
     }
 }
 
-/// Ivory viewfinder, split lens, vermilion shutter dash. Same geometry as `Assets/app-icon-mark.svg`.
+/// Grain ring used on the permission gate. The home-screen icon is the asset-catalog AppIcon,
+/// which follows the system appearance. This mark is the dark ring, because the gate is dark.
 struct PhiMark: View {
     var body: some View {
-        Canvas { context, size in
-            let scale = min(size.width, size.height) / 1024
-            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-                CGPoint(x: x * scale, y: y * scale)
-            }
-            var box = Path()
-            box.addRect(CGRect(x: 208 * scale, y: 320 * scale, width: 608 * scale, height: 416 * scale))
-            var lens = Path()
-            lens.addEllipse(in: CGRect(x: 304 * scale, y: 320 * scale, width: 416 * scale, height: 416 * scale))
-            var axis = Path()
-            axis.move(to: point(512, 320))
-            axis.addLine(to: point(512, 736))
-            var dash = Path()
-            dash.move(to: point(272, 264))
-            dash.addLine(to: point(368, 264))
-            let stroke = StrokeStyle(lineWidth: 26 * scale, lineCap: .round, lineJoin: .round)
-            context.stroke(box, with: .color(CameraColor.textPrimary), style: stroke)
-            context.stroke(lens, with: .color(CameraColor.textPrimary), style: stroke)
-            context.stroke(axis, with: .color(CameraColor.textPrimary), style: stroke)
-            context.stroke(dash, with: .color(CameraColor.accent), style: stroke)
-        }
-        .accessibilityHidden(true)
+        Image("PhiGrainRing")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .clipShape(GrainRingMask())
+            .accessibilityHidden(true)
+    }
+}
+
+/// Squircle close to the iOS icon mask, so the ring reads as the app icon at any size.
+private struct GrainRingMask: Shape {
+    func path(in rect: CGRect) -> Path {
+        let side = min(rect.width, rect.height)
+        let radius = side * 0.2237
+        let origin = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
+        return Path(roundedRect: CGRect(origin: origin, size: CGSize(width: side, height: side)), cornerRadius: radius)
     }
 }

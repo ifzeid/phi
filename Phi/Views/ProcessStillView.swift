@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Post-capture develop surface. Exposure here changes the rendered still, not the camera meter.
 /// Grain is a named look. The original RAW file is never rewritten.
@@ -16,65 +17,107 @@ struct ProcessStillView: View {
     var onRetryOriginal: () -> Void
     var onClose: () -> Void
 
-    @State private var tab: EditorTab = .exposure
+    @State private var tab: EditorTab = ProcessStillView.initialTab
     @State private var holdingOriginal = false
-    @State private var confirmDiscard = false
+    @State private var confirmDiscard = ProcessStillView.initialDiscard
     @State private var baseEV = 0.0
     @State private var baseLook: ColorLook = .none
     @State private var baseHalo: HaloLevel = .off
     @State private var baseGrain: GrainStyle = .off
     @State private var capturedBaseline = false
 
-    private let toolHeight: CGFloat = 168
+    private let toolHeight: CGFloat = 96
 
     var body: some View {
         GeometryReader { geo in
             let bottomPad: CGFloat = 12
-            let controls: CGFloat = 48 + toolHeight + 44 + 44
+            let toastHeight: CGFloat = savedCopy ? 44 : 0
+            let controls: CGFloat = 48 + toolHeight + toastHeight + 44
             let available: CGFloat = geo.size.height - 52 - controls - bottomPad
             let ideal: CGFloat = geo.size.width / PhotoAspect.finderWidthOverHeight
             let photoHeight: CGFloat = min(ideal, max(160, available))
-            ZStack {
-                CameraColor.background
-                VStack(spacing: 0) {
-                    titleBar
-                    editorImage
-                        .frame(height: photoHeight, alignment: .top)
-                        .clipped()
-                    Spacer(minLength: 0)
-                    tabBar
-                        .frame(height: 48)
-                    tool
-                        .frame(height: toolHeight)
+            VStack(spacing: 0) {
+                titleBar
+                editorImage
+                    .frame(height: photoHeight, alignment: .top)
+                    .clipped()
+                Spacer(minLength: 0)
+                tabBar
+                    .frame(height: 48)
+                tool
+                    .frame(height: toolHeight)
+                if savedCopy {
                     toast
                         .frame(height: 44)
-                    actions
-                        .frame(height: 44)
                 }
-                .padding(.bottom, bottomPad)
-                if confirmDiscard {
-                    discardDialog
+                actions
+                    .frame(height: 44)
+            }
+            .padding(.bottom, bottomPad)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .background(CameraColor.background)
+            .overlay {
+                if session.isExporting {
+                    VStack(spacing: 10) {
+                        ProgressView(value: session.exportProgress)
+                            .tint(CameraColor.accent)
+                            .frame(width: 180)
+                        Text("正在保存")
+                            .font(CameraFont.interface(13, weight: .medium))
+                            .foregroundStyle(CameraColor.textPrimary)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 16))
                 }
             }
         }
         .preferredColorScheme(.dark)
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())
+        .background {
+            DiscardEditAlert(isPresented: $confirmDiscard, onDiscard: onClose)
+                .allowsHitTesting(false)
+        }
         .onAppear {
-            #if DEBUG
-            switch PHIUITest.editorTab {
-            case .exposure: tab = .exposure
-            case .style: tab = .style
-            case .effects: tab = .effects
-            case nil: break
-            }
-            #endif
             captureBaseline()
         }
+        .onChange(of: session.savedEdits) { _, _ in
+            rebaselineAfterSave()
+        }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: PHIUITest.discardSave)) { _ in onExport() }
+        .onReceive(NotificationCenter.default.publisher(for: PHIUITest.discardProbe)) { note in
+            PHIUITest.noteDiscardState(dirty: dirty, step: note.object as? String ?? "probe")
+        }
+        #endif
+    }
+
+    private static var initialTab: EditorTab {
+        #if DEBUG
+        if let name = PHIUITest.editorTab {
+            switch name {
+            case .exposure: return .exposure
+            case .style: return .style
+            case .effects: return .effects
+            }
+        }
+        if PHIUITest.screen == .style { return .style }
+        #endif
+        return .exposure
+    }
+
+    private static var initialDiscard: Bool {
+        #if DEBUG
+        return PHIUITest.screen == .discard
+        #else
+        return false
+        #endif
     }
 
     private var titleBar: some View {
-        HStack {
+        HStack(spacing: 20) {
+            NativeCloseButton(label: "离开编辑") { requestClose() }
             Text(savedCopy ? "编辑后的照片" : "编辑照片")
                 .font(CameraFont.interface(14, weight: .medium))
                 .foregroundStyle(CameraColor.textPrimary)
@@ -86,7 +129,8 @@ struct ProcessStillView: View {
                         .onEnded { _ in holdingOriginal = false }
                 )
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, 13)
+        .padding(.trailing, 15)
         .frame(height: 52)
     }
 
@@ -95,16 +139,17 @@ struct ProcessStillView: View {
         PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
             ZStack {
                 CameraColor.background
+                EditorMetalPreview(frame: session.liveFrame, onPresented: { ticket in
+                    session.notePresented(ticket: ticket)
+                }, onFirstPixels: { image in
+                    #if DEBUG
+                    session.deliverFirstPixels(image)
+                    #endif
+                })
                 if holdingOriginal {
                     Image(uiImage: session.originalImage ?? UIImage(cgImage: session.base))
                         .resizable()
                         .scaledToFit()
-                } else if let preview = session.preview {
-                    Image(uiImage: preview)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    ProgressView().tint(CameraColor.accent)
                 }
             }
         }
@@ -120,14 +165,36 @@ struct ProcessStillView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 8) {
-            ForEach(EditorTab.allCases) { item in
-                SelectPill(title: item.rawValue, selected: tab == item, width: 104, height: 36) {
-                    tab = item
+        HStack(spacing: 0) {
+            ForEach(Array(EditorTab.allCases.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Spacer(minLength: 0)
                 }
+                textTab(item)
             }
         }
         .padding(.horizontal, 24)
+    }
+
+    private func textTab(_ item: EditorTab) -> some View {
+        let selected = tab == item
+        return Button {
+            tab = item
+        } label: {
+            ZStack {
+                Text(item.rawValue)
+                    .font(CameraFont.fixed(14, weight: .medium))
+                    .foregroundStyle(selected ? CameraColor.textPrimary : CameraColor.textSecondary)
+                Circle()
+                    .fill(selected ? CameraColor.accent : Color.clear)
+                    .frame(width: 4, height: 4)
+                    .offset(y: 16)
+            }
+            .frame(width: 104, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -143,75 +210,101 @@ struct ProcessStillView: View {
     }
 
     private var exposureTool: some View {
-        VStack(spacing: 4) {
-            Text("\(ExposureFormat.signedDecimal(session.exposureEV)) EV")
-                .font(CameraFont.interface(12, weight: .medium))
-                .foregroundStyle(CameraColor.accent)
-            SharedRuler(
-                labels: developLabels,
-                index: developIndex,
-                onChange: { index in
-                    session.setExposure(-5 + Double(index) * 0.1)
-                },
-                onCommit: {}
-            )
-        }
-        .padding(.horizontal, 24)
+        CalibratedRuler(
+            leading: "曝光",
+            valueText: ExposureFormat.signedDecimal(session.exposureEV),
+            trailing: "EV",
+            leadingMono: false,
+            onLeading: nil,
+            onTrailing: nil,
+            value: session.exposureEV,
+            lower: -5,
+            upper: 5,
+            pointsPerUnit: 100,
+            fineStep: 0.2,
+            majorEvery: 1,
+            hapticEvery: 1,
+            gridStep: 0.1,
+            zeroMark: true,
+            emphasizeNearestLabel: false,
+            label: editTickLabel,
+            snap: snapEditEV,
+            onChange: { next in
+                session.setExposure(next, interactive: true)
+            },
+            onCommit: {
+                session.refinePreview()
+            },
+            onReset: {
+                session.setExposure(0, interactive: false)
+                session.refinePreview()
+            }
+        )
+        .frame(maxWidth: 342)
+        .frame(maxWidth: .infinity)
     }
 
     private var styleTool: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7.5) {
             ForEach(ColorLook.allCases) { look in
                 let selected = session.colorLook == look
                 Button {
                     session.setColorLook(look)
                 } label: {
-                    VStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(swatch(look))
-                            .frame(width: 62, height: 62)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(selected ? CameraColor.accent : Color.clear, lineWidth: 1.5)
+                    Text(look.title)
+                        .font(CameraFont.fixed(14, weight: .regular))
+                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                        .lineLimit(1)
+                        .frame(width: 64, height: 44)
+                        .background {
+                            if selected {
+                                Capsule().fill(CameraColor.surface)
                             }
-                        Text(look.title)
-                            .font(CameraFont.interface(11))
-                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
-                    }
+                        }
+                        .frame(width: 64, height: 86)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(look.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
+        .frame(height: 90)
     }
 
     private var effectsTool: some View {
-        HStack(spacing: 18) {
-            effectGroup(title: "光晕") {
+        VStack(spacing: 8) {
+            effectRow(title: "光晕") {
                 ForEach(HaloLevel.allCases) { level in
-                    SelectPill(title: level.title, selected: session.halo == level, width: 48, height: 34) {
+                    SelectPill(title: level.title, selected: session.halo == level, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
                         session.setHalo(level)
                     }
                     .accessibilityLabel(level == .off ? "关闭光晕" : "\(level.title)光晕")
                 }
             }
-            effectGroup(title: "颗粒") {
-                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 34) {
+            effectRow(title: "颗粒") {
+                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
                     session.setStyle(.off)
                 }
-                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 34) {
+                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
                     session.setStyle(.fine)
                 }
             }
         }
+        .padding(.horizontal, 24)
     }
 
-    private func effectGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func effectRow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 8) {
             Text(title)
-                .font(CameraFont.interface(11))
-                .foregroundStyle(CameraColor.textSecondary)
-            HStack(spacing: 8) { content() }
+                .font(CameraFont.fixed(14, weight: .regular))
+                .foregroundStyle(CameraColor.textPrimary)
+            Spacer(minLength: 8)
+            HStack(spacing: 4) {
+                content()
+            }
         }
+        .frame(height: 44)
     }
 
     private var toast: some View {
@@ -231,11 +324,16 @@ struct ProcessStillView: View {
             Spacer(minLength: 0)
             PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
             Spacer(minLength: 0)
-            if canRetryOriginal, savedCopy == false {
-                Button("重试", action: onRetryOriginal)
-                    .font(CameraFont.fixed(13, weight: .medium))
-                    .foregroundStyle(CameraColor.textSecondary)
-                    .padding(.trailing, 8)
+            if showsRetry {
+                Button(action: onRetryOriginal) {
+                    Text("重试")
+                        .font(CameraFont.fixed(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textSecondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 16)
             }
             Button(action: onExport) {
                 Text(session.isExporting ? "保存中…" : "另存照片")
@@ -251,46 +349,30 @@ struct ProcessStillView: View {
         .frame(height: 44)
     }
 
-    private var discardDialog: some View {
-        ZStack {
-            Color.black.opacity(0.6).ignoresSafeArea()
-            VStack(spacing: 12) {
-                Text("放弃这次调整？")
-                    .font(CameraFont.interface(18, weight: .medium))
-                    .foregroundStyle(CameraColor.textPrimary)
-                Text("原片不会改变。")
-                    .font(CameraFont.interface(13))
-                    .foregroundStyle(CameraColor.textSecondary)
-                Button("继续编辑") { confirmDiscard = false }
-                    .font(CameraFont.interface(14, weight: .medium))
-                    .foregroundStyle(CameraColor.accent)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                Button("放弃调整") {
-                    confirmDiscard = false
-                    onClose()
-                }
-                .font(CameraFont.interface(14, weight: .medium))
-                .foregroundStyle(CameraColor.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-            }
-            .padding(20)
-            .frame(width: 342)
-            .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
+    private var showsRetry: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-PHIUITestSaveFailed") { return true }
+        #endif
+        return canRetryOriginal && saveFailed
+    }
+
+    /// '重试' appears only after this edit's photo-library save failed.
+    private var saveFailed: Bool {
+        guard savedCopy == false, let status = session.status else { return false }
+        return status.hasPrefix("未能写入相册")
     }
 
     private var savedCopy: Bool {
         session.status == "已保存新照片，原片保留"
     }
 
-    private var developLabels: [String] {
-        (0...100).map { ExposureFormat.signedDecimal(-5 + Double($0) * 0.1) }
+    private func editTickLabel(_ tick: Double) -> String {
+        ExposureFormat.tick(Int(tick.rounded()))
     }
 
-    private var developIndex: Int {
-        min(100, max(0, Int(((session.exposureEV + 5) / 0.1).rounded())))
+    private func snapEditEV(_ raw: Double) -> Double {
+        let clamped = min(5.0, max(-5.0, raw))
+        return (clamped * 10).rounded() / 10
     }
 
     private var dirty: Bool {
@@ -310,8 +392,23 @@ struct ProcessStillView: View {
         capturedBaseline = true
     }
 
+    /// The saved photo is the new reference: closing with no further change leaves without asking.
+    private func rebaselineAfterSave() {
+        baseEV = session.exposureEV
+        baseLook = session.colorLook
+        baseHalo = session.halo
+        baseGrain = session.style
+        capturedBaseline = true
+        #if DEBUG
+        PHIUITest.noteDiscardState(dirty: dirty, step: "saved")
+        #endif
+    }
+
     private func requestClose() {
-        if dirty && savedCopy == false {
+        #if DEBUG
+        PHIUITest.noteDiscardState(dirty: dirty, step: "close")
+        #endif
+        if dirty {
             confirmDiscard = true
         } else {
             onClose()
@@ -325,15 +422,6 @@ struct ProcessStillView: View {
         session.setStyle(.off)
     }
 
-    private func swatch(_ look: ColorLook) -> Color {
-        switch look {
-        case .none: CameraColor.surface
-        case .positive: Color(red: 0.72, green: 0.38, blue: 0.28)
-        case .negative: Color(red: 0.35, green: 0.48, blue: 0.62)
-        case .mono: Color(white: 0.55)
-        case .ccd: Color(red: 0.45, green: 0.28, blue: 0.32)
-        }
-    }
 }
 
 struct ColorLookPicker: View {
@@ -398,6 +486,63 @@ struct HaloToggle: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// System alert. The app tint is vermilion, which would paint the cancel action red.
+/// The alert's own tint stays ivory, so only the destructive action is red.
+private struct DiscardEditAlert: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    var onDiscard: () -> Void
+
+    func makeUIViewController(context: Context) -> DiscardAlertHost {
+        let host = DiscardAlertHost()
+        host.view.backgroundColor = .clear
+        return host
+    }
+
+    func updateUIViewController(_ host: DiscardAlertHost, context: Context) {
+        host.onDiscard = onDiscard
+        host.onDismiss = { isPresented = false }
+        host.isPresented = isPresented
+        if isPresented {
+            host.showIfNeeded()
+        }
+    }
+}
+
+private final class DiscardAlertHost: UIViewController {
+    var isPresented = false
+    var onDiscard: () -> Void = {}
+    var onDismiss: () -> Void = {}
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        showIfNeeded()
+    }
+
+    func showIfNeeded() {
+        guard isPresented, presentedViewController == nil, view.window != nil else { return }
+        let alert = UIAlertController(
+            title: "放弃这次调整？",
+            message: "未保存的调整将丢失，原片不会改变。",
+            preferredStyle: .alert
+        )
+        alert.overrideUserInterfaceStyle = .dark
+        alert.view.tintColor = UIColor(red: 244.0 / 255.0, green: 243.0 / 255.0, blue: 238.0 / 255.0, alpha: 1)
+        let discard = UIAlertAction(title: "放弃调整", style: .destructive) { [weak self] _ in
+            self?.onDismiss()
+            self?.onDiscard()
+        }
+        let stay = UIAlertAction(title: "继续编辑", style: .cancel) { [weak self] _ in
+            self?.onDismiss()
+        }
+        alert.addAction(discard)
+        alert.addAction(stay)
+        let ivory = alert.view.tintColor
+        present(alert, animated: true) {
+            alert.view.tintColor = ivory
+        }
     }
 }
 

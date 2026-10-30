@@ -33,9 +33,9 @@ struct AlbumBrowser: View {
     }
 
     private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
+        GridItem(.flexible(), spacing: 3),
+        GridItem(.flexible(), spacing: 3),
+        GridItem(.flexible(), spacing: 3)
     ]
 
     var body: some View {
@@ -110,30 +110,36 @@ struct AlbumBrowser: View {
         }
     }
 
+    /// Figma 05: close at x 13, title at x 77, 选择 / 取消 pill 64×44 r22 on the right.
     private var header: some View {
-        HStack {
-            PhiGlyphButton(glyph: .close, label: "关闭相册", action: onClose)
-            Spacer()
+        HStack(spacing: 20) {
+            NativeCloseButton(label: "关闭相册", action: onClose)
             Text(selecting ? "已选择 \(selected.count) 张" : "照片")
                 .font(CameraFont.interface(14, weight: .medium))
                 .foregroundStyle(CameraColor.textPrimary)
-            Spacer()
+            Spacer(minLength: 0)
             if phase == .ready, shots.isEmpty == false {
-                Button(selecting ? "取消" : "选择") {
+                Button {
                     selecting.toggle()
                     if selecting == false { selected = [] }
+                } label: {
+                    Text(selecting ? "取消" : "选择")
+                        .font(CameraFont.interface(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .frame(width: 64, height: 44)
+                        .contentShape(Capsule())
                 }
-                .font(CameraFont.interface(14, weight: .medium))
-                .foregroundStyle(CameraColor.textPrimary)
-                .frame(minWidth: 44, minHeight: 44)
+                .buttonStyle(.plain)
             } else {
-                Color.clear.frame(width: 44, height: 44)
+                Color.clear.frame(width: 64, height: 44)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 13)
+        .padding(.trailing, 19)
         .frame(height: 56)
     }
 
+    /// Figma 05/06 footer: h52, px20. `N 张照片` 12 secondary; `返回拍摄` pill 112×44 r22, or trash · count · share.
     private var albumBar: some View {
         HStack {
             if selecting {
@@ -142,7 +148,7 @@ struct AlbumBrowser: View {
                 }
                 Spacer()
                 Text("\(selected.count) 张照片")
-                    .font(CameraFont.interface(13))
+                    .font(CameraFont.interface(12))
                     .foregroundStyle(CameraColor.textSecondary)
                 Spacer()
                 PhiGlyphButton(glyph: .share, label: "分享所选照片", enabled: selected.isEmpty == false) {
@@ -150,19 +156,21 @@ struct AlbumBrowser: View {
                 }
             } else {
                 Text("\(shots.count) 张照片")
-                    .font(CameraFont.interface(13))
+                    .font(CameraFont.interface(12))
                     .foregroundStyle(CameraColor.textSecondary)
                 Spacer()
-                Button("返回拍摄", action: onClose)
-                    .font(CameraFont.interface(14, weight: .medium))
-                    .foregroundStyle(CameraColor.accent)
-                    .padding(.horizontal, 16)
-                    .frame(height: 36)
-                    .background(CameraColor.surface, in: Capsule())
+                Button(action: onClose) {
+                    Text("返回拍摄")
+                        .font(CameraFont.interface(13, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .frame(width: 112, height: 44)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 56)
+        .padding(.horizontal, 20)
+        .frame(height: 52)
         .background(CameraColor.background)
     }
 
@@ -199,18 +207,23 @@ struct AlbumBrowser: View {
 
     private var grid: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 ForEach(monthSections) { section in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Text(section.title)
                             .font(CameraFont.interface(22, weight: .medium))
                             .foregroundStyle(CameraColor.textPrimary)
-                            .padding(.horizontal, 20)
+                            .frame(height: 32, alignment: .leading)
+                            .padding(.horizontal, 19)
+                            .padding(.top, 4)
                         Text(section.subtitle)
-                            .font(CameraFont.interface(13))
+                            .font(CameraFont.interface(12))
                             .foregroundStyle(CameraColor.textSecondary)
-                            .padding(.horizontal, 20)
-                        LazyVGrid(columns: columns, spacing: 2) {
+                            .frame(height: 17, alignment: .leading)
+                            .padding(.horizontal, 19)
+                            .padding(.top, 4)
+                            .padding(.bottom, 16)
+                        LazyVGrid(columns: columns, spacing: 3) {
                             ForEach(section.items) { item in
                                 Button {
                                     toggle(item)
@@ -221,7 +234,6 @@ struct AlbumBrowser: View {
                                 .accessibilityLabel(accessibilityName(item.shot, index: item.offset))
                             }
                         }
-                        .padding(.horizontal, 2)
                     }
                 }
             }
@@ -295,26 +307,35 @@ struct AlbumBrowser: View {
             phase = .ready
             return
         }
-        let locals = PhiLocalShots.load().reversed()
+        PerfTrace.beginAlbum()
+        let locals = await Task.detached(priority: .userInitiated) {
+            PhiLocalShots.load().reversed().map { AlbumShot.local($0) }
+        }.value
+        shots = Array(locals)
+        phase = .ready
         let status = await PhotoLibrary.requestReadWrite()
         guard PhotoLibrary.canReadLibrary(status) else {
             limited = false
             libraryDenied = true
-            shots = locals.map { AlbumShot.local($0) }
             phase = shots.isEmpty ? .denied : .ready
             return
         }
         libraryDenied = false
         limited = status == .limited
+        let indexed = PhiShotIndex.load().map(\.localIdentifier)
         if let album = try? await PhotoLibrary.ensureAlbum() {
-            await PhotoLibrary.fileIntoAlbum(PhiShotIndex.load().map(\.localIdentifier), album: album)
+            await PhotoLibrary.fileIntoAlbum(indexed, album: album)
         }
-        let assets = PhotoLibrary.loadShots()
+        let assets = await Task.detached(priority: .utility) {
+            PhotoLibrary.loadShots()
+        }.value
         let known = Set(assets.map(\.localIdentifier))
         var items = assets.map { AlbumShot.library($0) }
         for shot in locals {
-            if let identifier = shot.photosIdentifier, known.contains(identifier) { continue }
-            items.append(AlbumShot.local(shot))
+            if case .local(let local) = shot.source, let identifier = local.photosIdentifier, known.contains(identifier) {
+                continue
+            }
+            items.append(shot)
         }
         shots = items.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         phase = .ready
@@ -439,9 +460,26 @@ private struct AlbumShot: Identifiable {
             hasRaw: shot.hasRaw,
             needsRetry: shot.saveFailed == true && shot.savedToPhotos == false,
             missing: resolved.isEmpty,
-            lensZoom: shot.lensZoom ?? 1,
+            lensZoom: PhiLocalShots.displayZoom(of: shot),
             framed: PhotoAspect(rawValue: shot.aspect ?? "") ?? .threeByFour
         )
+    }
+
+    var cacheStem: String {
+        switch source {
+        case .local(let shot):
+            return shot.id
+        case .library(let asset):
+            return ShotCache.stem(forLibrary: asset.localIdentifier)
+        }
+    }
+
+    /// Display still on disk. A DNG is not used for the grid or the viewer.
+    var stillURL: URL? {
+        guard case .local(let shot) = source else { return nil }
+        guard let file = PhiLocalShots.displayFile(of: shot) else { return nil }
+        if file.filename.lowercased().hasSuffix(".dng") { return nil }
+        return StillArchive.resolve(file.path)
     }
 
     private static func date(fromStamp id: String) -> Date? {
@@ -505,14 +543,14 @@ private struct AlbumThumb: View {
 
     var body: some View {
         Color.clear
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(128.0 / 127.0, contentMode: .fit)
             .overlay {
                 if shot.missing {
                     VStack(spacing: 6) {
                         PhiGlyphImage(glyph: .missing)
                             .foregroundStyle(CameraColor.textSecondary)
                         Text("文件不可用")
-                            .font(CameraFont.interface(11))
+                            .font(CameraFont.interface(10))
                             .foregroundStyle(CameraColor.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -525,30 +563,21 @@ private struct AlbumThumb: View {
                     CameraColor.surface
                 }
             }
-            .overlay(alignment: .bottomLeading) {
-                if shot.hasRaw {
-                    Text("RAW")
-                        .font(CameraFont.parameter(9, medium: true))
-                        .foregroundStyle(CameraColor.accent)
-                        .padding(5)
-                }
-            }
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .bottomTrailing) {
                 if let marked {
                     ZStack {
                         Circle()
-                            .stroke(CameraColor.textPrimary, lineWidth: 1.5)
-                            .frame(width: 18, height: 18)
+                            .fill(marked ? CameraColor.accent : CameraColor.background)
+                        Circle()
+                            .stroke(CameraColor.textPrimary, lineWidth: 1)
                         if marked {
-                            Circle()
-                                .fill(CameraColor.accent)
-                                .frame(width: 18, height: 18)
                             PhiGlyphImage(glyph: .check)
                                 .foregroundStyle(CameraColor.textPrimary)
                                 .scaleEffect(0.6)
                         }
                     }
-                    .padding(6)
+                    .frame(width: 24, height: 24)
+                    .padding(8)
                     .accessibilityHidden(true)
                 }
             }
@@ -567,24 +596,42 @@ private struct AlbumThumb: View {
     private func load() async {
         if shot.id.hasPrefix("sample-") {
             image = AlbumBrowser.sampleStill(framed: shot.framed, missing: shot.missing)
+            if image != nil { PerfTrace.noteAlbumThumbnail() }
             return
         }
-        switch shot.source {
-        case .library(let asset):
-            if image == nil {
-                image = DevelopCache.image(for: asset.localIdentifier)
+        let stem = shot.cacheStem
+        let aspect = shot.framed
+        let zoom = shot.lensZoom
+        let still = shot.stillURL
+        let asset: PHAsset? = {
+            if case .library(let asset) = shot.source { return asset }
+            return nil
+        }()
+        let loaded = await Task.detached(priority: .utility) { () -> UIImage? in
+            if let cached = ShotCache.gridImage(stem: stem) {
+                return AlbumImage.framed(cached, aspect: aspect, zoom: zoom)
             }
-            if let sharp = await AlbumImage.load(asset, target: AlbumImage.gridTarget, fast: false) {
-                image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
+            if let still {
+                ShotCache.storeIfNeeded(stem: stem, fromFile: still)
+                if let cached = ShotCache.gridImage(stem: stem) {
+                    return AlbumImage.framed(cached, aspect: aspect, zoom: zoom)
+                }
             }
-        case .local(let local):
-            let maxSide = AlbumImage.gridTarget.width
-            let aspect = shot.framed
-            let zoom = shot.lensZoom
-            if let preview = await Task.detached(priority: .utility, operation: {
-                AlbumImage.localPreview(local, maxSide: maxSide)
-            }).value {
-                image = AlbumImage.framed(preview, aspect: aspect, zoom: zoom)
+            return nil
+        }.value
+        if let loaded {
+            image = loaded
+            PerfTrace.noteAlbumThumbnail()
+            return
+        }
+        if let asset, let sharp = await AlbumImage.load(asset, target: CGSize(width: ShotCache.gridSide, height: ShotCache.gridSide), fast: true) {
+            let framed = AlbumImage.framed(sharp, aspect: aspect, zoom: zoom)
+            image = framed
+            PerfTrace.noteAlbumThumbnail()
+            if let cg = sharp.cgImage {
+                Task.detached(priority: .utility) {
+                    ShotCache.store(stem: stem, image: cg)
+                }
             }
         }
     }
@@ -604,21 +651,50 @@ private struct AlbumPager: View {
             CameraColor.background.ignoresSafeArea()
             VStack(spacing: 0) {
                 pagerHeader
-                TabView(selection: $index) {
-                    ForEach(Array(shots.enumerated()), id: \.element.id) { offset, shot in
-                        AlbumPage(
-                            shot: shot,
-                            onEditLibrary: onEditLibrary,
-                            onEditLocal: onEditLocal,
-                            onRetryLocal: onRetryLocal,
-                            onDelete: onDelete
-                        )
-                        .tag(offset)
-                    }
+                if shots.indices.contains(index) {
+                    AlbumPage(
+                        shot: shots[index],
+                        onEditLibrary: onEditLibrary,
+                        onEditLocal: onEditLocal,
+                        onRetryLocal: onRetryLocal,
+                        onDelete: onDelete
+                    )
+                    .id(shots[index].id)
+                    .gesture(swipe)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
             }
         }
+        .task(id: index) {
+            await prefetchNeighbors()
+        }
+        .onChange(of: index) { _, _ in
+            PerfTrace.beginSwipe()
+        }
+    }
+
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 24).onEnded { value in
+            let horizontal = value.translation.width
+            guard abs(horizontal) > abs(value.translation.height) else { return }
+            if horizontal < -40, index + 1 < shots.count {
+                index += 1
+            } else if horizontal > 40, index > 0 {
+                index -= 1
+            }
+        }
+    }
+
+    /// Decode the screen JPEG for the pages beside the current one. The pager only builds the visible page.
+    private func prefetchNeighbors() async {
+        let neighbors = [index - 1, index + 1].filter { shots.indices.contains($0) }
+        let shots = neighbors.map { self.shots[$0] }
+        await Task.detached(priority: .utility) {
+            for shot in shots {
+                if ViewerCache.image(id: shot.id) != nil { continue }
+                guard let image = AlbumImage.screenStill(shot) else { continue }
+                ViewerCache.store(image, id: shot.id)
+            }
+        }.value
     }
 
     private var pagerHeader: some View {
@@ -629,13 +705,7 @@ private struct AlbumPager: View {
                     .foregroundStyle(CameraColor.textPrimary)
             }
             HStack {
-                Button(action: onClose) {
-                    PhiIcon(symbol: .close, color: CameraColor.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭")
+                NativeCloseButton(label: "关闭", action: onClose)
                 Spacer()
                 Text("\(index + 1)/\(shots.count)")
                     .font(CameraFont.parameter(12, medium: true))
@@ -741,26 +811,57 @@ private struct AlbumPage: View {
     private func load() async {
         if shot.id.hasPrefix("sample-") {
             image = AlbumBrowser.sampleStill(framed: shot.framed, missing: shot.missing)
+            PerfTrace.endSwipe()
             return
         }
-        switch shot.source {
-        case .library(let asset):
-            if image == nil {
-                image = DevelopCache.image(for: asset.localIdentifier)
-            }
-            if let sharp = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: false) {
-                image = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
-            }
-        case .local(let local):
-            let maxSide = AlbumImage.viewerTarget.width
-            let aspect = shot.framed
-            let zoom = shot.lensZoom
-            if let preview = await Task.detached(priority: .userInitiated, operation: {
-                AlbumImage.localPreview(local, maxSide: maxSide)
-            }).value {
-                image = AlbumImage.framed(preview, aspect: aspect, zoom: zoom)
+        if let cached = ViewerCache.image(id: shot.id) {
+            image = cached
+            PerfTrace.endSwipe()
+            return
+        }
+        let shot = shot
+        if let preview = await Task.detached(priority: .userInitiated, operation: {
+            AlbumImage.screenStill(shot)
+        }).value {
+            ViewerCache.store(preview, id: shot.id)
+            image = preview
+        } else if case .library(let asset) = shot.source,
+                  let sharp = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: true) {
+            let framed = AlbumImage.framed(sharp, aspect: shot.framed, zoom: shot.lensZoom)
+            ViewerCache.store(framed, id: shot.id)
+            image = framed
+            if let cg = sharp.cgImage {
+                let stem = shot.cacheStem
+                Task.detached(priority: .utility) {
+                    ShotCache.store(stem: stem, image: cg)
+                }
             }
         }
+        PerfTrace.endSwipe()
+    }
+}
+
+/// Screen JPEGs for the page on screen and its two neighbors.
+enum ViewerCache {
+    private static let lock = NSLock()
+    private static var images: [String: UIImage] = [:]
+    private static var order: [String] = []
+
+    static func image(id: String) -> UIImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return images[id]
+    }
+
+    static func store(_ image: UIImage, id: String) {
+        lock.lock()
+        images[id] = image
+        order.removeAll { $0 == id }
+        order.append(id)
+        while order.count > 4 {
+            images[order.removeFirst()] = nil
+        }
+        lock.unlock()
     }
 }
 
@@ -841,11 +942,28 @@ enum AlbumImage {
         return UIImage(cgImage: aspect.cropped(cg), scale: zoomed.scale, orientation: zoomed.imageOrientation)
     }
 
+    /// Screen JPEG for the viewer. Built once from the display still and reused by the neighbor prefetch.
+    /// File-private: `AlbumShot` is private to this file.
+    fileprivate static func screenStill(_ shot: AlbumShot) -> UIImage? {
+        let stem = shot.cacheStem
+        if let cached = ShotCache.screenImage(stem: stem) {
+            return framed(cached, aspect: shot.framed, zoom: shot.lensZoom)
+        }
+        if let still = shot.stillURL {
+            ShotCache.storeIfNeeded(stem: stem, fromFile: still)
+            if let cached = ShotCache.screenImage(stem: stem) {
+                return framed(cached, aspect: shot.framed, zoom: shot.lensZoom)
+            }
+        }
+        return nil
+    }
+
     static func localPreview(_ shot: PhiLocalShots.Shot, maxSide: CGFloat) -> UIImage? {
+        let preferred = PhiLocalShots.displayFile(of: shot)
         let ordered = shot.files.sorted { lhs, rhs in
-            let leftRaw = lhs.filename.lowercased().hasSuffix(".dng")
-            let rightRaw = rhs.filename.lowercased().hasSuffix(".dng")
-            return leftRaw == false && rightRaw
+            if lhs.path == preferred?.path { return true }
+            if rhs.path == preferred?.path { return false }
+            return PhiLocalShots.isAppleFallback(lhs) == false && PhiLocalShots.isAppleFallback(rhs)
         }
         for file in ordered {
             guard let url = StillArchive.resolve(file.path),

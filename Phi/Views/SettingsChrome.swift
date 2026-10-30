@@ -6,8 +6,8 @@ enum SettingsToken {
     static let designWidth: CGFloat = 390
     static let pageInset: CGFloat = 20
     static let pillGap: CGFloat = 8
-    static let pillHeight: CGFloat = 38
-    static let pillRadius: CGFloat = 19
+    static let pillHeight: CGFloat = 44
+    static let pillRadius: CGFloat = 22
     static let controlRowHeight: CGFloat = 44
     static let toggleRowHeight: CGFloat = 48
     static let switchWidth: CGFloat = 42
@@ -19,7 +19,7 @@ enum SettingsToken {
     static let rowLine: CGFloat = 23
     static let cardTitleLine: CGFloat = 20
     static let cardBodyLine: CGFloat = 19
-    static let cardHeight: CGFloat = 92
+    static let cardHeight: CGFloat = 126
     static let cardRadius: CGFloat = 14
     static let cardInset: CGFloat = 16
     static let cardTitleTop: CGFloat = 14
@@ -33,7 +33,7 @@ enum SettingsToken {
     static let formatCaptionToDivider: CGFloat = 33
     static let dividerToAspect: CGFloat = 21
     static let aspectCaptionGap: CGFloat = 13
-    static let aspectCaptionToCard: CGFloat = 65
+    static let aspectCaptionToCard: CGFloat = 28
 
     static func sectionFont() -> Font { CameraFont.fixed(13, weight: .regular) }
     static func rowFont() -> Font { CameraFont.fixed(16, weight: .regular) }
@@ -62,14 +62,8 @@ struct SettingsHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: onClose) {
-                PhiGlyphImage(glyph: .close)
-                    .foregroundStyle(CameraColor.textPrimary)
-                    .frame(width: SettingsToken.headerHeight, height: SettingsToken.headerHeight)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(closeLabel)
+            NativeCloseButton(label: closeLabel, action: onClose)
+                .frame(width: SettingsToken.headerHeight, height: SettingsToken.headerHeight)
             Text(title)
                 .font(SettingsToken.titleFont())
                 .foregroundStyle(CameraColor.textPrimary)
@@ -183,7 +177,7 @@ struct SettingsPillGroup: View {
                 } label: {
                     Text(titles[index])
                         .font(SettingsToken.pillFont())
-                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
+                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
@@ -227,9 +221,9 @@ struct SettingsHelpCard: View {
             Text(bodyText)
                 .font(SettingsToken.cardBodyFont())
                 .foregroundStyle(CameraColor.textSecondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: SettingsToken.cardBodyLine * 2)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: SettingsToken.cardBodyLine * 3, alignment: .top)
         }
         .padding(.horizontal, SettingsToken.cardInset * scale)
         .padding(.top, SettingsToken.cardTitleTop)

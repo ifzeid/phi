@@ -42,6 +42,43 @@ enum PhiShotIndex {
         var aspect: String?
         /// Center-crop zoom for a focal-length crop stop. Nil or 1 is the full frame.
         var lensZoom: Double?
+        /// `ProcessMode.rawValue`. Nil on rows written before mode 0 had its own develop.
+        var processMode: String?
+        /// Finder EV compensation in stops. Nil on older rows. Editor 0 is this capture, not a second copy of it.
+        var captureEV: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case localIdentifier, hasRaw, aspect, lensZoom, processMode, captureEV
+        }
+
+        init(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double?, processMode: String? = nil, captureEV: Double? = nil) {
+            self.localIdentifier = localIdentifier
+            self.hasRaw = hasRaw
+            self.aspect = aspect
+            self.lensZoom = lensZoom
+            self.processMode = processMode
+            self.captureEV = captureEV
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            localIdentifier = try container.decode(String.self, forKey: .localIdentifier)
+            hasRaw = try container.decode(Bool.self, forKey: .hasRaw)
+            aspect = try container.decodeIfPresent(String.self, forKey: .aspect)
+            lensZoom = try container.decodeIfPresent(Double.self, forKey: .lensZoom)
+            processMode = try container.decodeIfPresent(String.self, forKey: .processMode)
+            captureEV = try container.decodeIfPresent(Double.self, forKey: .captureEV)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(localIdentifier, forKey: .localIdentifier)
+            try container.encode(hasRaw, forKey: .hasRaw)
+            try container.encodeIfPresent(aspect, forKey: .aspect)
+            try container.encodeIfPresent(lensZoom, forKey: .lensZoom)
+            try container.encodeIfPresent(processMode, forKey: .processMode)
+            try container.encodeIfPresent(captureEV, forKey: .captureEV)
+        }
     }
 
     static func load() -> [Entry] {
@@ -49,10 +86,17 @@ enum PhiShotIndex {
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
     }
 
-    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double? = nil) {
+    static func append(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double? = nil, processMode: String? = nil, captureEV: Double? = nil) {
         var entries = load()
         entries.removeAll { $0.localIdentifier == localIdentifier }
-        entries.append(Entry(localIdentifier: localIdentifier, hasRaw: hasRaw, aspect: aspect, lensZoom: lensZoom))
+        entries.append(Entry(
+            localIdentifier: localIdentifier,
+            hasRaw: hasRaw,
+            aspect: aspect,
+            lensZoom: lensZoom,
+            processMode: processMode,
+            captureEV: captureEV
+        ))
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
@@ -71,8 +115,24 @@ enum PhiShotIndex {
     }
 
     static func lensZoom(for localIdentifier: String) -> Double {
-        let stored = load().first(where: { $0.localIdentifier == localIdentifier })?.lensZoom ?? 1
+        guard let entry = load().first(where: { $0.localIdentifier == localIdentifier }) else { return 1 }
+        if entry.processMode == ProcessMode.bayer.rawValue { return 1 }
+        let stored = entry.lensZoom ?? 1
         return stored > 1 ? stored : 1
+    }
+
+    /// Crop used when developing the DNG again. The Photos primary is already cropped, so display zoom stays 1.
+    static func captureZoom(for localIdentifier: String) -> Double {
+        // Shots saved by build 30 lack the zoom in this index; the local shot record still has it.
+        let stored = load().first(where: { $0.localIdentifier == localIdentifier })?.lensZoom
+            ?? PhiLocalShots.load().first(where: { $0.photosIdentifier == localIdentifier })?.lensZoom
+            ?? 1
+        return stored > 1 ? stored : 1
+    }
+
+    static func processMode(for localIdentifier: String) -> ProcessMode? {
+        guard let raw = load().first(where: { $0.localIdentifier == localIdentifier })?.processMode else { return nil }
+        return ProcessMode(rawValue: raw)
     }
 }
 
@@ -88,8 +148,68 @@ enum PhiLocalShots {
         var saveFailed: Bool?
         /// `PhotoAspect.rawValue` at capture. Older records omit it.
         var aspect: String?
-        /// Center-crop zoom. Older records omit it.
+        /// Center-crop zoom. Older records omit it. Mode 0 re-develop uses this; the saved HEIF is already cropped.
         var lensZoom: Double?
+        /// `ProcessMode.rawValue`. Older records omit it.
+        var processMode: String?
+        /// Finder EV in stops. Editor 0 is the captured frame; meter total is `captureEV + editorEV`.
+        var captureEV: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, files, hasRaw, savedToPhotos, photosIdentifier, saveFailed, aspect, lensZoom, processMode, captureEV
+        }
+
+        init(
+            id: String,
+            files: [LibraryRecord.File],
+            hasRaw: Bool,
+            savedToPhotos: Bool,
+            photosIdentifier: String?,
+            saveFailed: Bool?,
+            aspect: String?,
+            lensZoom: Double?,
+            processMode: String? = nil,
+            captureEV: Double? = nil
+        ) {
+            self.id = id
+            self.files = files
+            self.hasRaw = hasRaw
+            self.savedToPhotos = savedToPhotos
+            self.photosIdentifier = photosIdentifier
+            self.saveFailed = saveFailed
+            self.aspect = aspect
+            self.lensZoom = lensZoom
+            self.processMode = processMode
+            self.captureEV = captureEV
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            files = try container.decode([LibraryRecord.File].self, forKey: .files)
+            hasRaw = try container.decode(Bool.self, forKey: .hasRaw)
+            savedToPhotos = try container.decode(Bool.self, forKey: .savedToPhotos)
+            photosIdentifier = try container.decodeIfPresent(String.self, forKey: .photosIdentifier)
+            saveFailed = try container.decodeIfPresent(Bool.self, forKey: .saveFailed)
+            aspect = try container.decodeIfPresent(String.self, forKey: .aspect)
+            lensZoom = try container.decodeIfPresent(Double.self, forKey: .lensZoom)
+            processMode = try container.decodeIfPresent(String.self, forKey: .processMode)
+            captureEV = try container.decodeIfPresent(Double.self, forKey: .captureEV)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+            try container.encode(files, forKey: .files)
+            try container.encode(hasRaw, forKey: .hasRaw)
+            try container.encode(savedToPhotos, forKey: .savedToPhotos)
+            try container.encodeIfPresent(photosIdentifier, forKey: .photosIdentifier)
+            try container.encodeIfPresent(saveFailed, forKey: .saveFailed)
+            try container.encodeIfPresent(aspect, forKey: .aspect)
+            try container.encodeIfPresent(lensZoom, forKey: .lensZoom)
+            try container.encodeIfPresent(processMode, forKey: .processMode)
+            try container.encodeIfPresent(captureEV, forKey: .captureEV)
+        }
     }
 
     private static var fileURL: URL {
@@ -126,6 +246,7 @@ enum PhiLocalShots {
         guard dropping.isEmpty == false else { return }
         let shots = load()
         for shot in shots where dropping.contains(shot.id) {
+            ShotCache.remove(stem: shot.id)
             for file in shot.files {
                 if let url = StillArchive.resolve(file.path) {
                     try? FileManager.default.removeItem(at: url)
@@ -162,12 +283,31 @@ enum PhiLocalShots {
         write(shots)
     }
 
-    /// Display file for the in-app album. Prefer Apple's HEIF/JPEG over the DNG.
+    /// Album and editor still. Mode 0 prefers the DNG develop. Apple's HEIF is named `.apple.` and is only the fallback.
     static func displayFile(of shot: Shot) -> LibraryRecord.File? {
-        let notRaw: (LibraryRecord.File) -> Bool = { $0.filename.lowercased().hasSuffix(".dng") == false }
-        return shot.files.first { $0.alternate == false && notRaw($0) }
-            ?? shot.files.first(where: notRaw)
+        let visible = shot.files.filter { isAppleFallback($0) == false && isRawFile($0) == false }
+        return visible.first { $0.alternate == false }
+            ?? visible.first
+            ?? shot.files.first { isRawFile($0) == false }
             ?? shot.files.first
+    }
+
+    /// Crop zoom for showing `displayFile`. A finished mode 0 HEIF already contains the crop.
+    static func displayZoom(of shot: Shot) -> Double {
+        let developed = shot.files.contains { isAppleFallback($0) == false && isRawFile($0) == false }
+        if shot.processMode == ProcessMode.bayer.rawValue, developed {
+            return 1
+        }
+        let zoom = shot.lensZoom ?? 1
+        return zoom > 1 ? zoom : 1
+    }
+
+    static func isAppleFallback(_ file: LibraryRecord.File) -> Bool {
+        file.filename.lowercased().contains(".apple.")
+    }
+
+    private static func isRawFile(_ file: LibraryRecord.File) -> Bool {
+        file.filename.lowercased().hasSuffix(".dng")
     }
 
     static func unsaved() -> [Shot] {
@@ -186,8 +326,10 @@ enum PhiLocalShots {
 }
 
 /// One file inside a Photos asset. A JPEG+RAW pair uses `.photo` for the processed still and `.alternatePhoto` for the DNG.
+/// Photos rejects a DNG passed as `data` for `.alternatePhoto` (PHPhotosErrorDomain 3300). A file URL is accepted.
 struct LibraryPayload {
     var data: Data
+    var fileURL: URL? = nil
     var typeIdentifier: String
     var filename: String
     var alternate: Bool
@@ -210,6 +352,7 @@ struct LibraryRecord: Codable, Equatable {
                   let data = try? Data(contentsOf: url) else { return nil }
             items.append(LibraryPayload(
                 data: data,
+                fileURL: url,
                 typeIdentifier: file.typeIdentifier,
                 filename: file.filename.isEmpty ? url.lastPathComponent : file.filename,
                 alternate: file.alternate
@@ -276,7 +419,8 @@ enum PhotoLibrary {
         for item in items {
             let container = CapturedContainer.inspect(item.data)
             let kind = item.alternate ? "alternatePhoto" : "photo"
-            log.info("resource \(kind, privacy: .public) \(container.logLine, privacy: .public) file \(item.filename, privacy: .public)")
+            let via = item.fileURL == nil ? "data" : "file"
+            log.info("resource \(kind, privacy: .public) via \(via, privacy: .public) \(container.logLine, privacy: .public) file \(item.filename, privacy: .public)")
         }
         do {
             try await PHPhotoLibrary.shared().performChanges {
@@ -284,11 +428,15 @@ enum PhotoLibrary {
                 request.location = shotLocation
                 for item in items {
                     let options = PHAssetResourceCreationOptions()
-                    options.shouldMoveFile = false
                     options.uniformTypeIdentifier = item.typeIdentifier
                     options.originalFilename = item.filename
                     let kind: PHAssetResourceType = item.alternate ? .alternatePhoto : .photo
-                    request.addResource(with: kind, data: item.data, options: options)
+                    if let url = item.fileURL {
+                        options.shouldMoveFile = false
+                        request.addResource(with: kind, fileURL: url, options: options)
+                    } else {
+                        request.addResource(with: kind, data: item.data, options: options)
+                    }
                 }
                 if let placeholder = request.placeholderForCreatedAsset {
                     box.localIdentifier = placeholder.localIdentifier
@@ -305,8 +453,8 @@ enum PhotoLibrary {
         return box.localIdentifier
     }
 
-    /// Primary `.photo` is Apple's HEIF or JPEG. The DNG is `.alternatePhoto` only beside a real primary from the same capture.
-    /// A lone DNG, an empty file, or a HEIF whose pixels don't match the DNG is what Photos reports as invalidResource (3300).
+    /// Primary `.photo` is Apple's HEIF or JPEG. The DNG is `.alternatePhoto` only beside that primary.
+    /// invalidResource (3300) here is Photos refusing the DNG when `addResource` is given bytes. The file on disk is the resource that succeeds.
     private static func normalizedForPhotos(_ payloads: [LibraryPayload]) -> [LibraryPayload] {
         let inspected = payloads.map { item in
             (item, CapturedContainer.inspect(item.data))
@@ -332,6 +480,7 @@ enum PhotoLibrary {
         let filename = stem.isEmpty ? "PHI.\(ext)" : "\(stem).\(ext)"
         return LibraryPayload(
             data: item.data,
+            fileURL: item.fileURL,
             typeIdentifier: container.typeIdentifier,
             filename: filename,
             alternate: alternate

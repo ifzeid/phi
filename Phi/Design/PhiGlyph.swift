@@ -65,15 +65,12 @@ struct WhiteShutterButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .stroke(CameraColor.shutterRing, lineWidth: 1.5)
-                    .frame(width: 76.5, height: 76.5)
-                Circle()
-                    .fill(CameraColor.textPrimary)
-                    .frame(width: 64, height: 64)
-            }
-            .frame(width: 80, height: 80)
+            // Solid #F4F3EE disc, no outer ring (Zeid, build 31). 64 pt as measured on Figma 01; 80 pt hit area.
+            Circle()
+                .fill(CameraColor.textPrimary)
+                .frame(width: 64, height: 64)
+                .frame(width: 80, height: 80)
+                .contentShape(Circle())
             .opacity(isReady ? 1 : 0.4)
         }
         .buttonStyle(ShutterPressStyle())
@@ -83,24 +80,24 @@ struct WhiteShutterButton: View {
     }
 }
 
-/// 76 pt brackets and a red centre. Locked state adds the AE/AF LOCK line.
+/// Red corner frame sized by its parent. On the 3:4 finder that parent is the centre thirds cell, 130×174.
+/// Locked state adds the AE/AF LOCK line. There is no centre circle.
 struct FocusBracket: View {
     var locked: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                BracketShape()
-                    .stroke(CameraColor.textPrimary, style: StrokeStyle(lineWidth: 1.3, lineCap: .round, lineJoin: .round))
-                Circle()
-                    .stroke(CameraColor.accent, lineWidth: 1.6)
-                    .frame(width: 14, height: 14)
-            }
-            .frame(width: 76, height: 76)
+        GeometryReader { geo in
+            let arm = min(CGFloat(29), geo.size.width * 0.24, geo.size.height * 0.18)
+            CornerBrackets(arm: arm)
+                .stroke(CameraColor.accent, style: StrokeStyle(lineWidth: 1.6, lineCap: .butt, lineJoin: .miter))
+                .padding(0.8)
+        }
+        .overlay(alignment: .bottom) {
             if locked {
                 Text("AE/AF LOCK")
                     .font(CameraFont.parameter(11))
                     .foregroundStyle(CameraColor.textPrimary)
+                    .offset(y: 18)
             }
         }
         .allowsHitTesting(false)
@@ -108,22 +105,25 @@ struct FocusBracket: View {
     }
 }
 
-private struct BracketShape: Shape {
+private struct CornerBrackets: Shape {
+    var arm: CGFloat
+
     func path(in rect: CGRect) -> Path {
-        let arm: CGFloat = 17
+        let inset = rect.insetBy(dx: 0.8, dy: 0.8)
+        let length = min(arm, inset.width / 2, inset.height / 2)
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + arm, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + arm))
-        path.move(to: CGPoint(x: rect.maxX - arm, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + arm))
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY - arm))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX + arm, y: rect.maxY))
-        path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - arm))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - arm, y: rect.maxY))
+        path.move(to: CGPoint(x: inset.minX + length, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.minX, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.minX, y: inset.minY + length))
+        path.move(to: CGPoint(x: inset.maxX - length, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.maxX, y: inset.minY))
+        path.addLine(to: CGPoint(x: inset.maxX, y: inset.minY + length))
+        path.move(to: CGPoint(x: inset.minX, y: inset.maxY - length))
+        path.addLine(to: CGPoint(x: inset.minX, y: inset.maxY))
+        path.addLine(to: CGPoint(x: inset.minX + length, y: inset.maxY))
+        path.move(to: CGPoint(x: inset.maxX, y: inset.maxY - length))
+        path.addLine(to: CGPoint(x: inset.maxX, y: inset.maxY))
+        path.addLine(to: CGPoint(x: inset.maxX - length, y: inset.maxY))
         return path
     }
 }
@@ -135,13 +135,14 @@ struct SelectPill: View {
     var height: CGFloat = 36
     /// Unselected plates use the page color, which disappears on `#090a0a`. Pass a fill to keep the capsule visible.
     var plate: Color? = nil
+    var idleInk: Color = CameraColor.textPrimary
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(CameraFont.fixed(13, weight: .medium))
-                .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
+                .foregroundStyle(selected ? CameraColor.accent : idleInk)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -294,5 +295,41 @@ struct FlashChoiceMenu: View {
         .buttonStyle(.plain)
         .disabled(enabled == false)
         .accessibilityAddTraits(selection == mode ? .isSelected : [])
+    }
+}
+
+/// iOS-native close control: system xmark in a Liquid Glass circle with the `.close` role on iOS 26+,
+/// a dark material circle before that. Used by the library, photo viewer, editor and settings card.
+struct NativeCloseButton: View {
+    var label: String
+    var diameter: CGFloat = 36
+    var action: () -> Void
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            Button(role: .close, action: action) {
+                mark
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .frame(width: 44, height: 44)
+            .accessibilityLabel(label)
+        } else {
+            Button(action: action) {
+                mark
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44, height: 44)
+            .accessibilityLabel(label)
+        }
+    }
+
+    private var mark: some View {
+        Image(systemName: "xmark")
+            .font(.system(size: diameter * 0.42, weight: .semibold))
+            .foregroundStyle(CameraColor.textPrimary)
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
     }
 }
