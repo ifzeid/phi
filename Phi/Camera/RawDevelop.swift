@@ -266,11 +266,11 @@ enum RawDevelop {
             notes.append("filmic clipped a white wall at +0.9")
         }
         let gain = sceneGain(baseline: 2, ev: -2)
-        if abs(gain - Float(pow(2, 2 - Double(processZeroBaselineTrim) - 2))) > 0.0001 {
+        if abs(gain - Float(Foundation.pow(2.0, 2.0 - Double(processZeroBaselineTrim) - 2.0))) > 0.0001 {
             notes.append("scene gain is not 2^(trimmed baseline+EV)")
         }
         let heif = sceneGain(baseline: 0, ev: -1)
-        if abs(heif - Float(pow(2, -1))) > 0.0001 {
+        if abs(heif - Float(0.5)) > 0.0001 {
             notes.append("a zero baseline was trimmed")
         }
         if appliedBaseline(2) >= 2 {

@@ -190,14 +190,20 @@ static func renderLinear(
     }
 
     static func renderHalo(_ base: CIImage, level: HaloLevel) -> CIImage {
-        guard level != .off, level.scatter > 0 else { return base }
+        guard level != .off else { return base }
+        return renderHalo(base, scatter: level.scatter)
+    }
+
+    /// Scatter-level entry so the self-check can still compare 开 with the retired stronger setting.
+    static func renderHalo(_ base: CIImage, scatter: CGFloat) -> CIImage {
+        guard scatter > 0 else { return base }
         let extent = base.extent.integral
         guard extent.width > 2, extent.height > 2, extent.isInfinite == false else { return base }
         guard let pixels = linearPixels(base, bounds: extent) else { return base }
         let width = Int(extent.width)
         let height = Int(extent.height)
         // HaloOptics.pyramidBlur runs on highlight energy only. A CI gaussian was screening a floor over the sky.
-        let bloomed = HaloOptics.bloom(pixels, width: width, height: height, scatter: Float(level.scatter), stride: 4)
+        let bloomed = HaloOptics.bloom(pixels, width: width, height: height, scatter: Float(scatter), stride: 4)
         return bitmapImage(bloomed, bounds: extent)
     }
 
@@ -525,8 +531,8 @@ static func renderLinear(
         let extent = CGRect(x: 0, y: 0, width: width, height: height)
         let source = bitmapImage(pixels, bounds: extent)
         guard let plain = displayImage(source),
-              let weakImage = displayImage(renderHalo(source, level: .weak)),
-              let strongImage = displayImage(renderHalo(source, level: .strong)),
+              let weakImage = displayImage(renderHalo(source, level: .on)),
+              let strongImage = displayImage(renderHalo(source, scatter: HaloOptics.strongScatter)),
               let plainBytes = rgba8(plain),
               let weakBytes = rgba8(weakImage),
               let strongBytes = rgba8(strongImage) else {

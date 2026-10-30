@@ -102,7 +102,10 @@ final class ProcessSession: ObservableObject, Identifiable {
         }
         let display = originalImage?.cgImage ?? base
         self.liveFrame = LiveFrame(ticket: 0, image: CIImage(cgImage: display))
-        _ = DevelopEffectCheck.confirm
+        // Debug-only self-check takes seconds; keep it off the main thread so the editor opens at once.
+        DispatchQueue.global(qos: .utility).async {
+            _ = DevelopEffectCheck.confirm
+        }
     }
 
     var isNeutral: Bool {

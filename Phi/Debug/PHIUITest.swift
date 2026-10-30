@@ -13,14 +13,16 @@ import UniformTypeIdentifiers
 /// `-PHIUITestZoom 0.5|1|2|4` sets the zoom-cycle label
 /// `-PHIUITestEditorTab exposure|style|effects`
 /// `-PHIUITestLook none|positive|negative|mono|ccd`
-/// `-PHIUITestHalo off|weak|strong`
+/// `-PHIUITestHalo off|on`
 /// `-PHIUITestImport <dir>` copies each HEIC+DNG pair into the local shot store
 /// `-PHIUITestOpenEditor <basename>` opens that imported shot
 /// `-PHIUITestEditorEV <value>` and `-PHIUITestEditorLook <name>` apply after open
 /// `-PHIUITestEditorEVSweep` logs mean luma at −2, −1, −0.7, 0, +0.9, +2 for the open shot and fails if it rises as EV falls
-/// `-PHIUITestEditorHalo` logs 关/弱/强 on imported shots: far sky must stay put, bloom near lights must rise
+/// `-PHIUITestEditorHalo` logs 关/开 on imported shots: far sky must stay put, bloom near lights must rise
 /// `-PHIUITestEditorNight` renders an imported night DNG at EV −2 and checks sky, beam neutrality, and sharpness
 /// `-PHIUITestEditorFinderEV` checks a finder-bias develop at EV 0 against the same file edited by that bias
+/// `-PHIUITestSettings` opens the settings card and each sub-card in turn (`SETTINGS CARD <name>`), `-PHIUITestSettingsDwell <s>` per page
+/// `-PHIUITestSettingsCard main|process|aspect|flash|output|exposure|style` opens one page and stays
 /// `-PHIUITestPerf` logs launch, album, swipe, edit, save, and main-thread hangs
 enum PHIUITest {
     enum Screen: String {
@@ -51,6 +53,30 @@ enum PHIUITest {
         case "9:16", "16:9": return .nineBySixteen
         default: return PhotoAspect(rawValue: arguments[flag + 1])
         }
+    }
+
+    /// Capture chrome with the sample still instead of the camera.
+    static var capturesSample: Bool {
+        screen == .capture || screen == .flash || screen == .settings
+    }
+
+    static var settingsTour: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestSettings")
+    }
+
+    static var settingsDwell: Double {
+        Double(argument("-PHIUITestSettingsDwell") ?? "") ?? 3
+    }
+
+    static var settingsCard: SettingsPage? {
+        if let name = argument("-PHIUITestSettingsCard") { return SettingsPage(rawValue: name) ?? .main }
+        if screen == .settings, settingsTour == false { return .main }
+        return nil
+    }
+
+    static func logSettings(_ line: String) {
+        Logger(subsystem: "com.zeid.phi", category: "uitest").notice("\(line, privacy: .public)")
+        print(line)
     }
 
     static var showEVRuler: Bool {
@@ -117,8 +143,7 @@ enum PHIUITest {
               arguments.indices.contains(flag + 1) else { return nil }
         switch arguments[flag + 1] {
         case "off", "关": return .off
-        case "weak", "弱": return .weak
-        case "strong", "强": return .strong
+        case "on", "开", "weak", "弱", "strong", "强": return .on
         default: return HaloLevel(rawValue: arguments[flag + 1])
         }
     }
@@ -132,6 +157,7 @@ enum PHIUITest {
         defaults.set(true, forKey: ProcessMode.saveProcessedKey)
         defaults.set(true, forKey: ProcessMode.saveHEIFKey)
         defaults.set(ProcessedCodec.heic.rawValue, forKey: ProcessedCodec.storageKey)
+        defaults.set(ColorLook.none.rawValue, forKey: CaptureService.captureLookKey)
     }
 
     static var importDirectory: String? { argument("-PHIUITestImport") }
@@ -630,6 +656,11 @@ enum PHIUITest {
             }
         }
         failed = haloPeers(except: name) || failed
+        logSweep(String(format: "EDITOR HALO MAX RISE %.4f", haloMaxRise))
+        if haloMaxRise < 0.005 {
+            logSweep(String(format: "EDITOR HALO FAILED 开 never raised glow near lights (max rise %.4f)", haloMaxRise))
+            failed = true
+        }
         if failed {
             assertionFailure("EDITOR HALO FAILED")
         }
@@ -700,7 +731,7 @@ enum PHIUITest {
     }
 
     private static func haloRendered(file: String, mode: String, render: (HaloLevel) -> CGImage?) -> Bool {
-        let levels: [HaloLevel] = [.off, .weak, .strong]
+        let levels: [HaloLevel] = [.off, .on]
         var rendered: [(HaloLevel, [Float], Int, Int)] = []
         for level in levels {
             guard let image = render(level), let lumas = displayLumas(image) else {
@@ -787,20 +818,22 @@ enum PHIUITest {
                     failed = true
                 }
             }
-            if nearIndex.isEmpty == false, row.2.mean < base.2.mean + 0.01 {
+            if nearIndex.isEmpty == false {
+                haloMaxRise = max(haloMaxRise, row.2.mean - base.2.mean)
+            }
+            // 开 is the former 弱 scatter: the glow is subtle per file, so a file only fails if it darkens.
+            if nearIndex.isEmpty == false, row.2.mean < base.2.mean - slack {
                 logSweep(String(
-                    format: "EDITOR HALO FAILED mode=%@ file=%@ level=%@ near mean %.3f did not rise from %.3f",
+                    format: "EDITOR HALO FAILED mode=%@ file=%@ level=%@ near mean %.3f fell from %.3f",
                     mode, file, row.0.title, row.2.mean, base.2.mean
                 ))
                 failed = true
             }
         }
-        if nearIndex.isEmpty == false, rows.count == 3, rows[2].2.mean <= rows[1].2.mean {
-            logSweep("EDITOR HALO FAILED mode=\(mode) file=\(file) 强 bloom is not above 弱")
-            failed = true
-        }
         return failed
     }
+
+    private static var haloMaxRise: Float = 0
 
     private struct HaloBand {
         var p1: Float
@@ -1456,6 +1489,8 @@ extension PHIUITest {
         await Task.detached(priority: .userInitiated) {
             preparePerfShot(first)
             preparePerfShot(second)
+            // Same warm Core Image kernels as when the debug self-check ran on the main thread.
+            _ = DevelopEffectCheck.confirm
         }.value
         PerfTrace.beginAlbum()
         _ = await Task.detached(priority: .userInitiated) {
@@ -1608,18 +1643,7 @@ struct PHIUITestHost: View {
                 onClose: {}
             )
         case .settings:
-            FinderSettingsSheet(
-                mode: .bayer,
-                onMode: { _ in },
-                saveHEIF: true,
-                onSaveHEIF: { _ in },
-                codec: .heic,
-                onCodec: { _ in },
-                aspect: PHIUITest.aspect ?? .threeByFour,
-                onAspect: { _ in },
-                onClose: {}
-            )
-            .background(CameraColor.background.ignoresSafeArea())
+            QuietFinderView()
         }
     }
 

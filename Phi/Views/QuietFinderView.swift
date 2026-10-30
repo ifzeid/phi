@@ -45,55 +45,68 @@ private struct CropWindow: View {
     }
 }
 
-/// Positions measured from Figma 390×844. Wider phones keep the same insets.
+/// Positions measured from Figma 390×844 (safe top 47). Everything hangs off the safe area,
+/// so the iPhone 17 Pro (safe top 62) keeps the same rhythm.
 private struct CaptureChromeLayout {
     var width: CGFloat
     var height: CGFloat
+    var home: CGFloat
     var flashCenter: CGPoint
     var settingsCenter: CGPoint
     var gridCenter: CGPoint
-    var pillCenter: CGPoint
+    var rawCenter: CGPoint
+    var aspectCenter: CGPoint
     var photoFrame: CGRect
     var rulerFrame: CGRect
+    var rowCenterY: CGFloat
     var shutterCenter: CGPoint
     var thumbCenter: CGPoint
     var zoomCenter: CGPoint
 
     static func measure(width: CGFloat, height: CGFloat, island: CGFloat, home: CGFloat) -> CaptureChromeLayout {
-        let settingsCenterY = max(CGFloat(22), island * 0.42)
+        // Island band: settings 22 pt above the control row, flash 8 pt lower than settings.
+        let rowCenterY = island + 22
+        let settingsCenterY = max(CGFloat(22), island - 22)
         let flashCenterY = settingsCenterY + 8
-        let gridCenterY = settingsCenterY + 44
-        let pillTop = island + 8
-        let pillCenterY = pillTop + 16
-        let photoTop = pillTop + 38
+        let photoTop = island + 44
         let photoHeight = width / PhotoAspect.finderWidthOverHeight
         var rulerTop = photoTop + photoHeight + 6
         let rulerHeight: CGFloat = 88
         let rowHeight: CGFloat = 88
-        let shutterGap: CGFloat = 9
+        let shutterGap: CGFloat = 5
         var rowTop = rulerTop + rulerHeight + shutterGap
-        let limit = height - home - 4
+        let limit = height - home - 12
         if rowTop + rowHeight > limit {
             let overflow = rowTop + rowHeight - limit
             rulerTop -= min(overflow, CGFloat(6))
             rowTop -= overflow
         }
-        let rowCenterY = rowTop + rowHeight / 2
+        let bottomCenterY = rowTop + rowHeight / 2
         let rulerWidth = min(CGFloat(342), width - 48)
         let rulerX = (width - rulerWidth) / 2
         return CaptureChromeLayout(
             width: width,
             height: height,
-            flashCenter: CGPoint(x: 40, y: flashCenterY),
-            settingsCenter: CGPoint(x: width - 40, y: settingsCenterY),
-            gridCenter: CGPoint(x: width - 40, y: gridCenterY),
-            pillCenter: CGPoint(x: width / 2, y: pillCenterY),
+            home: home,
+            flashCenter: CGPoint(x: 39, y: flashCenterY),
+            settingsCenter: CGPoint(x: width - 41, y: settingsCenterY),
+            gridCenter: CGPoint(x: width - 41, y: rowCenterY),
+            rawCenter: CGPoint(x: 53, y: rowCenterY),
+            aspectCenter: CGPoint(x: width / 2, y: rowCenterY),
             photoFrame: CGRect(x: 0, y: photoTop, width: width, height: photoHeight),
             rulerFrame: CGRect(x: rulerX, y: rulerTop, width: rulerWidth, height: rulerHeight),
-            shutterCenter: CGPoint(x: width / 2, y: rowCenterY),
-            thumbCenter: CGPoint(x: 50, y: rowCenterY),
-            zoomCenter: CGPoint(x: width - 72, y: rowCenterY)
+            rowCenterY: bottomCenterY,
+            shutterCenter: CGPoint(x: width / 2, y: bottomCenterY),
+            thumbCenter: CGPoint(x: 49, y: bottomCenterY),
+            zoomCenter: CGPoint(x: width - 72, y: bottomCenterY)
         )
+    }
+
+    /// The settings card sits one point above the home inset, inset 12 pt each side.
+    func cardFrame(for page: SettingsPage) -> CGRect {
+        let bottom = height - home - 1
+        let cardHeight = page.cardHeight
+        return CGRect(x: 12, y: bottom - cardHeight, width: width - 24, height: cardHeight)
     }
 }
 
@@ -106,21 +119,18 @@ struct QuietFinderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
     @AppStorage("phi.showGrid") private var showGrid = false
-    @State private var showSettings = false
+    @State private var settingsPage: SettingsPage? = {
+        #if DEBUG
+        return PHIUITest.settingsCard
+        #else
+        return nil
+        #endif
+    }()
     @State private var showAlbum = false
     @State private var pendingDevelop: PendingDevelop?
-    @State private var dragBaseEV: Double = 0
     @State private var flashOpacity: Double = 0
     @State private var statusTicket = 0
     @State private var meterScale: MeterScale = .iso
-    @State private var rulerOpacity: Double = {
-        #if DEBUG
-        return (PHIUITest.showEVRuler || PHIUITest.manual) ? 1 : 0
-        #else
-        return 0
-        #endif
-    }()
-    @State private var rulerTicket = 0
     @State private var wantsManual: Bool = {
         #if DEBUG
         return PHIUITest.manual
@@ -177,7 +187,10 @@ struct QuietFinderView: View {
             if PHIUITest.showGrid {
                 showGrid = true
             }
-            if PHIUITest.screen == .capture || PHIUITest.screen == .flash {
+            if PHIUITest.settingsTour {
+                Task { await runSettingsTour() }
+            }
+            if uiTestCapture {
                 return
             }
             if PHIUITest.manual {
@@ -226,19 +239,6 @@ struct QuietFinderView: View {
                 onRetryLocal: { capture.retryLocalShot(id: $0) }
             )
         }
-        .sheet(isPresented: $showSettings) {
-            FinderSettingsSheet(
-                mode: capture.processMode,
-                onMode: { capture.setProcessMode($0) },
-                saveHEIF: capture.saveHEIF,
-                onSaveHEIF: { capture.setSaveHEIF($0) },
-                codec: capture.processedCodec,
-                onCodec: { capture.setProcessedCodec($0) },
-                aspect: capture.photoAspect,
-                onAspect: { capture.setPhotoAspect($0) },
-                onClose: { showSettings = false }
-            )
-        }
         .fullScreenCover(item: $capture.processSession, onDismiss: { capture.dismissProcess() }) { session in
             ProcessStillView(
                 session: session,
@@ -275,38 +275,172 @@ struct QuietFinderView: View {
                     .position(layout.flashCenter)
                 settingsButton
                     .position(layout.settingsCenter)
+                rawMenu
+                    .position(layout.rawCenter)
+                aspectMenu
+                    .position(layout.aspectCenter)
                 gridButton
                     .position(layout.gridCenter)
-                modePill
-                    .position(layout.pillCenter)
 
+                // Always on screen. Hidden only while the settings card covers it.
                 captureRuler
-                    .opacity(rulerOpacity)
-                    .allowsHitTesting(rulerOpacity > 0.04)
-                    .accessibilityHidden(rulerOpacity < 0.04)
                     .frame(width: layout.rulerFrame.width, height: layout.rulerFrame.height)
                     .position(x: layout.rulerFrame.midX, y: layout.rulerFrame.midY)
+                    .opacity(settingsPage == nil ? 1 : 0)
+                    .allowsHitTesting(settingsPage == nil)
 
-                thumbnailButton
-                    .position(layout.thumbCenter)
-                WhiteShutterButton(isReady: camera.isRunning || uiTestCapture, isCapturing: capture.isCapturing) {
-                    capture.capture()
+                if settingsPage != nil {
+                    Color.black.opacity(0.001)
+                        .frame(width: width, height: height)
+                        .onTapGesture { closeSettings() }
+                        .accessibilityHidden(true)
                 }
-                .position(layout.shutterCenter)
-                ZoomCycleButton(title: activeZoom.title, titleSize: activeZoom.titleSize) {
-                    cycleZoom()
+
+                bottomRow(layout)
+
+                if let page = settingsPage {
+                    let card = layout.cardFrame(for: page)
+                    settingsCard
+                        .frame(width: card.width, height: card.height)
+                        .position(x: card.midX, y: card.midY)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .position(layout.zoomCenter)
             }
+            .animation(.easeOut(duration: 0.22), value: settingsPage)
             .frame(width: width, height: height)
             .ignoresSafeArea()
         }
         .ignoresSafeArea()
     }
 
+    /// Hidden under the main card. Lifted above a sub-card: row bottom 20 pt over the card (Figma 163:1207).
+    @ViewBuilder
+    private func bottomRow(_ layout: CaptureChromeLayout) -> some View {
+        let lifted: CGFloat? = {
+            guard let page = settingsPage, page != .main else { return nil }
+            return layout.cardFrame(for: page).minY - 60
+        }()
+        let rowY = lifted ?? layout.rowCenterY
+        let hidden = settingsPage == .main
+        Group {
+            thumbnailButton
+                .position(x: layout.thumbCenter.x, y: rowY)
+            WhiteShutterButton(isReady: camera.isRunning || uiTestCapture, isCapturing: capture.isCapturing) {
+                capture.capture()
+            }
+            .position(x: layout.shutterCenter.x, y: rowY)
+            ZoomCycleButton(title: activeZoom.title, titleSize: activeZoom.titleSize) {
+                cycleZoom()
+            }
+            .position(x: layout.zoomCenter.x, y: rowY)
+        }
+        .opacity(hidden ? 0 : 1)
+        .allowsHitTesting(hidden == false)
+    }
+
+    private var settingsCard: some View {
+        FinderSettingsCard(
+            page: Binding(
+                get: { settingsPage ?? .main },
+                set: { settingsPage = $0 }
+            ),
+            mode: capture.processMode,
+            onMode: { capture.setProcessMode($0) },
+            saveHEIF: capture.saveHEIF,
+            onSaveHEIF: { capture.setSaveHEIF($0) },
+            codec: capture.processedCodec,
+            onCodec: { capture.setProcessedCodec($0) },
+            aspect: activeAspect,
+            onAspect: { capture.setPhotoAspect($0) },
+            flash: shownFlash,
+            flashGlyph: flashGlyph,
+            flashEnabled: camera.flashAvailable || uiTestCapture,
+            onFlash: { camera.setFlash($0) },
+            look: capture.captureLook,
+            onLook: { capture.setCaptureLook($0) },
+            onClose: closeSettings,
+            exposureRuler: { autoRulerCompact }
+        )
+    }
+
+    private func closeSettings() {
+        settingsPage = nil
+    }
+
+    private var rawMenu: some View {
+        Menu {
+            ForEach(ProcessMode.allCases, id: \.self) { mode in
+                Button {
+                    capture.setProcessMode(mode)
+                } label: {
+                    if mode == capture.processMode {
+                        Label(mode.menuTitle, systemImage: "checkmark")
+                    } else {
+                        Text(mode.menuTitle)
+                    }
+                }
+            }
+        } label: {
+            Text(capture.processMode.finderWord)
+                .font(CameraFont.parameter(13))
+                .foregroundStyle(CameraColor.textPrimary)
+                .lineLimit(1)
+                .frame(width: 72, height: 44)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuOrder(.fixed)
+        .environment(\.colorScheme, .dark)
+        .accessibilityLabel("处理方式 \(capture.processMode.finderWord)")
+    }
+
+    private var aspectMenu: some View {
+        Menu {
+            ForEach(PhotoAspect.menuOrder, id: \.self) { aspect in
+                Button {
+                    capture.setPhotoAspect(aspect)
+                } label: {
+                    if aspect == activeAspect {
+                        Label(aspect.chromeTitle, systemImage: "checkmark")
+                    } else {
+                        Text(aspect.chromeTitle)
+                    }
+                }
+            }
+        } label: {
+            Text(activeAspect.chromeTitle)
+                .font(CameraFont.parameter(13))
+                .foregroundStyle(CameraColor.textPrimary)
+                .lineLimit(1)
+                .frame(width: 72, height: 44)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuOrder(.fixed)
+        .environment(\.colorScheme, .dark)
+        .accessibilityLabel("画幅 \(activeAspect.chromeTitle)")
+    }
+
+    #if DEBUG
+    /// `-PHIUITestSettings`: opens the card, then each sub-card in turn, for Simulator screenshots.
+    private func runSettingsTour() async {
+        try? await Task.sleep(for: .seconds(2))
+        let pages: [SettingsPage] = [.main, .process, .aspect, .flash, .output, .exposure, .style]
+        for page in pages {
+            settingsPage = page
+            PHIUITest.logSettings("SETTINGS CARD \(page.rawValue) \(page.title)")
+            try? await Task.sleep(for: .seconds(PHIUITest.settingsDwell))
+        }
+        settingsPage = nil
+        PHIUITest.logSettings("SETTINGS CARD done")
+    }
+    #endif
+
     private var showsFinder: Bool {
         #if DEBUG
-        if PHIUITest.screen == .capture || PHIUITest.screen == .flash { return true }
+        if PHIUITest.capturesSample { return true }
         #endif
         return false
     }
@@ -314,10 +448,6 @@ struct QuietFinderView: View {
     private var showsManual: Bool {
         if wantsManual { return true }
         return camera.autoExposure == false
-    }
-
-    private var finderLabel: String {
-        "\(capture.processMode.finderWord) · \(activeAspect.title)"
     }
 
     private var shownFlash: AVCaptureDevice.FlashMode {
@@ -357,7 +487,7 @@ struct QuietFinderView: View {
 
     private var settingsButton: some View {
         PhiGlyphButton(glyph: .settings, label: "拍摄设置") {
-            showSettings = true
+            settingsPage = settingsPage == nil ? .main : nil
         }
     }
 
@@ -365,20 +495,6 @@ struct QuietFinderView: View {
         PhiGlyphButton(glyph: showGrid ? .gridOn : .gridOff, label: showGrid ? "隐藏九宫格" : "显示九宫格") {
             showGrid.toggle()
         }
-    }
-
-    private var modePill: some View {
-        Button {
-            showSettings = true
-        } label: {
-            Text(finderLabel)
-                .font(CameraFont.parameter(13))
-                .foregroundStyle(CameraColor.textPrimary)
-                .lineLimit(1)
-                .frame(width: 150, height: 32)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("拍摄设置 \(finderLabel)")
     }
 
     private var thumbnailButton: some View {
@@ -442,9 +558,8 @@ struct QuietFinderView: View {
             )
             camera.focus(at: device)
         }
-        let onDrag: (PreviewDrag) -> Void = { event in
-            handleDrag(event)
-        }
+        // Viewfinder drag-to-expose is removed for now. Exposure lives on the ruler.
+        let onDrag: (PreviewDrag) -> Void = { _ in }
         let onLongPress: () -> Void = {
             camera.setFocusLocked(camera.focusLocked == false)
         }
@@ -461,7 +576,7 @@ struct QuietFinderView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
                 #if DEBUG
-                if PHIUITest.screen == .capture || PHIUITest.screen == .flash, let sample = PHIUITest.sample {
+                if PHIUITest.capturesSample, let sample = PHIUITest.sample {
                     Image(uiImage: sample)
                         .resizable()
                         .scaledToFill()
@@ -492,7 +607,7 @@ struct QuietFinderView: View {
 
     private var uiTestCapture: Bool {
         #if DEBUG
-        return PHIUITest.screen == .capture || PHIUITest.screen == .flash
+        return PHIUITest.capturesSample
         #else
         return false
         #endif
@@ -634,22 +749,56 @@ struct QuietFinderView: View {
             lower: evLower,
             upper: evUpper,
             pointsPerUnit: 100,
-            fineStep: 0.5,
+            fineStep: 0.2,
             majorEvery: 1,
             hapticEvery: 1,
+            gridStep: 0.1,
             zeroMark: true,
             emphasizeNearestLabel: false,
             label: evTickLabel,
             snap: snapEV,
             onChange: { next in
-                noteRulerActivity()
                 camera.setExposureEV(next)
             },
             onCommit: {
-                noteRulerActivity()
                 camera.commitExposureEV()
-            }
+            },
+            onReset: resetEV
         )
+    }
+
+    /// Ruler inside the 曝光 sub-card (Figma 326×70, no tick captions).
+    private var autoRulerCompact: some View {
+        CalibratedRuler(
+            leading: "A / EV",
+            valueText: ExposureFormat.signedDecimal(camera.exposureEV),
+            trailing: "EV",
+            onLeading: nil,
+            onTrailing: nil,
+            value: camera.exposureEV,
+            lower: evLower,
+            upper: evUpper,
+            pointsPerUnit: 100,
+            fineStep: 0.2,
+            majorEvery: 1,
+            hapticEvery: 1,
+            gridStep: 0.1,
+            zeroMark: true,
+            showsLabels: false,
+            height: 70,
+            emphasizeNearestLabel: false,
+            label: evTickLabel,
+            snap: snapEV,
+            onChange: { camera.setExposureEV($0) },
+            onCommit: { camera.commitExposureEV() },
+            onReset: resetEV
+        )
+    }
+
+    private func resetEV() {
+        if showsManual { return }
+        camera.setExposureEV(0)
+        camera.commitExposureEV()
     }
 
     private var isoRuler: some View {
@@ -660,7 +809,6 @@ struct QuietFinderView: View {
             onLeading: toggleMeterMode,
             onTrailing: {
                 meterScale = .shutter
-                noteRulerActivity()
             },
             value: isoCoordinate(shownISO),
             lower: isoCoordinate(isoStops.first ?? 50),
@@ -673,10 +821,9 @@ struct QuietFinderView: View {
             label: isoTickLabel,
             snap: snapISOCoordinate,
             onChange: { coordinate in
-                noteRulerActivity()
                 camera.setManualISO(nearestISO(to: coordinate))
             },
-            onCommit: { noteRulerActivity() }
+            onCommit: {}
         )
     }
 
@@ -688,7 +835,6 @@ struct QuietFinderView: View {
             onLeading: toggleMeterMode,
             onTrailing: {
                 meterScale = .iso
-                noteRulerActivity()
             },
             value: shutterCoordinate,
             lower: 0,
@@ -701,12 +847,11 @@ struct QuietFinderView: View {
             label: shutterTickLabel,
             snap: snapShutterCoordinate,
             onChange: { coordinate in
-                noteRulerActivity()
                 let index = Int(coordinate.rounded())
                 guard shutterStops.indices.contains(index) else { return }
                 camera.setManualShutter(shutterStops[index])
             },
-            onCommit: { noteRulerActivity() }
+            onCommit: {}
         )
     }
 
@@ -743,40 +888,15 @@ struct QuietFinderView: View {
         if enableAuto == false {
             meterScale = .iso
         }
-        noteRulerActivity()
-    }
-
-    /// The ruler keeps its frame while hidden, so the shutter row does not move.
-    /// A viewfinder swipe or a meter change shows it, then it fades after a few idle seconds.
-    private func noteRulerActivity() {
-        #if DEBUG
-        if PHIUITest.showEVRuler || PHIUITest.manual {
-            rulerOpacity = 1
-            return
-        }
-        #endif
-        rulerTicket += 1
-        let ticket = rulerTicket
-        if rulerOpacity < 0.99 {
-            withAnimation(.easeOut(duration: 0.15)) {
-                rulerOpacity = 1
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            guard rulerTicket == ticket else { return }
-            withAnimation(.easeOut(duration: 0.3)) {
-                rulerOpacity = 0
-            }
-        }
     }
 
     private var evLower: Double {
-        if camera.isConfigured { return camera.exposureRange.lowerBound }
+        if camera.isConfigured { return max(camera.exposureRange.lowerBound, -5) }
         return -5
     }
 
     private var evUpper: Double {
-        if camera.isConfigured { return camera.exposureRange.upperBound }
+        if camera.isConfigured { return min(camera.exposureRange.upperBound, 5) }
         return 5
     }
 
@@ -870,20 +990,6 @@ struct QuietFinderView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             guard statusTicket == ticket, camera.statusMessage == message else { return }
             camera.statusMessage = nil
-        }
-    }
-
-    private func handleDrag(_ event: PreviewDrag) {
-        noteRulerActivity()
-        guard showsManual == false else { return }
-        switch event {
-        case .began:
-            dragBaseEV = camera.exposureEV
-        case .changed(let translationY):
-            let steps = Int((-translationY / 22).rounded())
-            camera.setExposureEV(dragBaseEV + Double(steps) * 0.1)
-        case .ended:
-            camera.commitExposureEV()
         }
     }
 

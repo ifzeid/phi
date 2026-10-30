@@ -1,8 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// 88 pt mechanical ruler. The red needle stays put. The tape moves under the finger.
-/// Major ticks are 2×20 ivory, half ticks 1×13, fine ticks 1×6 grey.
+/// 88 pt mechanical ruler (Figma 124:628). The red 2×22 needle stays put. The tape moves under the finger.
+/// All ticks are 1 pt at 55%: whole units 12 pt ivory, half units 9 pt grey, fine ticks 6 pt grey.
+/// `gridStep` is the walk step; a tick is drawn where the value is a multiple of `fineStep`, a half or a whole unit.
+/// Double-tap calls `onReset`.
 /// `hapticEvery` limits the click to those units. Zero clicks on every snap.
 struct CalibratedRuler: View {
     var leading: String
@@ -19,12 +21,17 @@ struct CalibratedRuler: View {
     var majorEvery: Double
     /// Haptic only when the needle crosses a multiple of this. 0 clicks on every snapped step.
     var hapticEvery: Double = 0
+    /// Walk step for drawing. Defaults to `fineStep`. Use 0.1 with fine 0.2 so the half stop lands on the grid.
+    var gridStep: Double? = nil
     var zeroMark: Bool
+    var showsLabels: Bool = true
+    var height: CGFloat = 88
     var emphasizeNearestLabel: Bool
     var label: (Double) -> String
     var snap: (Double) -> Double
     var onChange: (Double) -> Void
     var onCommit: () -> Void
+    var onReset: (() -> Void)? = nil
 
     @State private var live: Double?
     @State private var origin: Double = 0
@@ -40,12 +47,19 @@ struct CalibratedRuler: View {
                 header
                     .frame(height: 40)
                 Color.clear
-                    .frame(height: 48)
+                    .frame(height: max(height - 40, 20))
                     .contentShape(Rectangle())
                     .gesture(drag)
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        guard let onReset else { return }
+                        live = nil
+                        lastSent = nil
+                        onReset()
+                        haptic.impactOccurred(intensity: 0.45)
+                    })
             }
         }
-        .frame(height: 88)
+        .frame(height: height)
         .onAppear { haptic.prepare() }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(leading)
@@ -60,12 +74,14 @@ struct CalibratedRuler: View {
                 headerControl(trailing, mono: true, action: onTrailing)
             }
             Text(valueText)
-                .font(CameraFont.parameter(18))
+                .font(CameraFont.parameter(16))
                 .foregroundStyle(CameraColor.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }
-        .padding(.top, 5)
+        .frame(height: 24)
+        .padding(.top, 8)
+        .frame(height: 40, alignment: .top)
     }
 
     private func headerControl(_ title: String, mono: Bool, action: (() -> Void)?) -> some View {
@@ -76,7 +92,7 @@ struct CalibratedRuler: View {
                 .font(mono ? CameraFont.parameter(12) : CameraFont.interface(12))
                 .foregroundStyle(CameraColor.textSecondary)
                 .lineLimit(1)
-                .padding(.vertical, 6)
+                .frame(height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -122,41 +138,52 @@ struct CalibratedRuler: View {
     }
 
     private func drawTicks(_ context: inout GraphicsContext, size: CGSize) {
-        let step = fineStep
-        guard step > 0.00001, pointsPerUnit > 0, majorEvery > 0 else { return }
+        let step = gridStep ?? fineStep
+        guard step > 0.00001, fineStep > 0.00001, pointsPerUnit > 0, majorEvery > 0 else { return }
         let midX = size.width / 2
         let position = shown
         let reach = Double((size.width / 2 + 48) / pointsPerUnit)
-        let first = Int(((position - reach) / step).rounded(.down))
-        let last = Int(((position + reach) / step).rounded(.up))
-        let majorCount = max(Int((majorEvery / step).rounded()), 1)
-        let halfCount = majorCount / 2
+        let first = Int(((max(position - reach, lower - step)) / step).rounded(.down))
+        let last = Int(((min(position + reach, upper + step)) / step).rounded(.up))
         guard last >= first else { return }
+        let fineInk = CameraColor.textSecondary.opacity(0.55)
+        let majorInk = CameraColor.textPrimary.opacity(0.55)
         for index in first...last {
             let tick = Double(index) * step
+            if tick < lower - step * 0.5 || tick > upper + step * 0.5 { continue }
             let x = midX + CGFloat(tick - position) * pointsPerUnit
             if x < -12 || x > size.width + 12 { continue }
-            let slot = positiveMod(index, majorCount)
-            let kind = tickKind(slot: slot, halfCount: halfCount)
-            let tickWidth: CGFloat = kind == .major ? 2 : 1
-            let tickHeight: CGFloat = kind == .major ? 20 : (kind == .half ? 13 : 6)
-            let ink = kind == .major ? CameraColor.textPrimary : CameraColor.textSecondary
-            let bar = CGRect(x: x - tickWidth / 2, y: 42, width: tickWidth, height: tickHeight)
-            context.fill(Path(roundedRect: bar, cornerRadius: 0.5), with: .color(ink))
-            if kind == .major {
+            guard let kind = tickKind(tick) else { continue }
+            let tickHeight: CGFloat = kind == .major ? 12 : (kind == .half ? 9 : 6)
+            let bar = CGRect(x: x - 0.5, y: 42, width: 1, height: tickHeight)
+            context.fill(Path(roundedRect: bar, cornerRadius: 0.5), with: .color(kind == .major ? majorInk : fineInk))
+            if kind == .major, showsLabels {
                 let majorTick = (tick / majorEvery).rounded() * majorEvery
                 let caption = Text(label(majorTick)).font(CameraFont.parameter(11))
                 let nearNeedle = abs(tick - position) < majorEvery * 0.35
                 let captionInk = (emphasizeNearestLabel && nearNeedle) ? CameraColor.textPrimary : CameraColor.textSecondary
-                context.draw(caption.foregroundColor(captionInk), at: CGPoint(x: x, y: 73), anchor: .center)
+                context.draw(caption.foregroundColor(captionInk), at: CGPoint(x: x, y: 70), anchor: .center)
             }
             if zeroMark && abs(tick) < step * 0.45 {
-                let dot = CGRect(x: x - 2, y: 34, width: 4, height: 4)
+                let dot = CGRect(x: x - 1.5, y: 35, width: 3, height: 3)
                 context.fill(Path(ellipseIn: dot), with: .color(CameraColor.textSecondary))
             }
         }
-        let needle = CGRect(x: midX - 1.5, y: 36, width: 3, height: 28)
+        let needle = CGRect(x: midX - 1, y: 39, width: 2, height: 22)
         context.fill(Path(roundedRect: needle, cornerRadius: 1.5), with: .color(CameraColor.accent))
+    }
+
+    private func tickKind(_ tick: Double) -> TickKind? {
+        if Self.isMultiple(tick, of: majorEvery) { return .major }
+        if Self.isMultiple(tick, of: majorEvery / 2) { return .half }
+        if Self.isMultiple(tick, of: fineStep) { return .fine }
+        return nil
+    }
+
+    private static func isMultiple(_ value: Double, of unit: Double) -> Bool {
+        guard unit > 0 else { return false }
+        let ratio = value / unit
+        return abs(ratio - ratio.rounded()) < 0.001
     }
 
     /// True when `next` lands on or passes a multiple of `every` that `previous` had not.
@@ -170,19 +197,6 @@ struct CalibratedRuler: View {
         let onMark = abs(next / every - (next / every).rounded()) < 0.0001
         let wasMark = abs(previous / every - (previous / every).rounded()) < 0.0001
         return onMark && wasMark == false
-    }
-
-    private func tickKind(slot: Int, halfCount: Int) -> TickKind {
-        if slot == 0 { return .major }
-        if halfCount > 0 && slot == halfCount { return .half }
-        return .fine
-    }
-
-    private func positiveMod(_ value: Int, _ modulus: Int) -> Int {
-        guard modulus > 0 else { return 0 }
-        let raw = value % modulus
-        if raw >= 0 { return raw }
-        return raw + modulus
     }
 
     private enum TickKind {

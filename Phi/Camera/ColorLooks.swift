@@ -718,25 +718,37 @@ enum HaloOptics {
 
 enum HaloLevel: String, CaseIterable, Identifiable, Codable {
     case off
-    case weak
-    case strong
+    case on
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .off: "关"
-        case .weak: "弱"
-        case .strong: "强"
+        case .on: "开"
         }
     }
 
+    /// 开 uses the former 弱 strength.
     var scatter: CGFloat {
         switch self {
         case .off: 0
-        case .weak: HaloOptics.weakScatter
-        case .strong: HaloOptics.strongScatter
+        case .on: HaloOptics.weakScatter
         }
+    }
+
+    /// Accepts the retired 弱 / 强 values from saved recipes and maps them to 开.
+    init?(rawValue: String) {
+        switch rawValue {
+        case "off": self = .off
+        case "on", "weak", "strong": self = .on
+        default: return nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HaloLevel(rawValue: raw) ?? .off
     }
 }
 

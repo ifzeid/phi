@@ -21,6 +21,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var saveHEIF = true
     @Published private(set) var processedCodec: ProcessedCodec = .heic
     @Published private(set) var photoAspect: PhotoAspect = .threeByFour
+    /// 风格 from the capture settings card. New edits open with this look; the saved original is untouched.
+    @Published private(set) var captureLook: ColorLook = .none
+    static let captureLookKey = "phi.captureLook"
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
     @Published private(set) var albumRevision = 0
@@ -40,6 +43,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         saveHEIF = preference.saveHEIF
         processedCodec = ProcessedCodec.loadStored()
         photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
+        captureLook = ColorLook(rawValue: UserDefaults.standard.string(forKey: Self.captureLookKey) ?? "") ?? .none
         camera.setProcessMode(processMode)
         camera.setProcessedCodec(processedCodec)
         camera.setPhotoAspect(photoAspect)
@@ -99,6 +103,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             UserDefaults.standard.set(aspect.rawValue, forKey: PhotoAspect.storageKey)
             camera.setPhotoAspect(aspect)
         }
+    }
+
+    func setCaptureLook(_ look: ColorLook) {
+        captureLook = look
+        UserDefaults.standard.set(look.rawValue, forKey: Self.captureLookKey)
     }
 
     func openLocalShot(id: String) {
@@ -769,7 +778,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     aspect: aspect.rawValue,
                     lensZoom: lensZoom > 1.01 ? lensZoom : nil,
                     processMode: format.rawValue,
-                    captureEV: camera.exposureEV
+                    captureEV: self.camera.exposureEV
                 )
                 PhiLocalShots.remember(localShot)
                 self.albumRevision += 1
@@ -1062,7 +1071,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             framedAspect: aspect,
             lensZoom: zeroProcess ? lensZoom : 1,
             captureLocation: location,
-            colorLook: .none,
+            colorLook: isSample ? .none : captureLook,
             halo: .off,
             originalImage: framed,
             originalData: originalData,

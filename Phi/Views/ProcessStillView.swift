@@ -210,9 +210,10 @@ struct ProcessStillView: View {
             lower: -5,
             upper: 5,
             pointsPerUnit: 100,
-            fineStep: 0.5,
+            fineStep: 0.2,
             majorEvery: 1,
             hapticEvery: 1,
+            gridStep: 0.1,
             zeroMark: true,
             emphasizeNearestLabel: false,
             label: editTickLabel,
@@ -221,6 +222,10 @@ struct ProcessStillView: View {
                 session.setExposure(next, interactive: true)
             },
             onCommit: {
+                session.refinePreview()
+            },
+            onReset: {
+                session.setExposure(0, interactive: false)
                 session.refinePreview()
             }
         )
@@ -260,17 +265,17 @@ struct ProcessStillView: View {
         VStack(spacing: 8) {
             effectRow(title: "光晕") {
                 ForEach(HaloLevel.allCases) { level in
-                    SelectPill(title: level.title, selected: session.halo == level, width: 56, height: 44) {
+                    SelectPill(title: level.title, selected: session.halo == level, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
                         session.setHalo(level)
                     }
                     .accessibilityLabel(level == .off ? "关闭光晕" : "\(level.title)光晕")
                 }
             }
             effectRow(title: "颗粒") {
-                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 44) {
+                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
                     session.setStyle(.off)
                 }
-                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 44) {
+                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
                     session.setStyle(.fine)
                 }
             }

@@ -138,13 +138,14 @@ struct SelectPill: View {
     var height: CGFloat = 36
     /// Unselected plates use the page color, which disappears on `#090a0a`. Pass a fill to keep the capsule visible.
     var plate: Color? = nil
+    var idleInk: Color = CameraColor.textPrimary
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(CameraFont.fixed(13, weight: .medium))
-                .foregroundStyle(selected ? CameraColor.accent : CameraColor.textPrimary)
+                .foregroundStyle(selected ? CameraColor.accent : idleInk)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }

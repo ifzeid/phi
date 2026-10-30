@@ -23,7 +23,7 @@ final class PreviewAnchor {
     /// Mode 0 covers the system preview with the zero-process tone. The layer underneath still receives taps.
     func setZeroPreview(_ on: Bool) {
         zeroOn = on
-        let apply = { self.view?.setZeroPreview(on) }
+        let apply: () -> Void = { self.view?.setZeroPreview(on) }
         if Thread.isMainThread {
             apply()
         } else {
