@@ -211,6 +211,7 @@ enum RawDevelop {
     /// Mid-gray is not rescaled here. EV 0 brightness is the trimmed baseline, one multiply.
     /// The same curve on each channel, so a neutral beam stays neutral.
     static func toneMapValue(_ linear: Float) -> Float {
+        if linear.isNaN { return 0 }
         let x = max(linear, 0)
         let toeEnd: Float = 0.045
         let toed: Float
@@ -230,6 +231,9 @@ enum RawDevelop {
     static func baseShoulderValue(_ linear: Float) -> Float {
         let knee: Float = 0.62
         let softness: Float = 0.55
+        // Extended-range RAW highlights can be +inf in half float; inf/(inf+s) is NaN and drew black.
+        if linear.isNaN { return 0 }
+        if linear.isInfinite { return linear > 0 ? 1 : 0 }
         let x = max(linear, 0)
         if x <= knee { return x }
         let span = x - knee

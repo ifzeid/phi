@@ -233,15 +233,18 @@ final class ProcessSession: ObservableObject, Identifiable {
                 return
             }
             let source = upright(snap.original, fallback: snap.base)
+            // Until the DNG bytes land, the saved file is already cropped: zooming it again
+            // would double the 2x/4x crop for the first frames.
+            let developDNG = self.rendersFromDNG ? self.sourceDNG : nil
             let rendered = previewCache.previewImage(
                 source: source,
-                dng: self.rendersFromDNG ? self.sourceDNG : nil,
+                dng: developDNG,
                 aspect: snap.aspect,
                 exposureEV: snap.exposureEV,
                 style: snap.style,
                 look: snap.look,
                 halo: snap.halo,
-                lensZoom: self.rendersFromDNG ? self.lensZoom : 1,
+                lensZoom: developDNG != nil ? self.lensZoom : 1,
                 maxSide: snap.maxSide
             )
             let stale = await MainActor.run { () -> Bool in
@@ -368,7 +371,7 @@ final class ProcessSession: ObservableObject, Identifiable {
         let aspect = framedAspect
         let cache = previewCache
         let dng = rendersFromDNG ? sourceDNG : nil
-        let zoom = rendersFromDNG ? lensZoom : 1
+        let zoom = dng != nil ? lensZoom : 1
         warmTask = Task.detached(priority: .userInitiated) {
             cache.prewarm(
                 source: source,

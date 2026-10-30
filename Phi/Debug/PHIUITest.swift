@@ -20,6 +20,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestEditorEVSweep` logs mean luma at −2, −1, −0.7, 0, +0.9, +2 for the open shot and fails if it rises as EV falls
 /// `-PHIUITestEditorHalo` logs 关/开 on imported shots: far sky must stay put, bloom near lights must rise
 /// `-PHIUITestEditorNight` renders an imported night DNG at EV −2 and checks sky, beam neutrality, and sharpness
+/// `-PHIUITestEditorFraming` checks the editor DNG develop keeps the album crop (zoom, aspect)
 /// `-PHIUITestEditorFinderEV` checks a finder-bias develop at EV 0 against the same file edited by that bias
 /// `-PHIUITestSettings` opens the settings card and each sub-card in turn (`SETTINGS CARD <name>`), `-PHIUITestSettingsDwell <s>` per page
 /// `-PHIUITestSettingsCard main|process|aspect|flash|output|exposure|style` opens one page and stays
@@ -196,6 +197,11 @@ enum PHIUITest {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorFinderEV")
     }
 
+    /// Editor DNG develop keeps the captured crop (zoom and aspect) of the album HEIC.
+    static var editorFraming: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorFraming")
+    }
+
     /// Night DNG at EV −2: sky percentiles, beam chroma, and Laplacian sharpness against a default RAW render.
     static var editorNight: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestEditorNight")
@@ -243,7 +249,17 @@ enum PHIUITest {
         }
         for stem in Set(heic.keys).intersection(dng.keys).sorted() {
             guard let heifURL = heic[stem], let dngURL = dng[stem] else { continue }
-            let facts = captureFacts(heifURL: heifURL)
+            var facts = captureFacts(heifURL: heifURL)
+            // Optional `<stem>.facts` sidecar ("zoom=2 aspect=oneByOne") for PHI HEICs without EXIF digital zoom.
+            let sidecar = heifURL.deletingPathExtension().appendingPathExtension("facts")
+            if let text = try? String(contentsOf: sidecar, encoding: .utf8) {
+                for pair in text.split(whereSeparator: { $0 == " " || $0 == "\n" }) {
+                    let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                    guard kv.count == 2 else { continue }
+                    if kv[0] == "zoom", let z = Double(kv[1]), z > 1.01 { facts.zoom = z }
+                    if kv[0] == "aspect", let a = PhotoAspect(rawValue: kv[1]) { facts.aspect = a }
+                }
+            }
             guard let heifFile = copyIntoStills(heifURL, name: "\(stem).apple.heic"),
                   let dngFile = copyIntoStills(dngURL, name: "\(stem).dng") else {
                 let line = "EDITOR IMPORT failed \(stem)"
@@ -313,7 +329,10 @@ enum PHIUITest {
         if editorFinderEV {
             runFinderEVCheck(session)
         }
-        if editorEVSweep || editorHalo || editorNight || editorFinderEV {
+        if editorFraming {
+            runFramingCheck(session)
+        }
+        if editorEVSweep || editorHalo || editorNight || editorFinderEV || editorFraming {
             return
         }
         if editorDrag {
@@ -926,6 +945,90 @@ enum PHIUITest {
 
     /// Editor 0 on a frame already biased by N stops equals editing a meter-0 frame by N.
     /// The sensor bias is simulated on the linear plate; clipping is left out of the mean.
+    /// For every imported DNG: develop with the shot's aspect and zoom, compare to the album HEIC.
+    /// Fails if the aspect differs by more than 1 %, the luma correlation is below 0.8, or a 1× develop matches better.
+    private static func runFramingCheck(_ session: ProcessSession) {
+        let folder = StillArchive.directory
+        let urls = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        var failed = false
+        var count = 0
+        if let open = openEditorBasename, let shot = PhiLocalShots.shot(id: shotStem(URL(fileURLWithPath: open + ".dng"))) ?? PhiLocalShots.shot(id: open) {
+            let want = (shot.lensZoom ?? 1) > 1 ? (shot.lensZoom ?? 1) : 1
+            let ok = abs(session.lensZoom - want) < 0.01
+            logSweep("EDITOR FRAMING session file=\(open) sessionZoom=\(session.lensZoom) shotZoom=\(want) \(ok ? "ok" : "FAILED")")
+            if ok == false { failed = true }
+            // Saved edited copy: the export path renders the DNG at full size with the session crop.
+            let heicURL = folder.appendingPathComponent("\(open).apple.heic")
+            if let dng = session.sourceDNG ?? (try? Data(contentsOf: folder.appendingPathComponent("\(open).dng"))),
+               let album = UIImage(contentsOfFile: heicURL.path).flatMap({ StillPipeline.normalizedCGImage(from: $0) }),
+               let saved = RawDevelop.image(dng: dng, exposureEV: 1, style: .off, look: .none, halo: .off,
+                                            aspect: session.framedAspect, lensZoom: session.lensZoom, maxSide: nil, draft: false) {
+                let sizeOK = abs(saved.width - album.width) <= 4 && abs(saved.height - album.height) <= 4
+                let ncc = framingNCC(saved, album)
+                let savedOK = sizeOK && ncc >= 0.8
+                logSweep(String(format: "EDITOR FRAMING saved file=%@ saved=%dx%d album=%dx%d ncc=%.3f %@",
+                                open, saved.width, saved.height, album.width, album.height, ncc, savedOK ? "ok" : "FAILED"))
+                if savedOK == false { failed = true }
+            }
+        }
+        for url in urls where url.pathExtension.lowercased() == "dng" {
+            let stem = shotStem(url)
+            guard stem.isEmpty == false, let shot = PhiLocalShots.shot(id: stem),
+                  let dng = try? Data(contentsOf: url) else { continue }
+            let heicURL = folder.appendingPathComponent("\(stem).apple.heic")
+            guard let album = UIImage(contentsOfFile: heicURL.path).flatMap({ StillPipeline.normalizedCGImage(from: $0) }) else { continue }
+            let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? .threeByFour
+            let zoom = (shot.lensZoom ?? 1) > 1 ? (shot.lensZoom ?? 1) : 1
+            // Library path: the Photos index falls back to the local record for the zoom.
+            var libraryZoom = zoom
+            if zoom > 1 {
+                var tagged = shot
+                tagged.photosIdentifier = "PHIUITEST-\(stem)/L0/001"
+                PhiLocalShots.remember(tagged)
+                libraryZoom = PhiShotIndex.captureZoom(for: "PHIUITEST-\(stem)/L0/001")
+            }
+            func develop(_ z: Double) -> CGImage? {
+                guard let plate = RawDevelop.scenePlate(dng: dng, aspect: aspect, lensZoom: z, maxSide: 256, draft: false) else { return nil }
+                return StillPipeline.displayImage(StillPipeline.expose(plate, ev: 0))
+            }
+            guard let edited = develop(libraryZoom), let wide = develop(1) else { continue }
+            count += 1
+            let albumRatio = Double(album.width) / Double(album.height)
+            let editRatio = Double(edited.width) / Double(edited.height)
+            let ratioOK = abs(editRatio / albumRatio - 1) < 0.01
+            let ncc = framingNCC(edited, album)
+            // Control is the 1× develop at the same aspect: a lost zoom crop would match the album no better than it.
+            // A lost aspect crop shows up as the ratio check (the uncropped frame is 3:4).
+            let wideNCC = zoom > 1 ? framingNCC(wide, album) : 0
+            let ok = ratioOK && ncc >= 0.8 && (zoom <= 1 || ncc > wideNCC + 0.05)
+            if ok == false { failed = true }
+            logSweep(String(format: "EDITOR FRAMING file=%@ aspect=%@ zoom=%.2f libraryZoom=%.2f album=%dx%d edit=%dx%d ncc=%.3f ncc1x=%.3f %@",
+                            stem, aspect.rawValue, zoom, libraryZoom, album.width, album.height, edited.width, edited.height, ncc, wideNCC, ok ? "ok" : "FAILED"))
+        }
+        logSweep("EDITOR FRAMING \(failed || count == 0 ? "FAILED" : "PASS") files=\(count)")
+    }
+
+    /// Luma NCC on a 64-px-wide grid after squeezing both images to the same size.
+    private static func framingNCC(_ a: CGImage, _ b: CGImage) -> Double {
+        let w = 64
+        let h = max(8, Int(Double(w) * Double(b.height) / Double(b.width)))
+        func luma(_ image: CGImage) -> [Double] {
+            var bytes = [UInt8](repeating: 0, count: w * h * 4)
+            let space = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return [] }
+            ctx.interpolationQuality = .medium
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return stride(from: 0, to: bytes.count, by: 4).map { 0.2126 * Double(bytes[$0]) + 0.7152 * Double(bytes[$0 + 1]) + 0.0722 * Double(bytes[$0 + 2]) }
+        }
+        let x = luma(a), y = luma(b)
+        guard x.count == y.count, x.isEmpty == false else { return 0 }
+        let mx = x.reduce(0, +) / Double(x.count), my = y.reduce(0, +) / Double(y.count)
+        var sxy = 0.0, sxx = 0.0, syy = 0.0
+        for i in x.indices { let dx = x[i] - mx, dy = y[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy }
+        return sxx > 0 && syy > 0 ? sxy / (sxx * syy).squareRoot() : 0
+    }
+
     private static func runFinderEVCheck(_ session: ProcessSession) {
         logSweep("EDITOR FINDER EV dial 0 is the captured frame; meter total is captureEV + dial")
         var stems = Set<String>()

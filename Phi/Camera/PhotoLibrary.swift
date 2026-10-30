@@ -123,7 +123,10 @@ enum PhiShotIndex {
 
     /// Crop used when developing the DNG again. The Photos primary is already cropped, so display zoom stays 1.
     static func captureZoom(for localIdentifier: String) -> Double {
-        let stored = load().first(where: { $0.localIdentifier == localIdentifier })?.lensZoom ?? 1
+        // Shots saved by build 30 lack the zoom in this index; the local shot record still has it.
+        let stored = load().first(where: { $0.localIdentifier == localIdentifier })?.lensZoom
+            ?? PhiLocalShots.load().first(where: { $0.photosIdentifier == localIdentifier })?.lensZoom
+            ?? 1
         return stored > 1 ? stored : 1
     }
 

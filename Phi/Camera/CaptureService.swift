@@ -905,7 +905,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                         croppedAspect: false,
                         location: location,
                         aspect: aspect,
-                        lensZoom: 1,
+                        // The DNG is full sensor; the index keeps the capture crop so the editor re-develops at 2×/4×.
+                        // Build 30 stored 1 here, so a 2× shot opened from the album came back as the full 1× frame.
+                        lensZoom: lensZoom,
                         thumb: small,
                         localShotID: stamp,
                         processMode: .bayer
