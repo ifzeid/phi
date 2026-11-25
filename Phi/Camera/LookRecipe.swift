@@ -41,7 +41,8 @@ struct LookRecipe {
 
     static let mono = LookRecipe(
         matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-        curve: [(0, 0.04), (0.25, 0.23), (0.50, 0.50), (0.75, 0.78), (1, 0.98)],
+        // High-contrast B&W (Halide direction): real black point, steep midtone S, clean whites.
+        curve: [(0, 0), (0.10, 0.03), (0.30, 0.19), (0.50, 0.47), (0.70, 0.81), (0.88, 0.965), (1, 1)],
         saturation: 1,
         contrast: 1,
         shadowTint: (0, 0, 0),
@@ -67,7 +68,7 @@ struct LookRecipe {
         var g = green
         var b = blue
         if monochrome {
-            let y = 0.45 * r + 0.42 * g + 0.13 * b
+            let y = 0.40 * r + 0.50 * g + 0.10 * b
             r = y
             g = y
             b = y

@@ -1,0 +1,528 @@
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/82f8a287-c87f-4a68-824a-1558d91d7250";
+const imgEllipse = `${assetPathPrefix}/9d12f.svg`;
+const imgCircularButton56Pt = `${assetPathPrefix}/c0cd5.svg`;
+
+function PhiRulerEditEv({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[342px]"} data-node-id="124:703" data-name="PHI / Ruler / Edit EV">
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] left-0 text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:704">
+        曝光
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[35px] left-[149px] not-italic text-[18px] text-[color:var(--camera-primary,#f4f3ee)] top-[5px] whitespace-nowrap" data-node-id="124:705">
+        +0.3
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[327px] not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:706">
+        EV
+      </p>
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[20.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:707" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[30.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:708" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[40px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:709" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[50.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:710" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[60.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:711" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[70.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:712" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[80.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:713" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[90.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:714" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[100.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:715" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[110.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:716" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[120.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:717" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[130.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:718" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[140px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:719" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[150.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:720" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[160.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:721" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[170.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:722" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[180.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:723" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[190.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:724" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[200.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:725" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[210.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:726" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[220.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:727" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[230.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:728" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[240px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:729" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[250.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:730" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[260.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:731" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[270.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:732" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[280.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:733" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[290.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:734" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[300.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:735" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[310.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:736" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[320.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:737" data-name="Rectangle" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[35px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:738">
+        −1
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[138px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:739">
+        0
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[235px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:740">
+        +1
+      </p>
+      <div className="absolute left-[139px] size-[4px] top-[34px]" data-node-id="124:741" data-name="Ellipse">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgEllipse} />
+      </div>
+      <div className="absolute bg-[var(--camera-accent,#f45135)] h-[28px] left-[169.5px] rounded-[1.5px] top-[36px] w-[3px]" data-node-id="124:742" data-name="Rectangle" />
+    </div>
+  );
+}
+
+function PhiRulerIso({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[342px]"} data-node-id="124:668" data-name="PHI / Ruler / ISO">
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-0 not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:669">
+        M / ISO
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[35px] left-[154.5px] not-italic text-[18px] text-[color:var(--camera-primary,#f4f3ee)] top-[5px] whitespace-nowrap" data-node-id="124:670">
+        200
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[291px] not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:671">
+        1/250 s
+      </p>
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[26px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:672" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[38px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:673" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[50px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:674" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[62px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:675" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[74px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:676" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[86px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:677" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[98px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:678" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[110px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:679" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[122px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:680" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[134px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:681" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[146px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:682" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[158px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:683" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[170px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:684" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[182px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:685" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[194px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:686" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[206px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:687" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[218px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:688" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[230px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:689" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[242px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:690" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[254px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:691" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[266px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:692" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[278px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:693" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[290px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:694" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[302px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:695" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[314px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:696" data-name="Rectangle" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[21px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:697">
+        50
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[90px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:698">
+        100
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[162px] not-italic text-[10px] text-[color:var(--camera-primary,#f4f3ee)] top-[66px] whitespace-nowrap" data-node-id="124:699">
+        200
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[234px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:700">
+        400
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[306px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:701">
+        800
+      </p>
+      <div className="absolute bg-[var(--camera-accent,#f45135)] h-[28px] left-[169.5px] rounded-[1.5px] top-[36px] w-[3px]" data-node-id="124:702" data-name="Rectangle" />
+    </div>
+  );
+}
+
+function PhiRulerAutoEv({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[342px]"} data-node-id="124:628" data-name="PHI / Ruler / Auto EV">
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-0 not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:629">
+        A / EV
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[35px] left-[154.5px] not-italic text-[18px] text-[color:var(--camera-primary,#f4f3ee)] top-[5px] whitespace-nowrap" data-node-id="124:630">
+        0.0
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[327px] not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:631">
+        EV
+      </p>
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[20.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:632" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[30.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:633" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[40.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:634" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[50.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:635" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[60.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:636" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[70px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:637" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[80.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:638" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[90.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:639" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[100.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:640" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[110.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:641" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[120.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:642" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[130.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:643" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[140.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:644" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[150.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:645" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[160.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:646" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[170px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:647" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[180.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:648" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[190.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:649" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[200.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:650" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[210.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:651" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[220.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:652" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[230.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:653" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[240.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:654" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[250.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:655" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[260.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:656" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[270px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:657" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[280.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:658" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[290.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:659" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[300.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:660" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[310.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:661" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[320.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:662" data-name="Rectangle" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[65px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:663">
+        −1
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[168px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:664">
+        0
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[265px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:665">
+        +1
+      </p>
+      <div className="absolute left-[169px] size-[4px] top-[34px]" data-node-id="124:666" data-name="Ellipse">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgEllipse} />
+      </div>
+      <div className="absolute bg-[var(--camera-accent,#f45135)] h-[28px] left-[169.5px] rounded-[1.5px] top-[36px] w-[3px]" data-node-id="124:667" data-name="Rectangle" />
+    </div>
+  );
+}
+
+function PhiZoomCycle4({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[96px]"} data-node-id="124:616" data-name="PHI / Zoom cycle / 4×">
+      <div className="absolute left-[20px] size-[56px] top-[16px]" data-node-id="129:762" data-name="Circular button / 56 pt">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgCircularButton56Pt} />
+      </div>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[36px] not-italic text-[20px] text-[color:var(--camera-accent,#f45135)] top-[31px] whitespace-nowrap" data-node-id="129:763">
+        4×
+      </p>
+    </div>
+  );
+}
+
+function PhiZoomCycle2({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[96px]"} data-node-id="124:605" data-name="PHI / Zoom cycle / 2×">
+      <div className="absolute left-[20px] size-[56px] top-[16px]" data-node-id="129:760" data-name="Circular button / 56 pt">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgCircularButton56Pt} />
+      </div>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[36px] not-italic text-[20px] text-[color:var(--camera-accent,#f45135)] top-[31px] whitespace-nowrap" data-node-id="129:761">
+        2×
+      </p>
+    </div>
+  );
+}
+
+function PhiZoomCycle1({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[96px]"} data-node-id="124:594" data-name="PHI / Zoom cycle / 1×">
+      <div className="absolute left-[20px] size-[56px] top-[16px]" data-node-id="129:758" data-name="Circular button / 56 pt">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgCircularButton56Pt} />
+      </div>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[36px] not-italic text-[20px] text-[color:var(--camera-accent,#f45135)] top-[31px] whitespace-nowrap" data-node-id="129:759">
+        1×
+      </p>
+    </div>
+  );
+}
+
+function PhiZoomCycle05({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[96px]"} data-node-id="124:583" data-name="PHI / Zoom cycle / 0.5×">
+      <div className="absolute left-[20px] size-[56px] top-[16px]" data-node-id="129:756" data-name="Circular button / 56 pt">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgCircularButton56Pt} />
+      </div>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[28.5px] not-italic text-[16px] text-[color:var(--camera-accent,#f45135)] top-[33.5px] whitespace-nowrap" data-node-id="129:757">
+        0.5×
+      </p>
+    </div>
+  );
+}
+
+function PhiChoiceCcdSelected({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:572" data-name="PHI / Choice / CCD / Selected">
+      <div className="absolute bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:762" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f45135] text-[14px] whitespace-nowrap" data-node-id="143:763">
+          CCD
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceCcdDefault({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:564" data-name="PHI / Choice / CCD / Default">
+      <div className="absolute content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:760" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="143:761">
+          CCD
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceSelected({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:557" data-name="PHI / Choice / 黑白 / Selected">
+      <div className="absolute bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:758" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f45135] text-[14px] whitespace-nowrap" data-node-id="143:759">
+          黑白
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceDefault({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:551" data-name="PHI / Choice / 黑白 / Default">
+      <div className="absolute content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:756" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="143:757">
+          黑白
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceSelected1({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:544" data-name="PHI / Choice / 负片 / Selected">
+      <div className="absolute bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:754" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f45135] text-[14px] whitespace-nowrap" data-node-id="143:755">
+          负片
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceDefault1({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:538" data-name="PHI / Choice / 负片 / Default">
+      <div className="absolute content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:752" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="143:753">
+          负片
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceSelected2({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:531" data-name="PHI / Choice / 正片 / Selected">
+      <div className="absolute bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:750" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f45135] text-[14px] whitespace-nowrap" data-node-id="143:751">
+          正片
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceDefault2({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:525" data-name="PHI / Choice / 正片 / Default">
+      <div className="absolute content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:748" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="143:749">
+          正片
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceSelected3({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:518" data-name="PHI / Choice / 原始 / Selected">
+      <div className="absolute bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:746" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#f45135] text-[14px] whitespace-nowrap" data-node-id="143:747">
+          原始
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PhiChoiceDefault3({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[86px] relative w-[64px]"} data-node-id="124:512" data-name="PHI / Choice / 原始 / Default">
+      <div className="absolute content-stretch flex h-[44px] items-center justify-center left-0 overflow-clip rounded-[22px] top-[14px] w-[64px]" data-node-id="143:744" data-name="Frame">
+        <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[normal] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="143:745">
+          原始
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV3ControlsStyleBadgesZoomAndCalibratedRulers() {
+  return (
+    <div className="bg-[#141817] relative size-full" data-node-id="124:508" data-name="PHI v3 / Controls — Style badges, zoom and calibrated rulers">
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[48px] not-italic text-[12px] text-[color:var(--camera-accent,#f45135)] top-[36px] whitespace-nowrap" data-node-id="124:509">
+        PHI / CONTROL LANGUAGE — 03
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[42px] left-[48px] text-[30px] text-[color:var(--camera-primary,#f4f3ee)] top-[66px] whitespace-nowrap" data-node-id="124:510">
+        固定风格卡，精密刻度。
+      </p>
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[22px] left-[48px] text-[16px] text-[color:var(--camera-secondary,#a5aaa7)] top-[116px] whitespace-nowrap" data-node-id="124:511">
+        风格不使用照片缩略图；倍率、标尺与图标共享几何秩序。
+      </p>
+      <PhiChoiceDefault3 className="absolute h-[86px] left-[48px] top-[170px] w-[64px]" />
+      <PhiChoiceSelected3 className="absolute h-[86px] left-[48px] top-[278px] w-[64px]" />
+      <PhiChoiceDefault2 className="absolute h-[86px] left-[152px] top-[170px] w-[64px]" />
+      <PhiChoiceSelected2 className="absolute h-[86px] left-[152px] top-[278px] w-[64px]" />
+      <PhiChoiceDefault1 className="absolute h-[86px] left-[256px] top-[170px] w-[64px]" />
+      <PhiChoiceSelected1 className="absolute h-[86px] left-[256px] top-[278px] w-[64px]" />
+      <PhiChoiceDefault className="absolute h-[86px] left-[360px] top-[170px] w-[64px]" />
+      <PhiChoiceSelected className="absolute h-[86px] left-[360px] top-[278px] w-[64px]" />
+      <PhiChoiceCcdDefault className="absolute h-[86px] left-[464px] top-[170px] w-[64px]" />
+      <PhiChoiceCcdSelected className="absolute h-[86px] left-[464px] top-[278px] w-[64px]" />
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[20px] left-[640px] text-[14px] text-[color:var(--camera-secondary,#a5aaa7)] top-[194px] whitespace-nowrap" data-node-id="124:581">
+        正片 P / 负片 N / 黑白 BW / CCD
+      </p>
+      <div className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[0] left-[640px] text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] top-[238px] w-[450px]" data-node-id="124:582">
+        <p className="leading-[21px] mb-0">二级单选统一：仅选中项显示胶囊底。</p>
+        <p className="leading-[21px]">未选中为纯文字；无描边，不重复名称。</p>
+      </div>
+      <PhiZoomCycle05 className="absolute h-[88px] left-[48px] top-[450px] w-[96px]" />
+      <PhiZoomCycle1 className="absolute h-[88px] left-[208px] top-[450px] w-[96px]" />
+      <PhiZoomCycle2 className="absolute h-[88px] left-[368px] top-[450px] w-[96px]" />
+      <PhiZoomCycle4 className="absolute h-[88px] left-[528px] top-[450px] w-[96px]" />
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[21px] left-[48px] text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] top-[565px] whitespace-nowrap" data-node-id="124:627">
+        单一圆形按钮；点击依次循环：0.5× → 1× → 2× → 4× → 0.5×。上方展示四种状态。
+      </p>
+      <PhiRulerAutoEv className="absolute h-[88px] left-[48px] top-[680px] w-[342px]" />
+      <PhiRulerIso className="absolute h-[88px] left-[448px] top-[680px] w-[342px]" />
+      <PhiRulerEditEv className="absolute h-[88px] left-[48px] top-[830px] w-[342px]" />
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[28px] left-[448px] text-[20px] text-[color:var(--camera-primary,#f4f3ee)] top-[825px] whitespace-nowrap" data-node-id="124:743">
+        刻度规则
+      </p>
+      <div className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[0] left-[448px] text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] top-[868px] w-[650px]" data-node-id="124:744">
+        <p className="leading-[21px] mb-0">数值在中心；红针固定，尺带移动。</p>
+        <p className="leading-[21px] mb-0">长 / 中 / 短刻线区分整档、半档与细调。</p>
+        <p className="leading-[21px]">当前值 +0.3 时，零点必须在指针左侧。</p>
+      </div>
+      <div className="[word-break:break-word] absolute content-stretch flex flex-col font-normal gap-[18px] h-[630px] items-start left-[48px] overflow-clip top-[1020px] w-[1104px]" data-node-id="124:1034" data-name="Interaction handoff">
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[22px] relative shrink-0 text-[16px] text-[color:var(--camera-primary,#f4f3ee)] whitespace-nowrap" data-node-id="124:1035">
+          01 / 拍摄布局
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] leading-[21px] relative shrink-0 text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] w-[1080px]" data-node-id="124:1036">
+          设置移到右上；网格在其下。快门右侧只显示一个 56 pt 圆形倍率按钮，每次点击切换一档，按钮位置与大小保持不变。
+        </p>
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[22px] relative shrink-0 text-[16px] text-[color:var(--camera-primary,#f4f3ee)] whitespace-nowrap" data-node-id="124:1037">
+          02 / 风格选择
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] leading-[21px] relative shrink-0 text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] w-[1080px]" data-node-id="124:1038">
+          原始即不套用色彩风格。五种固定徽记不随照片变化；只更新主画布的编辑效果。仍为编辑阶段功能，不新增实时拍摄滤镜。
+        </p>
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[22px] relative shrink-0 text-[16px] text-[color:var(--camera-primary,#f4f3ee)] whitespace-nowrap" data-node-id="124:1039">
+          03 / 参数调节
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] leading-[21px] relative shrink-0 text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] w-[1080px]" data-node-id="124:1040">
+          点 A / M 切换曝光模式；手动下点 ISO 或快门读数切换标尺。拖动刻度时仅当前参数变化，焦段选择始终可用。
+        </p>
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[22px] relative shrink-0 text-[16px] text-[color:var(--camera-primary,#f4f3ee)] whitespace-nowrap" data-node-id="124:1041">
+          04 / 尺度与反馈
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] leading-[21px] relative shrink-0 text-[15px] text-[color:var(--camera-secondary,#a5aaa7)] w-[1080px]" data-node-id="124:1042">
+          颜色、轮廓、指针和文字共同表达选中。细调步长与 ISO 支持值以设备及现有实现为准，样例刻度不是硬编码参数表。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI / Choice / 原始 / Default
+**Node ID:** 124:512
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 原始 / Selected
+**Node ID:** 124:518
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 正片 / Default
+**Node ID:** 124:525
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 正片 / Selected
+**Node ID:** 124:531
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 负片 / Default
+**Node ID:** 124:538
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 负片 / Selected
+**Node ID:** 124:544
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 黑白 / Default
+**Node ID:** 124:551
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / 黑白 / Selected
+**Node ID:** 124:557
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / CCD / Default
+**Node ID:** 124:564
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Choice / CCD / Selected
+**Node ID:** 124:572
+
+二级单选：仅选中项显示深灰胶囊底和橙红文字；未选中仅文字，无描边。
+
+## PHI / Zoom cycle / 0.5×
+**Node ID:** 124:583
+
+单一圆形倍率按钮。每次点击切换下一档：0.5× → 1× → 2× → 4× → 0.5×。仅显示当前倍率。
+
+## PHI / Zoom cycle / 1×
+**Node ID:** 124:594
+
+单一圆形倍率按钮。每次点击切换下一档：0.5× → 1× → 2× → 4× → 0.5×。仅显示当前倍率。
+
+## PHI / Zoom cycle / 2×
+**Node ID:** 124:605
+
+单一圆形倍率按钮。每次点击切换下一档：0.5× → 1× → 2× → 4× → 0.5×。仅显示当前倍率。
+
+## PHI / Zoom cycle / 4×
+**Node ID:** 124:616
+
+单一圆形倍率按钮。每次点击切换下一档：0.5× → 1× → 2× → 4× → 0.5×。仅显示当前倍率。
+
+## PHI / Ruler / Auto EV
+**Node ID:** 124:628
+
+固定中心红指针；长刻度、半档与短刻度分层。数值与标尺一致，零点另以圆点标识。
+
+## PHI / Ruler / ISO
+**Node ID:** 124:668
+
+固定中心红指针；长刻度、半档与短刻度分层。数值与标尺一致，零点另以圆点标识。
+
+## PHI / Ruler / Edit EV
+**Node ID:** 124:703
+
+固定中心红指针；长刻度、半档与短刻度分层。数值与标尺一致，零点另以圆点标识。
+
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.

@@ -1,4 +1,5 @@
 import AVFoundation
+import SwiftUI
 import Combine
 import CoreLocation
 import os
@@ -20,11 +21,15 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     @Published private(set) var saveHEIF = true
     @Published private(set) var processedCodec: ProcessedCodec = .heic
     @Published private(set) var photoAspect: PhotoAspect = .threeByFour
+    /// 风格 from the capture settings card. New edits open with this look; the saved original is untouched.
+    @Published private(set) var captureLook: ColorLook = .none
+    static let captureLookKey = "phi.captureLook"
     @Published var processSession: ProcessSession?
     @Published private(set) var hasDevelopBase = false
     @Published private(set) var albumRevision = 0
     /// Local id of an edited HEIF whose Photos write failed. Album 重试 and the editor 重试 both use it.
     private var developRetryID: String?
+    private var previewPublish = 0
 
     private var cancellables = Set<AnyCancellable>()
     private var cameraPublishQueued = false
@@ -38,6 +43,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         saveHEIF = preference.saveHEIF
         processedCodec = ProcessedCodec.loadStored()
         photoAspect = PhotoAspect.stored(UserDefaults.standard.string(forKey: PhotoAspect.storageKey))
+        captureLook = ColorLook(rawValue: UserDefaults.standard.string(forKey: Self.captureLookKey) ?? "") ?? .none
         camera.setProcessMode(processMode)
         camera.setProcessedCodec(processedCodec)
         camera.setPhotoAspect(photoAspect)
@@ -99,61 +105,81 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         }
     }
 
+    func setCaptureLook(_ look: ColorLook) {
+        captureLook = look
+        UserDefaults.standard.set(look.rawValue, forKey: Self.captureLookKey)
+    }
+
     func openLocalShot(id: String) {
         guard let shot = PhiLocalShots.shot(id: id) else {
             camera.statusMessage = "这张照片不在相册里。"
             return
         }
+        PerfTrace.beginEdit()
         let dngStored = shot.files.first { $0.filename.lowercased().hasSuffix(".dng") }?.path
         let displayStored = PhiLocalShots.displayFile(of: shot)?.path
         let hasRaw = shot.hasRaw
         let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? photoAspect
         let zoom = shot.lensZoom ?? 1
-        Task {
+        let mode = ProcessMode(rawValue: shot.processMode ?? "") ?? (hasRaw ? ProcessMode.bayer : ProcessMode.standard)
+        let zero = mode == .bayer && dngStored != nil
+        Task.detached(priority: .userInitiated) { [weak self] in
+            // Do not pre-crop the screen cache; present() applies display zoom once.
+            let screen = Self.cachedScreen(stem: id, displayStored: displayStored, aspect: aspect, zoom: 1)
+            guard let self, let screen, let pixels = screen.cgImage else {
+                PerfTrace.cancelEdit()
+                await MainActor.run { self?.camera.statusMessage = "文件丢失" }
+                return
+            }
             let displayURL = displayStored.flatMap { StillArchive.resolve($0) }
-            let displayData = displayURL.flatMap { try? Data(contentsOf: $0) }
-            let displayImage = displayData.flatMap { UIImage(data: $0) }
-            let dngURL = dngStored.flatMap { StillArchive.resolve($0) }
-            let dng = dngURL.flatMap { try? Data(contentsOf: $0) }
-            if let displayImage, let pixels = displayImage.cgImage {
-                let metadata = dng.flatMap { PhotoMetadata.properties(of: $0) }
-                await MainActor.run {
-                    self.present(
-                        base: pixels,
-                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: dng != nil),
-                        isSample: false,
-                        status: "原片。改一项之后才重新显影。",
-                        sourceDNG: dng,
-                        sourceMetadata: metadata,
-                        aspect: aspect,
-                        lensZoom: zoom,
-                        originalImage: displayImage,
-                        originalData: displayData
-                    )
-                }
-                return
-            }
-            if let dng, let url = dngURL, let image = AlbumImage.fileImage(url: url, maxSide: nil), let pixels = image.cgImage {
-                await MainActor.run {
-                    self.present(
-                        base: pixels,
-                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: true),
-                        isSample: false,
-                        status: "原片。改一项之后才重新显影。",
-                        sourceDNG: dng,
-                        sourceMetadata: PhotoMetadata.properties(of: dng),
-                        aspect: aspect,
-                        lensZoom: zoom,
-                        originalImage: image
-                    )
-                }
-                return
-            }
-            _ = hasRaw
+            let displayZoom = PhiLocalShots.displayZoom(of: shot)
             await MainActor.run {
-                self.camera.statusMessage = "文件丢失"
+                self.present(
+                    base: pixels,
+                    recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: hasRaw),
+                    isSample: false,
+                    status: "原片。改一项之后才重新显影。",
+                    aspect: aspect,
+                    lensZoom: zoom,
+                    originalImage: screen,
+                    zeroProcess: zero,
+                    deferPlate: true,
+                    referenceHEIF: screen,
+                    frameZoom: displayZoom,
+                    exportSourceURL: displayURL
+                )
+            }
+            await PerfTrace.waitForFirstFrame(timeout: 1)
+            guard zero, let stored = dngStored, let url = StillArchive.resolve(stored) else { return }
+            let dng = try? Data(contentsOf: url)
+            guard let dng else { return }
+            let metadata = PhotoMetadata.properties(of: dng)
+            await MainActor.run {
+                self.installOpenPlate(dng: dng, metadata: metadata)
             }
         }
+    }
+
+    /// Screen JPEG from disk. ImageIO downsamples a missing cache from the display still, never from a DNG.
+    private static func cachedScreen(stem: String, displayStored: String?, aspect: PhotoAspect, zoom: Double) -> UIImage? {
+        if var cached = ShotCache.screenImage(stem: stem) {
+            if zoom > 1.01 {
+                cached = AlbumImage.framed(cached, aspect: aspect, zoom: zoom)
+            }
+            return cached
+        }
+        guard let stored = displayStored, let url = StillArchive.resolve(stored) else { return nil }
+        if url.lastPathComponent.lowercased().hasSuffix(".dng") { return nil }
+        ShotCache.storeIfNeeded(stem: stem, fromFile: url)
+        guard var image = ShotCache.screenImage(stem: stem) else { return nil }
+        if zoom > 1.01 {
+            image = AlbumImage.framed(image, aspect: aspect, zoom: zoom)
+        }
+        return image
+    }
+
+    private func installOpenPlate(dng: Data, metadata: [String: Any]?) {
+        processSession?.installSource(dng: dng, metadata: metadata)
     }
 
     func retryLocalShot(id: String) {
@@ -162,8 +188,19 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
         canRetryPhotoSave = true
+        let aspect = shot.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? .threeByFour
+        let zoom = shot.lensZoom ?? 1
+        let mode = ProcessMode(rawValue: shot.processMode ?? "")
         Task {
-            await self.saveToPhotos(payloads, skippedRaw: false, croppedAspect: false, localShotID: id)
+            await self.saveToPhotos(
+                payloads,
+                skippedRaw: false,
+                croppedAspect: false,
+                aspect: aspect,
+                lensZoom: zoom,
+                localShotID: id,
+                processMode: mode
+            )
         }
     }
 
@@ -174,30 +211,62 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             camera.statusMessage = "这张照片不在 PHI 相册里。"
             return
         }
+        PerfTrace.beginEdit()
         let aspect = PhiShotIndex.aspect(for: localIdentifier) ?? photoAspect
-        let zoom = PhiShotIndex.lensZoom(for: localIdentifier)
+        let zoom = PhiShotIndex.captureZoom(for: localIdentifier)
+        let mode = PhiShotIndex.processMode(for: localIdentifier)
         let rawShot = PhiRawAsset.contains(asset)
-        Task {
-            let dng = await PhotoLibrary.loadAlternateData(for: asset)
-            if let image = await AlbumImage.loadOriginal(asset), let pixels = image.cgImage {
+        let stem = ShotCache.stem(forLibrary: localIdentifier)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var screen = ShotCache.screenImage(stem: stem)
+            if screen == nil {
+                screen = await AlbumImage.load(asset, target: AlbumImage.viewerTarget, fast: true)
+                if let cg = screen?.cgImage {
+                    ShotCache.store(stem: stem, image: cg)
+                }
+            }
+            guard let self, let screen, let pixels = screen.cgImage else {
+                PerfTrace.cancelEdit()
                 await MainActor.run {
-                    self.present(
-                        base: pixels,
-                        recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: dng != nil || rawShot),
-                        isSample: false,
-                        status: "原片。改一项之后才重新显影。",
-                        sourceDNG: dng,
-                        sourceMetadata: dng.flatMap { PhotoMetadata.properties(of: $0) },
-                        aspect: aspect,
-                        lensZoom: zoom,
-                        location: asset.location,
-                        originalImage: image
-                    )
+                    self?.camera.statusMessage = "这张照片打不开。Couldn't open that still."
                 }
                 return
             }
+            let zero = mode == .bayer || (mode == nil && rawShot)
+            let displayZoom = PhiShotIndex.displayZoom(for: localIdentifier)
             await MainActor.run {
-                self.camera.statusMessage = "这张照片打不开。Couldn't open that still."
+                self.present(
+                    base: pixels,
+                    recipe: StillRecipe(exposureEV: 0, style: .off, originalWasRaw: rawShot),
+                    isSample: false,
+                    status: "原片。改一项之后才重新显影。",
+                    aspect: aspect,
+                    lensZoom: zoom,
+                    location: asset.location,
+                    originalImage: screen,
+                    zeroProcess: zero,
+                    deferPlate: true,
+                    referenceHEIF: screen,
+                    frameZoom: displayZoom,
+                    exportAssetIdentifier: localIdentifier
+                )
+            }
+            await PerfTrace.waitForFirstFrame(timeout: 1)
+            if let packed = await AlbumImage.loadOriginalData(asset) {
+                await MainActor.run {
+                    self.processSession?.installExportSource(data: packed.data, assetIdentifier: localIdentifier)
+                }
+            }
+            let dng = await PhotoLibrary.loadAlternateData(for: asset)
+            if let dng, zero {
+                let metadata = PhotoMetadata.properties(of: dng)
+                await MainActor.run {
+                    self.installOpenPlate(dng: dng, metadata: metadata)
+                }
+            } else {
+                await MainActor.run {
+                    self.processSession?.warmPreview()
+                }
             }
         }
     }
@@ -261,70 +330,152 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
     }
 
     func exportDeveloped(_ session: ProcessSession) async {
-        await MainActor.run { session.isExporting = true }
-        let base = session.base
-        let ev = session.exposureEV
-        let style = session.style
-        let isSample = session.isSample
-        let originalWasRaw = session.originalWasRaw
-        let dng = session.sourceDNG
-        let metadata = session.sourceMetadata
-        let aspect = session.framedAspect
-        let look = session.colorLook
-        let halo = session.halo
-        let zoom = session.lensZoom
-        let neutral = session.isNeutral
-        let originalPixels = session.originalImage?.cgImage
-        let rendered = await Task.detached(priority: .userInitiated) {
-            if neutral {
-                return Optional(originalPixels ?? base)
+        let job = await MainActor.run { () -> ExportJob? in
+            if session.isExporting { return nil }
+            session.isExporting = true
+            session.photoLibrarySave = .idle
+            return ExportJob(
+                base: session.base,
+                ev: session.exposureEV,
+                style: session.style,
+                isSample: session.isSample,
+                originalWasRaw: session.originalWasRaw,
+                dng: session.sourceDNG,
+                metadata: session.sourceMetadata,
+                aspect: session.framedAspect,
+                look: session.colorLook,
+                halo: session.halo,
+                zoom: session.lensZoom,
+                neutral: session.isNeutral,
+                originalPixels: session.originalImage?.cgImage,
+                styleTitle: session.style.title,
+                rendersFromDNG: session.rendersFromDNG,
+                sourceURL: session.exportSourceURL,
+                sourceData: session.exportSourceData,
+                libraryIdentifier: session.exportAssetIdentifier
+            )
+        }
+        guard let job else { return }
+        PerfTrace.beginSave()
+        await MainActor.run { session.setExportProgress(0.08) }
+        let exported = await Task.detached(priority: .userInitiated) { () -> ExportBody in
+            // background-export: full-res render and HEIF encode stay off the main thread.
+            DispatchQueue.main.async { session.setExportProgress(0.2) }
+            var sourceURL = job.sourceURL
+            var sourceData = job.sourceData
+            if sourceURL == nil, sourceData == nil, let identifier = job.libraryIdentifier {
+                let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+                if let asset, let packed = await AlbumImage.loadOriginalData(asset) {
+                    sourceData = packed.data
+                }
             }
-            if let dng {
-                return RawDevelop.image(
+            let full = ExportSource.loadImage(url: sourceURL, data: sourceData)
+            let rendered: CGImage?
+            var copied: (data: Data, ext: String, uti: String)? = nil
+            if job.rendersFromDNG, let dng = job.dng, job.neutral == false {
+                rendered = RawDevelop.image(
                     dng: dng,
-                    exposureEV: ev,
-                    style: style,
-                    look: look,
-                    halo: halo,
-                    aspect: aspect,
-                    lensZoom: zoom,
+                    exposureEV: job.ev,
+                    style: job.style,
+                    look: job.look,
+                    halo: job.halo,
+                    aspect: job.aspect,
+                    lensZoom: job.zoom,
                     maxSide: nil,
                     draft: false
                 )
+            } else if job.neutral {
+                if let full, let fileData = full.fileData {
+                    copied = ExportSource.filePayload(fileData, url: sourceURL)
+                    rendered = full.image
+                } else {
+                    rendered = full?.image ?? job.originalPixels ?? job.base
+                }
+            } else {
+                // Display stills already contain the capture crop. Bake EXIF and apply
+                // job.aspect once so encodeDeveloped can tag orientation 1 to match the pixels.
+                let source = ExportSource.preparedDisplayPixels(
+                    url: sourceURL,
+                    data: sourceData,
+                    fallback: full?.image ?? job.originalPixels ?? job.base,
+                    aspect: job.aspect,
+                    zoom: 1
+                )
+                guard let source else { return .renderFailed }
+                rendered = StillPipeline.render(
+                    source,
+                    exposureEV: job.ev,
+                    style: job.style,
+                    look: job.look,
+                    halo: job.halo,
+                    lensZoom: 1,
+                    maxSide: nil
+                )
             }
-            return StillPipeline.render(
-                base,
-                exposureEV: ev,
-                style: style,
-                look: look,
-                halo: halo,
-                lensZoom: zoom,
-                maxSide: nil
-            )
+            guard let rendered else { return .renderFailed }
+            DispatchQueue.main.async { session.setExportProgress(0.72) }
+            let encodedData: Data
+            let encodedExt: String
+            let encodedUTI: String
+            if let copied {
+                encodedData = copied.data
+                encodedExt = copied.ext
+                encodedUTI = copied.uti
+            } else {
+                guard let encoded = StillPipeline.encodeDeveloped(rendered, metadata: job.metadata) else {
+                    return .renderFailed
+                }
+                encodedData = encoded.data
+                encodedExt = encoded.ext
+                encodedUTI = encoded.uti
+            }
+            DispatchQueue.main.async { session.setExportProgress(0.86) }
+            let stamp = Self.fileStamp()
+            guard let url = try? StillArchive.write(data: encodedData, stamp: stamp, ext: encodedExt) else {
+                return .writeFailed
+            }
+            ShotCache.store(stem: stamp, fromFile: url)
+            return .ready(ExportFile(
+                data: encodedData,
+                ext: encodedExt,
+                uti: encodedUTI,
+                width: rendered.width,
+                height: rendered.height,
+                url: url,
+                stamp: stamp
+            ))
         }.value
-        guard let rendered, let encoded = StillPipeline.encodeDeveloped(rendered, metadata: metadata) else {
+        let saved: ExportFile
+        switch exported {
+        case .renderFailed:
             await MainActor.run {
                 session.isExporting = false
+                session.setExportProgress(0)
                 session.status = "没有导出处理图。Couldn't render the still."
+                PerfTrace.endSave()
             }
             return
-        }
-        let sourceName = dng == nil ? "系统成片" : "DNG"
-        let bytes = encoded.data.count
-        let info = "\(sourceName) · \(rendered.width)×\(rendered.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
-        Logger(subsystem: "com.zeid.phi", category: "develop").info("\(info, privacy: .public)")
-        let stamp = Self.fileStamp()
-        let filename = "PHI-\(style.title)-\(stamp).\(encoded.ext)"
-        guard let url = try? StillArchive.write(data: encoded.data, stamp: stamp, ext: encoded.ext) else {
+        case .writeFailed:
             await MainActor.run {
                 session.isExporting = false
+                session.setExportProgress(0)
                 session.status = "处理图没有留在 App 内。"
+                PerfTrace.endSave()
             }
             return
+        case .ready(let ready):
+            saved = ready
         }
+        let sourceName = job.dng == nil ? "系统成片" : "DNG"
+        let bytes = saved.data.count
+        let info = "\(sourceName) · \(saved.width)×\(saved.height) · HEIF \(RawDevelop.exportQuality) · \(bytes) bytes"
+        Logger(subsystem: "com.zeid.phi", category: "develop").info("\(info, privacy: .public)")
+        let stamp = saved.stamp
+        let filename = "PHI-\(job.styleTitle)-\(stamp).\(saved.ext)"
+        let url = saved.url
         let file = LibraryRecord.File(
             path: url.lastPathComponent,
-            typeIdentifier: encoded.uti,
+            typeIdentifier: saved.uti,
             filename: filename,
             alternate: false
         )
@@ -335,13 +486,14 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             savedToPhotos: false,
             photosIdentifier: nil,
             saveFailed: nil,
-            aspect: aspect.rawValue,
+            aspect: job.aspect.rawValue,
             lensZoom: nil
         )
         PhiLocalShots.remember(localShot)
         let payload = LibraryPayload(
-            data: encoded.data,
-            typeIdentifier: encoded.uti,
+            data: saved.data,
+            fileURL: url,
+            typeIdentifier: saved.uti,
             filename: filename,
             alternate: false
         )
@@ -352,9 +504,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             self.canRetryPhotoSave = true
         }
         let note: String
-        if isSample {
+        if job.isSample {
             note = "已把样张的处理图存入相册。Saved the sample develop."
-        } else if originalWasRaw {
+        } else if job.originalWasRaw {
             note = "已另存处理图。RAW 原片没有改动。Saved a develop. The RAW file was left as captured."
         } else {
             note = "已另存处理图，没有覆盖拍摄原片。Saved a separate develop."
@@ -369,6 +521,43 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             return
         }
         retryPhotoSave()
+    }
+
+    private struct ExportFile {
+        var data: Data
+        var ext: String
+        var uti: String
+        var width: Int
+        var height: Int
+        var url: URL
+        var stamp: String
+    }
+
+    private enum ExportBody {
+        case renderFailed
+        case writeFailed
+        case ready(ExportFile)
+    }
+
+    private struct ExportJob {
+        var base: CGImage
+        var ev: Double
+        var style: GrainStyle
+        var isSample: Bool
+        var originalWasRaw: Bool
+        var dng: Data?
+        var metadata: [String: Any]?
+        var aspect: PhotoAspect
+        var look: ColorLook
+        var halo: HaloLevel
+        var zoom: Double
+        var neutral: Bool
+        var originalPixels: CGImage?
+        var styleTitle: String
+        var rendersFromDNG: Bool
+        var sourceURL: URL?
+        var sourceData: Data?
+        var libraryIdentifier: String?
     }
 
     private func saveDevelopedToPhotos(
@@ -392,8 +581,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.developRetryID = nil
                 self.canRetryPhotoSave = false
                 self.lastSavedNote = successNote
+                session.setExportProgress(1)
                 session.isExporting = false
                 session.status = successNote
+                session.markPhotoLibrarySaved()
+                PerfTrace.endSave()
                 if self.camera.statusMessage?.contains("相册") == true {
                     self.camera.statusMessage = nil
                 }
@@ -406,8 +598,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.albumRevision += 1
                 self.developRetryID = localShotID
                 self.canRetryPhotoSave = true
+                session.setExportProgress(0)
                 session.isExporting = false
                 session.status = "未能写入相册（\(error.codeLine)）。处理图留在 App 内。"
+                session.markPhotoLibrarySaveFailed()
+                PerfTrace.endSave()
                 session.developInfo = line
                 self.camera.statusMessage = "未能写入相册（\(error.codeLine)）。照片留在 App 内。"
             }
@@ -420,8 +615,11 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.albumRevision += 1
                 self.developRetryID = localShotID
                 self.canRetryPhotoSave = true
+                session.setExportProgress(0)
                 session.isExporting = false
                 session.status = "未能写入相册（\(ns.domain) \(ns.code)）。处理图留在 App 内。"
+                session.markPhotoLibrarySaveFailed()
+                PerfTrace.endSave()
                 session.developInfo = line
                 self.camera.statusMessage = "未能写入相册（\(ns.domain) \(ns.code)）。照片留在 App 内。"
             }
@@ -457,7 +655,35 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             canRetryPhotoSave = false
             return
         }
-        Task { await self.saveToPhotos(payloads, skippedRaw: false, croppedAspect: false) }
+        let shot = Self.matchingLocalShot(for: record)
+        let aspect = shot?.aspect.flatMap(PhotoAspect.init(rawValue:)) ?? .threeByFour
+        let zoom = shot?.lensZoom ?? 1
+        let mode = shot?.processMode.flatMap(ProcessMode.init(rawValue:))
+        Task {
+            await self.saveToPhotos(
+                payloads,
+                skippedRaw: false,
+                croppedAspect: false,
+                aspect: aspect,
+                lensZoom: zoom,
+                localShotID: shot?.id ?? "",
+                processMode: mode
+            )
+        }
+    }
+
+    private static func matchingLocalShot(for record: LibraryRecord) -> PhiLocalShots.Shot? {
+        let names = Set(record.files.flatMap { file -> [String] in
+            let path = URL(fileURLWithPath: file.path)
+            return [path.lastPathComponent, path.deletingPathExtension().lastPathComponent]
+        })
+        return PhiLocalShots.load().first { shot in
+            if names.contains(shot.id) { return true }
+            return shot.files.contains { file in
+                let path = URL(fileURLWithPath: file.path)
+                return names.contains(path.lastPathComponent) || names.contains(path.deletingPathExtension().lastPathComponent)
+            }
+        }
     }
 
     private static func legacyRecord() -> LibraryRecord? {
@@ -493,8 +719,27 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 pending.preview = image
             }
         }
-        if pending.preview == nil, let preview = photo.previewCGImageRepresentation() ?? photo.cgImageRepresentation() {
-            pending.preview = UIImage(cgImage: preview)
+        // The embedded preview is enough for the shutter thumbnail. The full-frame image
+        // representation decodes the whole still, which on a 48MP RAW is a second bitmap.
+        if pending.preview == nil, let preview = photo.previewCGImageRepresentation() {
+            // The embedded preview is sensor-oriented; the saved still carries the turn in EXIF.
+            // Without it the instant thumbnail showed 90° off until the Photos thumbnail replaced it.
+            let raw = (photo.metadata[kCGImagePropertyOrientation as String] as? NSNumber)?.uint32Value ?? 1
+            let exif = CGImagePropertyOrientation(rawValue: raw) ?? .up
+            pending.preview = UIImage(cgImage: preview, scale: 1, orientation: Self.uiOrientation(exif))
+        }
+    }
+
+    static func uiOrientation(_ exif: CGImagePropertyOrientation) -> UIImage.Orientation {
+        switch exif {
+        case .up: return .up
+        case .upMirrored: return .upMirrored
+        case .down: return .down
+        case .downMirrored: return .downMirrored
+        case .left: return .left
+        case .leftMirrored: return .leftMirrored
+        case .right: return .right
+        case .rightMirrored: return .rightMirrored
         }
     }
 
@@ -506,8 +751,10 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let snapshot = pending
         pending = PendingCapture()
         pendingLock.unlock()
+        // The still is finished. Putting the 50mm crop back any earlier reconfigures the session
+        // while this capture is still in flight.
         DispatchQueue.main.async {
-            self.camera.restoreFinderFraming()
+            self.camera.noteCaptureFinished()
             self.finish(snapshot)
         }
     }
@@ -536,7 +783,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
 
         DispatchQueue.global(qos: .userInitiated).async {
             let spokenCodec = codec
-            // Keep Apple's original HEIF/JPEG bytes. Develop runs later, from the stored DNG, when the user taps 编辑.
+            // Mode 0 develops the DNG into the primary HEIF. Apple's file is only the `.apple.` fallback until that finishes.
             let stamp = StillArchive.stamp()
             let processedBox = originalProcessed.map { CapturedContainer.inspect($0) }
             let rawBox = rawData.map { CapturedContainer.inspect($0) }
@@ -550,23 +797,29 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             if let rawBox {
                 photosLog.info("capture raw \(rawBox.logLine, privacy: .public)")
             }
+            let zeroProcess = format == .bayer && saveRaw && rawData != nil
             var files: [LibraryRecord.File] = []
             var payloads: [LibraryPayload] = []
-            if let processedBox, processedBox.isDecodableImage, processedBox.isRawContainer == false,
-               let url = try? StillArchive.write(data: processedBox.data, stamp: stamp, ext: processedBox.filenameExtension) {
-                let file = LibraryRecord.File(
-                    path: url.lastPathComponent,
-                    typeIdentifier: processedBox.typeIdentifier,
-                    filename: url.lastPathComponent,
-                    alternate: false
-                )
-                files.append(file)
-                payloads.append(LibraryPayload(
-                    data: processedBox.data,
-                    typeIdentifier: processedBox.typeIdentifier,
-                    filename: file.filename,
-                    alternate: false
-                ))
+            if let processedBox, processedBox.isDecodableImage, processedBox.isRawContainer == false {
+                let storedExt = zeroProcess ? "apple.\(processedBox.filenameExtension)" : processedBox.filenameExtension
+                if let url = try? StillArchive.write(data: processedBox.data, stamp: stamp, ext: storedExt) {
+                    let file = LibraryRecord.File(
+                        path: url.lastPathComponent,
+                        typeIdentifier: processedBox.typeIdentifier,
+                        filename: url.lastPathComponent,
+                        alternate: false
+                    )
+                    files.append(file)
+                    if zeroProcess == false {
+                        payloads.append(LibraryPayload(
+                            data: processedBox.data,
+                            fileURL: url,
+                            typeIdentifier: processedBox.typeIdentifier,
+                            filename: file.filename,
+                            alternate: false
+                        ))
+                    }
+                }
             }
             if saveRaw, let rawBox, rawBox.isRawContainer,
                let url = try? StillArchive.write(data: rawBox.data, stamp: stamp, ext: "dng") {
@@ -580,19 +833,29 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 files.append(file)
                 payloads.append(LibraryPayload(
                     data: rawBox.data,
+                    fileURL: url,
                     typeIdentifier: rawBox.typeIdentifier,
                     filename: file.filename,
                     alternate: alternate
                 ))
             }
             let keptRaw = files.contains { $0.filename.lowercased().hasSuffix(".dng") }
-            let sourceThumb = preview ?? originalProcessed.flatMap { UIImage(data: $0) }
-            let thumbImage = sourceThumb.flatMap { image -> UIImage? in
-                guard let cg = StillPipeline.normalizedCGImage(from: image) else { return image }
+            if let display = files.first(where: { file in
+                let name = file.filename.lowercased()
+                return name.hasSuffix(".dng") == false && name.contains(".apple.") == false
+            }), let url = StillArchive.resolve(display.path) {
+                ShotCache.storeIfNeeded(stem: stamp, fromFile: url)
+            }
+            let thumbImage = preview.flatMap { image -> UIImage? in
+                let capped = Self.downsampledPreview(image, maxSide: 960)
+                guard let cg = StillPipeline.normalizedCGImage(from: capped) else { return capped }
                 return UIImage(cgImage: aspect.cropped(LensCrop.cropped(cg, zoom: lensZoom)))
             }
             let thumb = thumbImage.map { StillArchive.thumbnail(from: $0) }
             let jpeg = thumb?.jpegData(compressionQuality: 0.82)
+            if ShotCache.gridImage(stem: stamp) == nil, let cg = thumb?.cgImage {
+                ShotCache.store(stem: stamp, image: cg)
+            }
             let noRaw = format.wantsRaw && aspect.allowsRaw && rawData == nil
             DispatchQueue.main.async {
                 self.isCapturing = false
@@ -629,7 +892,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     photosIdentifier: nil,
                     saveFailed: nil,
                     aspect: aspect.rawValue,
-                    lensZoom: lensZoom > 1.01 ? lensZoom : nil
+                    lensZoom: lensZoom > 1.01 ? lensZoom : nil,
+                    processMode: format.rawValue,
+                    captureEV: self.camera.exposureEV
                 )
                 PhiLocalShots.remember(localShot)
                 self.albumRevision += 1
@@ -639,20 +904,158 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 }
                 UserDefaults.standard.set(false, forKey: StillArchive.lastSavedKey)
                 self.canRetryPhotoSave = true
+                if zeroProcess, let rawData {
+                    self.developZeroPrimary(
+                        dng: rawData,
+                        stamp: stamp,
+                        aspect: aspect,
+                        lensZoom: lensZoom,
+                        location: shotLocation,
+                        metadata: snapshot.metadata,
+                        fallback: payloads
+                    )
+                } else {
+                    Task {
+                        await self.saveToPhotos(
+                            payloads,
+                            skippedRaw: skippedRaw,
+                            croppedAspect: aspect != .threeByFour,
+                            location: shotLocation,
+                            aspect: aspect,
+                            lensZoom: lensZoom,
+                            thumb: thumb,
+                            localShotID: stamp,
+                            processMode: format
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mode 0. Apple's HEIF stays on disk as `.apple.` until this develop becomes the primary.
+    private func developZeroPrimary(
+        dng: Data,
+        stamp: String,
+        aspect: PhotoAspect,
+        lensZoom: Double,
+        location: CLLocation?,
+        metadata: [String: Any]?,
+        fallback: [LibraryPayload]
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let rendered = RawDevelop.image(
+                dng: dng,
+                exposureEV: 0,
+                style: .off,
+                look: .none,
+                halo: .off,
+                aspect: aspect,
+                lensZoom: lensZoom,
+                maxSide: nil,
+                draft: false
+            )
+            let encoded = rendered.flatMap { StillPipeline.encodeDeveloped($0, metadata: metadata) }
+            let url = encoded.flatMap { try? StillArchive.write(data: $0.data, stamp: stamp, ext: $0.ext) }
+            if let url {
+                ShotCache.store(stem: stamp, fromFile: url)
+            }
+            DispatchQueue.main.async {
+                guard let encoded, let url, let rendered else {
+                    Logger(subsystem: "com.zeid.phi", category: "develop").error("mode 0 develop failed; keeping Apple HEIF")
+                    let kept = PhiLocalShots.shot(id: stamp).flatMap { LibraryRecord(files: $0.files).payloads() } ?? fallback
+                    Task {
+                        await self.saveToPhotos(
+                            kept,
+                            skippedRaw: false,
+                            croppedAspect: aspect != .threeByFour,
+                            location: location,
+                            aspect: aspect,
+                            lensZoom: lensZoom,
+                            thumb: nil,
+                            localShotID: stamp,
+                            processMode: .bayer
+                        )
+                    }
+                    return
+                }
+                var shot = PhiLocalShots.shot(id: stamp)
+                let primary = LibraryRecord.File(
+                    path: url.lastPathComponent,
+                    typeIdentifier: encoded.uti,
+                    filename: url.lastPathComponent,
+                    alternate: false
+                )
+                var files = shot?.files ?? []
+                files.removeAll { $0.filename == primary.filename }
+                files.insert(primary, at: 0)
+                let dngPayload = fallback.first { $0.filename.lowercased().hasSuffix(".dng") }
+                let primaryPayload = LibraryPayload(
+                    data: encoded.data,
+                    fileURL: url,
+                    typeIdentifier: encoded.uti,
+                    filename: primary.filename,
+                    alternate: false
+                )
+                var payloads = [primaryPayload]
+                if let dngPayload {
+                    payloads.append(dngPayload)
+                }
+                if var shot {
+                    shot.files = files
+                    shot.processMode = ProcessMode.bayer.rawValue
+                    shot.hasRaw = true
+                    PhiLocalShots.remember(shot)
+                }
+                let thumb = UIImage(cgImage: rendered)
+                let small = StillArchive.thumbnail(from: thumb)
+                self.thumbnail = small
+                if let jpeg = small.jpegData(compressionQuality: 0.82) {
+                    try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
+                }
+                self.albumRevision += 1
                 Task {
                     await self.saveToPhotos(
                         payloads,
-                        skippedRaw: skippedRaw,
-                        croppedAspect: aspect != .threeByFour,
-                        location: shotLocation,
+                        skippedRaw: false,
+                        croppedAspect: false,
+                        location: location,
                         aspect: aspect,
+                        // The DNG is full sensor; the index keeps the capture crop so the editor re-develops at 2×/4×.
+                        // Build 30 stored 1 here, so a 2× shot opened from the album came back as the full 1× frame.
                         lensZoom: lensZoom,
-                        thumb: thumb,
-                        localShotID: stamp
+                        thumb: small,
+                        localShotID: stamp,
+                        processMode: .bayer
                     )
                 }
             }
         }
+    }
+
+    /// Shrink a shutter preview before the 2× crop. Drawing a full-frame still here keeps a second bitmap alive
+    /// while the session switches back to the viewfinder zoom.
+    private static func downsampledPreview(_ image: UIImage, maxSide: CGFloat) -> UIImage {
+        guard let cg = image.cgImage else { return image }
+        let longest = max(cg.width, cg.height)
+        guard CGFloat(longest) > maxSide, longest > 0 else { return image }
+        let ratio = maxSide / CGFloat(longest)
+        let width = max(1, Int((CGFloat(cg.width) * ratio).rounded(.down)))
+        let height = max(1, Int((CGFloat(cg.height) * ratio).rounded(.down)))
+        let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        context.interpolationQuality = .medium
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let scaled = context.makeImage() else { return image }
+        return UIImage(cgImage: scaled, scale: 1, orientation: image.imageOrientation)
     }
 
     private func saveToPhotos(
@@ -663,17 +1066,21 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         aspect: PhotoAspect = .threeByFour,
         lensZoom: Double = 1,
         thumb: UIImage? = nil,
-        localShotID: String = ""
+        localShotID: String = "",
+        processMode: ProcessMode? = nil
     ) async {
         do {
             let identifier = try await PhotoLibrary.save(payloads: payloads, fileInAlbum: true, location: location)
             if let identifier {
                 let hasRaw = payloads.contains { $0.alternate || $0.filename.lowercased().hasSuffix(".dng") }
+                let captureEV = PhiLocalShots.shot(id: localShotID)?.captureEV
                 PhiShotIndex.append(
                     localIdentifier: identifier,
                     hasRaw: hasRaw,
                     aspect: aspect.rawValue,
-                    lensZoom: lensZoom > 1.01 ? lensZoom : nil
+                    lensZoom: lensZoom > 1.01 ? lensZoom : nil,
+                    processMode: processMode?.rawValue,
+                    captureEV: captureEV
                 )
                 PhiLocalShots.markSaved(id: localShotID, photosIdentifier: identifier)
                 if let thumb {
@@ -694,8 +1101,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     self.camera.statusMessage = nil
                 }
                 if self.processSession?.isSample == false {
-                    self.processSession?.status = "已保存新照片，原片保留"
+                    self.processSession?.status = note
                     self.processSession?.developInfo = note
+                    self.processSession?.markPhotoLibrarySaved()
                 }
             }
         } catch let error as PhotoSaveError {
@@ -710,8 +1118,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.canRetryPhotoSave = true
                 self.camera.statusMessage = "未能写入相册（\(short)）。照片留在 App 内。"
                 if self.processSession?.isSample == false {
-                    self.processSession?.status = line
+                    self.processSession?.status = "未能写入相册（\(short)）。处理图留在 App 内。"
                     self.processSession?.developInfo = line
+                    self.processSession?.markPhotoLibrarySaveFailed()
                 }
             }
         } catch {
@@ -726,7 +1135,9 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                 self.canRetryPhotoSave = true
                 self.camera.statusMessage = "未能写入相册（\(ns.domain) \(ns.code)）。照片留在 App 内。"
                 if self.processSession?.isSample == false {
+                    self.processSession?.status = "未能写入相册（\(ns.domain) \(ns.code)）。处理图留在 App 内。"
                     self.processSession?.developInfo = line
+                    self.processSession?.markPhotoLibrarySaveFailed()
                 }
             }
         }
@@ -762,10 +1173,23 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         lensZoom: Double = 1,
         location: CLLocation? = nil,
         originalImage: UIImage? = nil,
-        originalData: Data? = nil
+        originalData: Data? = nil,
+        zeroProcess: Bool = false,
+        deferPlate: Bool = false,
+        referenceHEIF: UIImage? = nil,
+        frameZoom: Double? = nil,
+        exportSourceURL: URL? = nil,
+        exportSourceData: Data? = nil,
+        exportAssetIdentifier: String? = nil
     ) {
+        let source = originalImage ?? UIImage(cgImage: base)
+        // Display stills are framed exactly once. Mode 0 keeps the placeholder uncropped;
+        // session.lensZoom stays the capture zoom so DNG develop can crop.
+        let appliedFrameZoom = frameZoom ?? (zeroProcess ? 1 : lensZoom)
+        let framed = zeroProcess ? source : AlbumImage.framed(source, aspect: aspect, zoom: appliedFrameZoom)
+        let pixels = framed.cgImage ?? base
         let session = ProcessSession(
-            base: base,
+            base: pixels,
             exposureEV: 0,
             style: .off,
             isSample: isSample,
@@ -774,17 +1198,42 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             sourceDNG: sourceDNG,
             sourceMetadata: sourceMetadata,
             framedAspect: aspect,
-            lensZoom: lensZoom,
+            lensZoom: zeroProcess ? lensZoom : 1,
             captureLocation: location,
-            colorLook: .none,
+            colorLook: isSample ? .none : captureLook,
             halo: .off,
-            originalImage: originalImage ?? UIImage(cgImage: base),
-            originalData: originalData
+            originalImage: framed,
+            originalData: originalData,
+            rendersFromDNG: zeroProcess,
+            exportSourceURL: exportSourceURL,
+            exportSourceData: exportSourceData,
+            exportAssetIdentifier: exportAssetIdentifier
         )
+        session.onFirstPresented = { [weak session] in
+            PerfTrace.endEdit()
+            guard deferPlate, zeroProcess == false else { return }
+            session?.warmPreview()
+        }
         if isSample == false {
             session.onPreview = { [weak self] image in
-                self?.storeThumbnail(image)
-                self?.persist(session)
+                guard let self else { return }
+                self.previewPublish += 1
+                let generation = self.previewPublish
+                Task.detached(priority: .utility) { [weak self] in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    let current = await MainActor.run { self?.previewPublish == generation }
+                    guard current == true else { return }
+                    let thumb = StillArchive.thumbnail(from: image)
+                    let jpeg = thumb.jpegData(compressionQuality: 0.82)
+                    if let jpeg {
+                        try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
+                    }
+                    await MainActor.run {
+                        guard self?.previewPublish == generation else { return }
+                        self?.thumbnail = thumb
+                        self?.persist(session)
+                    }
+                }
             }
             if session.status == nil {
                 session.status = recipe.originalWasRaw
@@ -792,9 +1241,22 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
                     : "导出时另存处理图，不覆盖刚拍的原片。"
             }
         }
-        session.preview = session.originalImage ?? UIImage(cgImage: base)
+        session.preview = session.originalImage ?? UIImage(cgImage: pixels)
         session.developInfo = "原片 · \(session.preview?.size.width ?? 0)x\(session.preview?.size.height ?? 0)"
-        processSession = session
+        if deferPlate == false {
+            session.warmPreview()
+        }
+        #if DEBUG
+        PHIUITest.measureOpenedEditor(source: referenceHEIF ?? source, session: session)
+        #endif
+        // `present` is called on the main thread. The editor cover skips its animation so the first frame is not waiting on it.
+        MainActor.assumeIsolated {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                self.processSession = session
+            }
+        }
     }
 
     private func persist(_ session: ProcessSession) {
@@ -806,14 +1268,6 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
             colorLook: session.colorLook,
             halo: session.halo
         ))
-    }
-
-    private func storeThumbnail(_ image: UIImage) {
-        let thumb = StillArchive.thumbnail(from: image)
-        thumbnail = thumb
-        if let jpeg = thumb.jpegData(compressionQuality: 0.82) {
-            try? jpeg.write(to: StillArchive.thumbnailURL, options: .atomic)
-        }
     }
 
     private static func fileStamp() -> String {

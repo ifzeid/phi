@@ -12,7 +12,7 @@ enum ProcessMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Short mark for the viewfinder. Not a product name.
+    /// Short mark for logs and the delivery label. Not the viewfinder pill.
     var mark: String {
         switch self {
         case .bayer: "0"
@@ -20,6 +20,20 @@ enum ProcessMode: String, CaseIterable, Identifiable {
         case .standard: "1"
         }
     }
+
+    /// Word on the capture pill: `RAW · 3:4`.
+    var finderWord: String {
+        switch self {
+        case .bayer: "RAW"
+        case .proRaw: "ProRAW"
+        case .standard: "标准"
+        }
+    }
+
+    /// User-facing name shared by the homepage RAW pill, RAW menu, and 处理方式 tile.
+    /// Figma note 336:1885 removes the 0 / Φ / 1 technical marks from the UI.
+    /// `mark` stays on this type for logs only.
+    var settingsTitle: String { finderWord }
 
     /// Name under the setting. Do not call the Bayer path by a marketing name.
     var fullName: String {
@@ -221,5 +235,20 @@ enum PhotoAspect: String, CaseIterable, Identifiable {
             rect = CGRect(x: extent.origin.x, y: originY, width: extent.width, height: cropHeight)
         }
         return image.cropped(to: rect.integral)
+    }
+}
+
+/// Zoom applied to a saved display still. Mode 0 and Standard files already contain the capture crop.
+enum DisplayZoom {
+    static func forDisplayStill(processMode: ProcessMode?, captureZoom: Double, hasDevelopedDisplay: Bool) -> Double {
+        let zoom = captureZoom > 1 ? captureZoom : 1
+        switch processMode {
+        case .bayer, .standard:
+            return 1
+        case .proRaw:
+            return hasDevelopedDisplay ? 1 : zoom
+        case nil:
+            return hasDevelopedDisplay ? 1 : zoom
+        }
     }
 }

@@ -1,0 +1,772 @@
+Currently selected nodes:
+- 102:268: Phi UX UI
+
+
+
+<section id="102:268" name="Phi UX UI" x="15324" y="-300" width="3871" height="5134">
+  <frame id="100:104" name="PHI v2 / 01 Capture" x="228" y="300" width="2000" height="1363">
+    <frame id="101:104" name="Introduction" x="64" y="48" width="1872" height="115">
+      <text id="101:105" name="PHI / V2 — CAPTURE" x="0" y="0" width="130" height="17" />
+      <text id="101:106" name="把画面还给取景。" x="0" y="25" width="288" height="52" />
+      <text id="101:107" name="沉浸式顶栏 · 快门右侧倍率 · 固定风格徽记 · 机械刻度" x="0" y="85" width="406" height="23" />
+    </frame>
+    <frame id="101:108" name="Screens" x="64" y="195" width="1872" height="1120">
+      <frame id="101:109" name="Column / 自动拍摄" x="0" y="0" width="432" height="1120">
+        <frame id="101:110" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="101:111" name="01 / AUTO" x="0" y="0" width="60" height="16" />
+          <text id="101:112" name="自动拍摄" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="101:113" name="CameraAuto" x="21" y="78" width="390" height="844">
+          <frame id="101:114" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="101:115" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="101:116" name="PHI v2 / Icon / flash_auto" x="18" y="12" width="44" height="44" />
+          <instance id="101:120" name="PHI v2 / Icon / grid_on" x="328" y="48" width="44" height="44" />
+          <frame id="101:124" name="Capture format / tap to configure" x="120" y="54" width="150" height="32">
+            <text id="101:125" name="RAW · 3:4" x="39.5" y="6.5" width="71" height="19" />
+          </frame>
+          <rounded-rectangle id="101:126" name="Photo canvas / fixed geometry" x="0" y="92" width="390" height="520" />
+          <rounded-rectangle id="101:127" name="Rule" x="130" y="92" width="1" height="520" />
+          <rounded-rectangle id="101:128" name="Rule" x="260" y="92" width="1" height="520" />
+          <rounded-rectangle id="101:129" name="Rule" x="0" y="265.29998779296875" width="390" height="1" />
+          <rounded-rectangle id="101:130" name="Rule" x="0" y="438.6000061035156" width="390" height="1" />
+          <frame id="101:131" name="Frame" x="131" y="265" width="130" height="174" />
+          <instance id="124:745" name="PHI v2 / Icon / settings" x="328" y="4" width="44" height="44" />
+          <rounded-rectangle id="124:750" name="Photo canvas / fixed geometry" x="28" y="731" width="44" height="48" />
+          <instance id="124:751" name="PHI / Ruler / Auto EV" x="24" y="618" width="342" height="88" />
+          <instance id="124:791" name="PHI v2 / Shutter / White" x="155" y="715" width="80" height="80" />
+          <instance id="124:794" name="PHI / Zoom cycle / 1×" x="270" y="711" width="96" height="88" />
+        </frame>
+        <frame id="101:162" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="101:163" name="顶部左侧闪光，右侧设置，下方为网格；状态栏隐藏，系统隐私区域保留。" x="0" y="0" width="390" height="38" />
+          <text id="101:164" name="快门右侧为单一圆形倍率按钮；点击依次循环 0.5× → 1× → 2× → 4×。只显示当前倍率。" x="0" y="46" width="390" height="38" />
+          <text id="101:165" name="点击 A 切至手动；拖动标尺调整 EV。白色快门与倍率的位置保持稳定。" x="0" y="92" width="390" height="38" />
+        </frame>
+      </frame>
+      <frame id="101:166" name="Column / 手动调节" x="480" y="0" width="432" height="1120">
+        <frame id="101:167" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="101:168" name="02 / MANUAL" x="0" y="0" width="73" height="16" />
+          <text id="101:169" name="手动调节" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="101:170" name="CameraManual" x="21" y="78" width="390" height="844">
+          <frame id="101:171" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="101:172" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="101:173" name="PHI v2 / Icon / flash_off" x="18" y="12" width="44" height="44" />
+          <instance id="101:176" name="PHI v2 / Icon / grid_off" x="328" y="48" width="44" height="44" />
+          <frame id="101:179" name="Capture format / tap to configure" x="120" y="54" width="150" height="32">
+            <text id="101:180" name="RAW · 3:4" x="39.5" y="6.5" width="71" height="19" />
+          </frame>
+          <rounded-rectangle id="101:181" name="Photo canvas / fixed geometry" x="0" y="92" width="390" height="520" />
+          <frame id="139:1434" name="Frame" x="131" y="265" width="130" height="174" />
+          <instance id="124:805" name="PHI v2 / Icon / settings" x="328" y="4" width="44" height="44" />
+          <rounded-rectangle id="124:810" name="Photo canvas / fixed geometry" x="28" y="731" width="44" height="48" />
+          <instance id="124:811" name="PHI / Ruler / ISO" x="24" y="618" width="342" height="88" />
+          <instance id="124:846" name="PHI v2 / Shutter / White" x="155" y="715" width="80" height="80" />
+          <instance id="124:849" name="PHI / Zoom cycle / 1×" x="270" y="711" width="96" height="88" />
+        </frame>
+        <frame id="101:253" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="101:254" name="点击 ISO / 快门读数切换当前标尺；同时只调一个参数。倍率保持在快门右侧。" x="0" y="0" width="390" height="38" />
+          <text id="101:255" name="尺带移动，红针固定；ISO 按设备支持值停靠。整档、半档、细调采用不同长度刻线。" x="0" y="46" width="390" height="38" />
+          <text id="101:256" name="切回自动由系统接管曝光；自动与手动的 EV 是否可并用需按现有能力确认。" x="0" y="92" width="390" height="38" />
+        </frame>
+      </frame>
+      <frame id="101:257" name="Column / 闪光灯选择" x="960" y="0" width="432" height="1120">
+        <frame id="101:258" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="101:259" name="03 / QUICK CONTROL" x="0" y="0" width="119" height="16" />
+          <text id="101:260" name="闪光灯选择" x="0" y="19" width="110" height="32" />
+        </frame>
+        <frame id="101:261" name="CameraFlash" x="21" y="78" width="390" height="844">
+          <frame id="101:262" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="101:263" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="101:264" name="PHI v2 / Icon / flash_auto" x="18" y="12" width="44" height="44" />
+          <instance id="101:268" name="PHI v2 / Icon / grid_on" x="328" y="48" width="44" height="44" />
+          <frame id="101:272" name="Capture format / tap to configure" x="120" y="54" width="150" height="32">
+            <text id="101:273" name="RAW · 3:4" x="39.5" y="6.5" width="71" height="19" />
+          </frame>
+          <rounded-rectangle id="101:274" name="Photo canvas / fixed geometry" x="0" y="92" width="390" height="520" />
+          <rounded-rectangle id="101:275" name="Rule" x="130" y="92" width="1" height="520" />
+          <rounded-rectangle id="101:276" name="Rule" x="260" y="92" width="1" height="520" />
+          <rounded-rectangle id="101:277" name="Rule" x="0" y="265.29998779296875" width="390" height="1" />
+          <rounded-rectangle id="101:278" name="Rule" x="0" y="438.6000061035156" width="390" height="1" />
+          <frame id="101:279" name="Frame" x="157" y="300" width="76" height="76" />
+          <instance id="124:860" name="PHI v2 / Icon / settings" x="328" y="4" width="44" height="44" />
+          <rounded-rectangle id="124:865" name="Photo canvas / fixed geometry" x="28" y="731" width="44" height="48" />
+          <instance id="124:866" name="PHI / Ruler / Auto EV" x="24" y="618" width="342" height="88" />
+          <instance id="124:906" name="PHI v2 / Shutter / White" x="155" y="715" width="80" height="80" />
+          <instance id="124:909" name="PHI / Zoom cycle / 1×" x="270" y="711" width="96" height="88" />
+          <instance id="144:1119" name="System Menu / Flash" x="14" y="62" width="238" height="140">
+            <instance id="I144:1119;5908:6372" name="Liquid Glass - Regular - Medium" x="0" y="0" width="238" height="140" />
+            <frame id="I144:1119;5908:6373" name="Control Group" x="0" y="10" width="238" height="56" hidden="true" />
+            <slot id="I144:1119;5908:6377" name="Menu Items" x="0" y="10" width="238" height="120">
+              <instance id="I144:1119;5908:6377;145:934" name="Separator" x="16" y="0" width="206" height="21" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:935" name="Item" x="16" y="0" width="206" height="40" />
+              <instance id="I144:1119;5908:6377;145:936" name="Item" x="16" y="40" width="206" height="40" />
+              <instance id="I144:1119;5908:6377;145:937" name="Item" x="16" y="80" width="206" height="40" />
+              <instance id="I144:1119;5908:6377;145:938" name="Separator" x="16" y="140" width="206" height="21" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:939" name="Item" x="16" y="140" width="206" height="40" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:940" name="Separator" x="16" y="140" width="206" height="21" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:941" name="Section Title" x="16" y="140" width="206" height="29" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:942" name="Item" x="16" y="140" width="206" height="40" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:943" name="Item" x="16" y="140" width="206" height="40" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:944" name="Item" x="16" y="140" width="206" height="60" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:945" name="Separator" x="16" y="140" width="206" height="21" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:946" name="Section Title" x="16" y="140" width="206" height="29" hidden="true" />
+              <instance id="I144:1119;5908:6377;145:947" name="Item" x="16" y="140" width="206" height="40" hidden="true" />
+            </slot>
+          </instance>
+        </frame>
+        <frame id="101:330" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="101:331" name="点闪光灯打开三态选择，不靠连续点击猜测当前模式；选中后立即关闭。" x="0" y="0" width="390" height="38" />
+          <text id="101:332" name="点击菜单外关闭，不改变原选择。网格按钮直接切换开 / 关，图形与状态同步。" x="0" y="46" width="390" height="38" />
+          <text id="101:333" name="切镜头或格式导致闪光不可用时显示禁用态及原因，不悄悄切回其它模式。" x="0" y="92" width="390" height="38" />
+        </frame>
+      </frame>
+      <frame id="101:334" name="Column / 拍摄设置" x="1440" y="0" width="432" height="1120">
+        <frame id="101:335" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="101:336" name="04 / CAPTURE SETUP" x="0" y="0" width="119" height="16" />
+          <text id="101:337" name="拍摄设置" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="101:338" name="CaptureSettings" x="21" y="78" width="390" height="844">
+          <frame id="101:339" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="101:340" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="101:341" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="101:344" name="拍摄设置" x="78" y="62" width="56" height="20" />
+          <text id="101:345" name="处理方式" x="20" y="118" width="52" height="19" />
+          <frame id="101:346" name="Processing" x="0" y="148" width="390" height="44">
+            <frame id="101:347" name="Button / RAW" x="20" y="0" width="111.33333587646484" height="44">
+              <text id="101:348" name="0 RAW" x="32.66666793823242" y="12.5" width="46" height="19" />
+            </frame>
+            <frame id="101:349" name="Button / ProRAW" x="139.3333282470703" y="0" width="111.33333587646484" height="44">
+              <text id="101:350" name="Φ ProRAW" x="20.666667938232422" y="12.5" width="70" height="19" />
+            </frame>
+            <frame id="101:351" name="Button / 标准" x="258.6666564941406" y="0" width="111.33333587646484" height="44">
+              <text id="101:352" name="1 标准" x="35.66666793823242" y="12.5" width="40" height="19" />
+            </frame>
+          </frame>
+          <text id="101:353" name="0 · 保留 RAW 原始数据，留给后期更多空间。" x="20" y="200" width="350" height="19" />
+          <rounded-rectangle id="101:354" name="Rule" x="20" y="244" width="350" height="1" />
+          <frame id="101:355" name="Save companion photo" x="0" y="264" width="390" height="48">
+            <text id="101:356" name="同时保存成片" x="20" y="12.5" width="96" height="23" />
+            <frame id="101:357" name="Switch / on" x="328" y="11" width="42" height="26" />
+          </frame>
+          <frame id="101:359" name="Companion format" x="0" y="320" width="390" height="44">
+            <frame id="101:360" name="Button / HEIC" x="20" y="0" width="171" height="44">
+              <text id="101:361" name="HEIC" x="70" y="12.5" width="31" height="19" />
+            </frame>
+            <frame id="101:362" name="Button / JPEG" x="199" y="0" width="171" height="44">
+              <text id="101:363" name="JPEG" x="68.5" y="12.5" width="34" height="19" />
+            </frame>
+          </frame>
+          <text id="101:364" name="成片与 RAW 一起保存，方便直接查看和分享。" x="20" y="374" width="350" height="19" />
+          <rounded-rectangle id="101:365" name="Rule" x="20" y="423" width="350" height="1" />
+          <text id="101:366" name="画幅" x="20" y="448" width="26" height="19" />
+          <frame id="101:367" name="Aspect ratio" x="0" y="478" width="390" height="44">
+            <frame id="101:368" name="Button / 1:1" x="20" y="0" width="81.5" height="44">
+              <text id="101:369" name="1:1" x="32.25" y="12.5" width="17" height="19" />
+            </frame>
+            <frame id="101:370" name="Button / 3:4" x="109.5" y="0" width="81.5" height="44">
+              <text id="101:371" name="3:4" x="29.75" y="12.5" width="22" height="19" />
+            </frame>
+            <frame id="101:372" name="Button / 2:3" x="199" y="0" width="81.5" height="44">
+              <text id="101:373" name="2:3" x="30.25" y="12.5" width="21" height="19" />
+            </frame>
+            <frame id="101:374" name="Button / 9:16" x="288.5" y="0" width="81.5" height="44">
+              <text id="101:375" name="9:16" x="26.75" y="12.5" width="28" height="19" />
+            </frame>
+          </frame>
+          <text id="101:376" name="预览与成片使用所选比例；RAW 保留完整画面。" x="20" y="535" width="350" height="19" />
+          <frame id="101:377" name="Help" x="20" y="616" width="350" height="126">
+            <text id="101:378" name="处理方式 · 0 / Φ / 1" x="16" y="14" width="310" height="20" />
+            <text id="101:379" name="0 · RAW：保留原始数据。 Φ · ProRAW：保留 Apple ProRAW 数据。 1 · 标准：只保存苹果处理后的成片。" x="16" y="42" width="318" height="57" />
+          </frame>
+        </frame>
+        <frame id="101:380" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="101:381" name="移除 0 / Φ / 1 技术代号，以 RAW / ProRAW / 标准表达处理方式。" x="0" y="0" width="390" height="19" />
+          <text id="101:382" name="仅 RAW 模式显示「同时保存成片」；关闭后隐藏格式选项。标准模式保留输出格式。" x="0" y="27" width="390" height="38" />
+          <text id="101:383" name="不支持 ProRAW / HEIC 时禁用并解释，格式回退要反馈；页面展示为建议，需对接能力矩阵。" x="0" y="73" width="390" height="38" />
+        </frame>
+      </frame>
+    </frame>
+  </frame>
+  <frame id="100:105" name="PHI v2 / 02 Library &amp; Edit" x="228" y="1900" width="2000" height="1363">
+    <frame id="103:149" name="Introduction" x="64" y="48" width="1872" height="115">
+      <text id="103:150" name="PHI / V2 — LIBRARY &amp; EDIT" x="0" y="0" width="180" height="17" />
+      <text id="103:151" name="看照片，也只看照片。" x="0" y="25" width="360" height="52" />
+      <text id="103:152" name="相册浏览与编辑共用照片画布；编辑工具不挤压、不重新居中照片。" x="0" y="85" width="480" height="23" />
+    </frame>
+    <frame id="103:153" name="Screens" x="64" y="195" width="1872" height="1120">
+      <frame id="103:154" name="Column / 照片网格" x="0" y="0" width="432" height="1120">
+        <frame id="103:155" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:156" name="05 / LIBRARY" x="0" y="0" width="80" height="16" />
+          <text id="103:157" name="照片网格" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:158" name="Gallery" x="21" y="78" width="390" height="844">
+          <frame id="103:159" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:160" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:161" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:164" name="照片" x="78" y="62" width="28" height="20" />
+          <frame id="103:165" name="Button / 选择" x="308" y="50" width="64" height="44">
+            <text id="103:166" name="选择" x="19" y="12.5" width="26" height="19" />
+          </frame>
+          <text id="103:167" name="2026年10月" x="20" y="117" width="120" height="32" />
+          <text id="103:168" name="今天 · 12 张" x="20" y="153" width="70" height="17" />
+          <frame id="103:169" name="Photo grid" x="0" y="186" width="390" height="530">
+            <frame id="103:170" name="Grid row" x="0" y="0" width="390" height="127">
+              <frame id="103:171" name="Photo 1" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:172" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:173" name="Photo 2" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:174" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:175" name="Photo 3" x="262" y="0" width="128" height="127">
+                <rounded-rectangle id="103:176" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+            </frame>
+            <frame id="103:177" name="Grid row" x="0" y="130" width="390" height="127">
+              <frame id="103:178" name="Photo 4" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:179" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:180" name="Photo 5" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:181" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:182" name="Photo 6" x="262" y="0" width="128" height="127">
+                <rounded-rectangle id="103:183" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+            </frame>
+            <frame id="103:184" name="Grid row" x="0" y="260" width="390" height="127">
+              <frame id="103:185" name="Photo 7" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:186" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:187" name="Photo 8" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:188" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:189" name="Photo 9" x="262" y="0" width="128" height="127">
+                <rounded-rectangle id="103:190" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+            </frame>
+            <frame id="103:191" name="Grid row" x="0" y="390" width="390" height="127">
+              <frame id="103:192" name="Photo 10" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:193" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:194" name="Photo 11" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:195" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+              </frame>
+              <frame id="103:196" name="Photo 12" x="262" y="0" width="128" height="127">
+                <instance id="103:197" name="PHI v2 / Icon / missing" x="42" y="28" width="44" height="44" />
+                <text id="103:201" name="文件不可用" x="39" y="82" width="50" height="15" />
+              </frame>
+            </frame>
+          </frame>
+          <frame id="103:202" name="Gallery actions" x="0" y="754" width="390" height="52">
+            <text id="103:203" name="12 张照片" x="20" y="17.5" width="52" height="17" />
+            <frame id="103:204" name="Button / 返回拍摄" x="258" y="4" width="112" height="44">
+              <text id="103:205" name="返回拍摄" x="30" y="12.5" width="52" height="19" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="103:206" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:207" name="点击照片进入浏览；“选择”进入多选，底部出现分享与删除。" x="0" y="0" width="390" height="19" />
+          <text id="103:208" name="文件不可用时保留占位，可移除失效记录；不以空白缩略图代替错误状态。" x="0" y="27" width="390" height="38" />
+          <text id="103:209" name="示意缩略图重复使用同一素材，实际按拍摄时间排序。" x="0" y="73" width="390" height="19" />
+        </frame>
+      </frame>
+      <frame id="103:210" name="Column / 批量选择" x="480" y="0" width="432" height="1120">
+        <frame id="103:211" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:212" name="06 / SELECTION" x="0" y="0" width="93" height="16" />
+          <text id="103:213" name="批量选择" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:214" name="GallerySelection" x="21" y="78" width="390" height="844">
+          <frame id="103:215" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:216" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:217" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:220" name="已选择 2 张" x="78" y="62" width="71" height="20" />
+          <frame id="103:221" name="Button / 取消" x="308" y="50" width="64" height="44">
+            <text id="103:222" name="取消" x="19" y="12.5" width="26" height="19" />
+          </frame>
+          <text id="103:223" name="2026年10月" x="20" y="117" width="120" height="32" />
+          <text id="103:224" name="今天 · 12 张" x="20" y="153" width="70" height="17" />
+          <frame id="103:225" name="Photo grid" x="0" y="186" width="390" height="530">
+            <frame id="103:226" name="Grid row" x="0" y="0" width="390" height="127">
+              <frame id="103:227" name="Photo 1" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:228" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:229" name="Selection" x="96" y="95" width="24" height="24">
+                  <instance id="103:230" name="PHI v2 / Icon / check" x="0" y="0" width="24.200000762939453" height="24.200000762939453" />
+                </frame>
+              </frame>
+              <frame id="103:233" name="Photo 2" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:234" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:235" name="Selection" x="96" y="95" width="24" height="24">
+                  <instance id="103:236" name="PHI v2 / Icon / check" x="0" y="0" width="24.200000762939453" height="24.200000762939453" />
+                </frame>
+              </frame>
+              <frame id="103:239" name="Photo 3" x="262" y="0" width="128" height="127">
+                <rounded-rectangle id="103:240" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:241" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+            </frame>
+            <frame id="103:242" name="Grid row" x="0" y="130" width="390" height="127">
+              <frame id="103:243" name="Photo 4" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:244" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:245" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+              <frame id="103:246" name="Photo 5" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:247" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:248" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+              <frame id="103:249" name="Photo 6" x="262" y="0" width="128" height="127">
+                <rounded-rectangle id="103:250" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:251" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+            </frame>
+            <frame id="103:252" name="Grid row" x="0" y="260" width="390" height="127">
+              <frame id="103:253" name="Photo 7" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:254" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:255" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+              <frame id="103:256" name="Photo 8" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:257" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:258" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+              <frame id="103:259" name="Photo 9" x="262" y="0" width="128" height="127">
+                <rounded-rectangle id="103:260" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:261" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+            </frame>
+            <frame id="103:262" name="Grid row" x="0" y="390" width="390" height="127">
+              <frame id="103:263" name="Photo 10" x="0" y="0" width="128" height="127">
+                <rounded-rectangle id="103:264" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:265" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+              <frame id="103:266" name="Photo 11" x="131" y="0" width="128" height="127">
+                <rounded-rectangle id="103:267" name="Photo canvas / fixed geometry" x="0" y="0" width="128" height="127" />
+                <frame id="103:268" name="Selection" x="96" y="95" width="24" height="24" />
+              </frame>
+              <frame id="103:269" name="Photo 12" x="262" y="0" width="128" height="127">
+                <instance id="103:270" name="PHI v2 / Icon / missing" x="42" y="28" width="44" height="44" />
+                <text id="103:274" name="文件不可用" x="39" y="82" width="50" height="15" />
+              </frame>
+            </frame>
+          </frame>
+          <frame id="103:275" name="Gallery actions" x="0" y="754" width="390" height="52">
+            <instance id="103:276" name="PHI v2 / Icon / trash" x="20" y="4" width="44" height="44" />
+            <text id="103:279" name="2 张照片" x="170" y="16.5" width="50" height="19" />
+            <instance id="103:280" name="PHI v2 / Icon / share" x="326" y="4" width="44" height="44" />
+          </frame>
+        </frame>
+        <frame id="103:283" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:284" name="勾选使用红底白勾，并在标题和底部同时反馈数量。" x="0" y="0" width="390" height="19" />
+          <text id="103:285" name="删除前确认数量与删除范围；无选择时禁用批量操作。取消清空选择。" x="0" y="27" width="390" height="38" />
+          <text id="103:286" name="分享调用系统分享面板；取消分享返回当前选择状态。" x="0" y="73" width="390" height="19" />
+        </frame>
+      </frame>
+      <frame id="103:287" name="Column / 照片浏览" x="960" y="0" width="432" height="1120">
+        <frame id="103:288" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:289" name="07 / PHOTO" x="0" y="0" width="66" height="16" />
+          <text id="103:290" name="照片浏览" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:291" name="PhotoViewer" x="21" y="78" width="390" height="844">
+          <frame id="103:292" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:293" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:294" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:297" name="2026年10月28日" x="78" y="62" width="106" height="20" />
+          <text id="103:298" name="1/12" x="320" y="63" width="32" height="19" />
+          <rounded-rectangle id="103:299" name="Photo canvas / fixed geometry" x="0" y="96" width="390" height="520" />
+          <text id="103:300" name="RAW · 25 mm · ISO 100 · 1/250 s" x="20" y="636" width="205" height="16" />
+          <frame id="103:301" name="Photo actions" x="0" y="754" width="390" height="52">
+            <instance id="103:302" name="PHI v2 / Icon / trash" x="24" y="4" width="44" height="44" />
+            <instance id="103:305" name="PHI v2 / Icon / share" x="151" y="4" width="44" height="44" />
+            <frame id="103:308" name="Button / 编辑" x="278" y="4" width="88" height="44">
+              <text id="103:309" name="编辑" x="31" y="12.5" width="26" height="19" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="103:310" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:311" name="左右滑动切换照片；照片画布固定在 y=96、390×520。" x="0" y="0" width="390" height="19" />
+          <text id="103:312" name="点“编辑”仅替换底部工具区，照片不缩小。双指查看细节时保留缩放位置。" x="0" y="27" width="390" height="38" />
+          <text id="103:313" name="长宽比不同时在同一固定画布内适配，不裁掉原图。" x="0" y="73" width="390" height="19" />
+        </frame>
+      </frame>
+      <frame id="103:314" name="Column / 曝光调整" x="1440" y="0" width="432" height="1120">
+        <frame id="103:315" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:316" name="08 / EXPOSURE" x="0" y="0" width="86" height="16" />
+          <text id="103:317" name="曝光调整" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:318" name="EditorExposure" x="21" y="78" width="390" height="844">
+          <frame id="103:319" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:320" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:321" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:324" name="编辑照片" x="78" y="62" width="56" height="20" />
+          <rounded-rectangle id="103:325" name="Photo canvas / fixed geometry" x="0" y="96" width="390" height="520" />
+          <instance id="103:326" name="PHI v2 / Icon / compare" x="332" y="50" width="44" height="44" />
+          <frame id="103:329" name="Editor categories" x="0" y="616" width="390" height="48">
+            <frame id="103:330" name="Text tab / 曝光" x="24" y="2" width="104" height="44">
+              <text id="103:331" name="曝光" x="38" y="12.5" width="28" height="19" />
+              <rounded-rectangle id="133:752" name="Active category / underline" x="51" y="40" width="4" height="4" />
+            </frame>
+            <frame id="103:332" name="Text tab / 风格" x="143" y="2" width="104" height="44">
+              <text id="103:333" name="风格" x="38" y="12.5" width="28" height="19" />
+            </frame>
+            <frame id="103:334" name="Text tab / 效果" x="262" y="2" width="104" height="44">
+              <text id="103:335" name="效果" x="38" y="12.5" width="28" height="19" />
+            </frame>
+          </frame>
+          <frame id="103:377" name="Editor actions" x="0" y="770" width="390" height="44">
+            <instance id="103:378" name="PHI v2 / Icon / close" x="16" y="0" width="44" height="44" />
+            <instance id="103:381" name="PHI v2 / Icon / reset" x="135" y="0" width="44" height="44" />
+            <frame id="103:384" name="Button / 另存照片" x="254" y="2" width="120" height="40">
+              <text id="103:385" name="另存照片" x="34" y="10.5" width="52" height="19" />
+            </frame>
+          </frame>
+          <instance id="124:920" name="PHI / Ruler / Edit EV" x="24" y="672" width="342" height="88" />
+        </frame>
+        <frame id="103:386" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:387" name="单一水平刻度：固定红指针，数值连续更新。范围沿用已有能力 −5…+5 EV。" x="0" y="0" width="390" height="38" />
+          <text id="103:388" name="按住右上对比图标查看原片，松开恢复；画布不移动。" x="0" y="46" width="390" height="19" />
+          <text id="103:389" name="重置当前类别；“另存照片”保存副本，原片不覆盖。" x="0" y="73" width="390" height="19" />
+        </frame>
+      </frame>
+    </frame>
+  </frame>
+  <frame id="100:106" name="PHI v2 / 03 Develop &amp; Save" x="228" y="3500" width="2000" height="1363">
+    <frame id="103:390" name="Introduction" x="64" y="48" width="1872" height="115">
+      <text id="103:391" name="PHI / V2 — DEVELOP &amp; SAVE" x="0" y="0" width="180" height="17" />
+      <text id="103:392" name="底部调整，画面不动。" x="0" y="25" width="360" height="52" />
+      <text id="103:393" name="曝光、风格、效果共享固定高度的工具区；一屏只呈现当前所需控件。" x="0" y="85" width="496" height="23" />
+    </frame>
+    <frame id="103:394" name="Screens" x="64" y="195" width="1872" height="1120">
+      <frame id="103:395" name="Column / 选择风格" x="0" y="0" width="432" height="1120">
+        <frame id="103:396" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:397" name="09 / STYLE" x="0" y="0" width="66" height="16" />
+          <text id="103:398" name="选择风格" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:399" name="EditorStyle" x="21" y="78" width="390" height="844">
+          <frame id="103:400" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:401" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:402" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:405" name="编辑照片" x="78" y="62" width="56" height="20" />
+          <rounded-rectangle id="103:406" name="Photo canvas / fixed geometry" x="0" y="96" width="390" height="520" />
+          <instance id="103:407" name="PHI v2 / Icon / compare" x="332" y="50" width="44" height="44" />
+          <frame id="103:410" name="Editor categories" x="0" y="616" width="390" height="48">
+            <frame id="103:411" name="Text tab / 曝光" x="24" y="2" width="104" height="44">
+              <text id="103:412" name="曝光" x="38" y="12.5" width="28" height="19" />
+            </frame>
+            <frame id="103:413" name="Text tab / 风格" x="143" y="2" width="104" height="44">
+              <text id="103:414" name="风格" x="38" y="12.5" width="28" height="19" />
+              <rounded-rectangle id="133:753" name="Active category / underline" x="50" y="40" width="4" height="4" />
+            </frame>
+            <frame id="103:415" name="Text tab / 效果" x="262" y="2" width="104" height="44">
+              <text id="103:416" name="效果" x="38" y="12.5" width="28" height="19" />
+            </frame>
+          </frame>
+          <frame id="103:433" name="Editor actions" x="0" y="770" width="390" height="44">
+            <instance id="103:434" name="PHI v2 / Icon / close" x="16" y="0" width="44" height="44" />
+            <instance id="103:437" name="PHI v2 / Icon / reset" x="135" y="0" width="44" height="44" />
+            <frame id="103:440" name="Button / 另存照片" x="254" y="2" width="120" height="40">
+              <text id="103:441" name="另存照片" x="34" y="10.5" width="52" height="19" />
+            </frame>
+          </frame>
+          <frame id="124:1000" name="Fixed style badges / no photo thumbnails" x="20" y="669" width="350" height="90">
+            <instance id="124:1001" name="PHI / Choice / 原始 / Default" x="0" y="2" width="64" height="86" />
+            <instance id="124:1007" name="PHI / Choice / 正片 / Selected" x="71.5" y="2" width="64" height="86" />
+            <instance id="124:1014" name="PHI / Choice / 负片 / Default" x="143" y="2" width="64" height="86" />
+            <instance id="124:1020" name="PHI / Choice / 黑白 / Default" x="214.5" y="2" width="64" height="86" />
+            <instance id="124:1026" name="PHI / Choice / CCD / Default" x="286" y="2" width="64" height="86" />
+          </frame>
+        </frame>
+        <frame id="103:442" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:443" name="风格仅显示一行名称；编辑与设置统一使用单选胶囊，未选中项保持纯文字。" x="0" y="0" width="390" height="38" />
+          <text id="103:444" name="一级分类用短下划线，二级只为当前选择显示深灰胶囊。无整排边框，不叠加多层胶囊。" x="0" y="46" width="390" height="38" />
+          <text id="103:445" name="切换类别保留已调数值；切换风格不清空曝光与效果。" x="0" y="92" width="390" height="19" />
+        </frame>
+      </frame>
+      <frame id="103:446" name="Column / 效果叠加" x="480" y="0" width="432" height="1120">
+        <frame id="103:447" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:448" name="10 / EFFECTS" x="0" y="0" width="80" height="16" />
+          <text id="103:449" name="效果叠加" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:450" name="EditorEffects" x="21" y="78" width="390" height="844">
+          <frame id="103:451" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:452" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:453" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:456" name="编辑照片" x="78" y="62" width="56" height="20" />
+          <rounded-rectangle id="103:457" name="Photo canvas / fixed geometry" x="0" y="96" width="390" height="520" />
+          <instance id="103:458" name="PHI v2 / Icon / compare" x="332" y="50" width="44" height="44" />
+          <frame id="103:461" name="Editor categories" x="0" y="616" width="390" height="48">
+            <frame id="103:462" name="Text tab / 曝光" x="24" y="2" width="104" height="44">
+              <text id="103:463" name="曝光" x="38" y="12.5" width="28" height="19" />
+            </frame>
+            <frame id="103:464" name="Text tab / 风格" x="143" y="2" width="104" height="44">
+              <text id="103:465" name="风格" x="38" y="12.5" width="28" height="19" />
+            </frame>
+            <frame id="103:466" name="Text tab / 效果" x="262" y="2" width="104" height="44">
+              <text id="103:467" name="效果" x="38" y="12.5" width="28" height="19" />
+              <rounded-rectangle id="133:754" name="Active category / underline" x="50" y="40" width="4" height="4" />
+            </frame>
+          </frame>
+          <frame id="103:468" name="Halation choice" x="0" y="671" width="390" height="42">
+            <text id="103:469" name="光晕" x="24" y="11" width="28" height="20" />
+            <frame id="103:470" name="Halation states" x="206" y="-1" width="160" height="44">
+              <frame id="103:471" name="Button / 关" x="0" y="0" width="76" height="44">
+                <text id="103:472" name="关" x="31.5" y="12.5" width="13" height="19" />
+              </frame>
+              <frame id="103:473" name="Button / 开" x="80" y="0" width="76" height="44">
+                <text id="103:474" name="开" x="31.5" y="12.5" width="13" height="19" />
+              </frame>
+            </frame>
+          </frame>
+          <frame id="103:475" name="Grain choice" x="0" y="719" width="390" height="42">
+            <text id="103:476" name="颗粒" x="24" y="11" width="28" height="20" />
+            <frame id="103:477" name="Grain states" x="206" y="-1" width="160" height="44">
+              <frame id="103:478" name="Button / 关" x="0" y="0" width="76" height="44">
+                <text id="103:479" name="关" x="31.5" y="12.5" width="13" height="19" />
+              </frame>
+              <frame id="103:480" name="Button / 细颗粒" x="80" y="0" width="76" height="44">
+                <text id="103:481" name="细颗粒" x="18.5" y="12.5" width="39" height="19" />
+              </frame>
+            </frame>
+          </frame>
+          <frame id="103:482" name="Editor actions" x="0" y="770" width="390" height="44">
+            <instance id="103:483" name="PHI v2 / Icon / close" x="16" y="0" width="44" height="44" />
+            <instance id="103:486" name="PHI v2 / Icon / reset" x="135" y="0" width="44" height="44" />
+            <frame id="103:489" name="Button / 另存照片" x="254" y="2" width="120" height="40">
+              <text id="103:490" name="另存照片" x="34" y="10.5" width="52" height="19" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="103:491" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:492" name="光晕开 / 关，颗粒关 / 细颗粒；二者独立，可与风格同时使用。" x="0" y="0" width="390" height="19" />
+          <text id="103:493" name="不添加尚未实现的强度控制；效果只作用于编辑结果。" x="0" y="27" width="390" height="19" />
+          <text id="103:494" name="该区高度与曝光、风格相同，切换时照片和保存操作保持原位。" x="0" y="54" width="390" height="19" />
+        </frame>
+      </frame>
+      <frame id="103:495" name="Column / 另存完成" x="960" y="0" width="432" height="1120">
+        <frame id="103:496" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:497" name="11 / SAVED" x="0" y="0" width="66" height="16" />
+          <text id="103:498" name="另存完成" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:499" name="SavedPhoto" x="21" y="78" width="390" height="844">
+          <frame id="103:500" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:501" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:502" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:505" name="编辑后的照片" x="78" y="62" width="84" height="20" />
+          <text id="103:506" name="13/13" x="320" y="63" width="39" height="19" />
+          <rounded-rectangle id="103:507" name="Photo canvas / fixed geometry" x="0" y="96" width="390" height="520" />
+          <text id="103:508" name="HEIC · 编辑副本" x="20" y="636" width="91" height="16" />
+          <frame id="103:509" name="Save confirmation" x="65" y="692" width="260" height="44">
+            <instance id="103:510" name="PHI v2 / Icon / check" x="39" y="0" width="44" height="44" />
+            <text id="103:513" name="已保存新照片，原片保留" x="89" y="13.5" width="132" height="17" />
+          </frame>
+          <frame id="103:514" name="Photo actions" x="0" y="754" width="390" height="52">
+            <instance id="103:515" name="PHI v2 / Icon / trash" x="24" y="4" width="44" height="44" />
+            <instance id="103:518" name="PHI v2 / Icon / share" x="151" y="4" width="44" height="44" />
+            <frame id="103:521" name="Button / 编辑" x="278" y="4" width="88" height="44">
+              <text id="103:522" name="编辑" x="31" y="12.5" width="26" height="19" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="103:523" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:524" name="保存时按钮显示“保存中…”并禁用重复提交；失败留在编辑页，保留全部参数。" x="0" y="0" width="390" height="38" />
+          <text id="103:525" name="成功进入新副本浏览，短提示“原片保留”。相册新增一张。" x="0" y="46" width="390" height="19" />
+          <text id="103:526" name="导出与保存分开：导出走系统分享，另存产生编辑副本。" x="0" y="73" width="390" height="19" />
+        </frame>
+      </frame>
+      <frame id="103:527" name="Column / 退出编辑" x="1440" y="0" width="432" height="1120">
+        <frame id="103:528" name="Screen label" x="21" y="0" width="390" height="60">
+          <text id="103:529" name="12 / LEAVE" x="0" y="0" width="66" height="16" />
+          <text id="103:530" name="退出编辑" x="0" y="19" width="88" height="32" />
+        </frame>
+        <frame id="103:531" name="DiscardChanges" x="21" y="78" width="390" height="844">
+          <frame id="103:532" name="System cutout / reserved" x="132" y="10" width="126" height="36" />
+          <rounded-rectangle id="103:533" name="Rule" x="130" y="827" width="130" height="4" />
+          <instance id="103:534" name="PHI v2 / Icon / close" x="14" y="50" width="44" height="44" />
+          <text id="103:537" name="编辑照片" x="78" y="62" width="56" height="20" />
+          <rounded-rectangle id="103:538" name="Photo canvas / fixed geometry" x="0" y="96" width="390" height="520" />
+          <instance id="103:539" name="PHI v2 / Icon / compare" x="332" y="50" width="44" height="44" />
+          <frame id="103:542" name="Editor categories" x="0" y="616" width="390" height="48">
+            <frame id="103:543" name="Text tab / 曝光" x="24" y="2" width="104" height="44">
+              <text id="103:544" name="曝光" x="38" y="12.5" width="28" height="19" />
+              <rounded-rectangle id="133:755" name="Active category / underline" x="40" y="40" width="24" height="2" />
+            </frame>
+            <frame id="103:545" name="Text tab / 风格" x="143" y="2" width="104" height="44">
+              <text id="103:546" name="风格" x="38" y="12.5" width="28" height="19" />
+            </frame>
+            <frame id="103:547" name="Text tab / 效果" x="262" y="2" width="104" height="44">
+              <text id="103:548" name="效果" x="38" y="12.5" width="28" height="19" />
+            </frame>
+          </frame>
+          <frame id="103:590" name="Editor actions" x="0" y="770" width="390" height="44">
+            <instance id="103:591" name="PHI v2 / Icon / close" x="16" y="0" width="44" height="44" />
+            <instance id="103:594" name="PHI v2 / Icon / reset" x="135" y="0" width="44" height="44" />
+            <frame id="103:597" name="Button / 另存照片" x="254" y="2" width="120" height="40">
+              <text id="103:598" name="另存照片" x="34" y="10.5" width="52" height="19" />
+            </frame>
+          </frame>
+          <instance id="124:960" name="PHI / Ruler / Edit EV" x="24" y="672" width="342" height="88" />
+          <frame id="103:599" name="Modal scrim" x="0" y="0" width="390" height="844" />
+          <instance id="136:776" name="System Alert / Discard edits" x="45" y="302" width="300" height="240">
+            <instance id="I136:776;5742:38608" name="BG" x="0" y="0" width="300" height="240" />
+            <frame id="I136:776;61:67654" name="Title and Message" x="14" y="14" width="272" height="108">
+              <text id="I136:776;61:67599" name="A Short Title Is Best" x="8" y="8" width="256" height="22" />
+              <text id="I136:776;61:67600" name="A message should be a short, complete sentence." x="8" y="40" width="256" height="44" />
+            </frame>
+            <instance id="I136:776;12616:1055" name="Text Field" x="14" y="122" width="272" height="123" hidden="true" />
+            <slot id="I136:776;537:39280" name="Actions" x="14" y="122" width="272" height="104">
+              <instance id="I136:776;537:39280;137:755" name="Button" x="0" y="0" width="272" height="48" hidden="true" />
+              <instance id="I136:776;537:39280;137:756" name="Button" x="0" y="0" width="272" height="48" />
+              <instance id="I136:776;537:39280;137:757" name="Button" x="0" y="56" width="272" height="48" />
+            </slot>
+          </instance>
+        </frame>
+        <frame id="103:607" name="Interaction notes" x="21" y="940" width="390" height="160">
+          <text id="103:608" name="有改动时退出，二次确认；无改动直接返回照片浏览。" x="0" y="0" width="390" height="19" />
+          <text id="103:609" name="继续编辑完整保留曝光、风格与效果；放弃仅丢弃本次未保存调整。" x="0" y="27" width="390" height="19" />
+          <text id="103:610" name="保存失败、权限不足等反馈停留在当前上下文，并提供重试。" x="0" y="54" width="390" height="19" />
+        </frame>
+      </frame>
+    </frame>
+  </frame>
+  <frame id="100:107" name="PHI v2 / Components" x="2428" y="300" width="1200" height="1100">
+    <symbol id="100:108" name="PHI v2 / Icon / flash_on" x="40" y="196" width="44" height="44" />
+    <text id="100:111" name="flash_on" x="40" y="248" width="48" height="13" />
+    <symbol id="100:112" name="PHI v2 / Icon / flash_off" x="180" y="196" width="44" height="44" />
+    <text id="100:115" name="flash_off" x="180" y="248" width="54" height="13" />
+    <symbol id="100:116" name="PHI v2 / Icon / flash_auto" x="320" y="196" width="44" height="44" />
+    <text id="100:120" name="flash_auto" x="320" y="248" width="60" height="13" />
+    <symbol id="100:121" name="PHI v2 / Icon / grid_on" x="460" y="196" width="44" height="44" />
+    <text id="100:125" name="grid_on" x="460" y="248" width="42" height="13" />
+    <symbol id="100:126" name="PHI v2 / Icon / grid_off" x="600" y="196" width="44" height="44" />
+    <text id="100:129" name="grid_off" x="600" y="248" width="48" height="13" />
+    <symbol id="100:130" name="PHI v2 / Icon / settings" x="740" y="196" width="44" height="44" />
+    <text id="100:135" name="settings" x="740" y="248" width="48" height="13" />
+    <symbol id="100:136" name="PHI v2 / Icon / close" x="880" y="196" width="44" height="44" />
+    <text id="100:139" name="close" x="880" y="248" width="30" height="13" />
+    <symbol id="100:140" name="PHI v2 / Icon / check" x="1020" y="196" width="44" height="44" />
+    <text id="100:143" name="check" x="1020" y="248" width="30" height="13" />
+    <symbol id="100:144" name="PHI v2 / Icon / back" x="40" y="321" width="44" height="44" />
+    <text id="100:147" name="back" x="40" y="373" width="24" height="13" />
+    <symbol id="100:148" name="PHI v2 / Icon / share" x="180" y="321" width="44" height="44" />
+    <text id="100:151" name="share" x="180" y="373" width="30" height="13" />
+    <symbol id="100:152" name="PHI v2 / Icon / trash" x="320" y="321" width="44" height="44" />
+    <text id="100:155" name="trash" x="320" y="373" width="30" height="13" />
+    <symbol id="100:156" name="PHI v2 / Icon / compare" x="460" y="321" width="44" height="44" />
+    <text id="100:159" name="compare" x="460" y="373" width="42" height="13" />
+    <symbol id="100:160" name="PHI v2 / Icon / exposure" x="600" y="321" width="44" height="44" />
+    <text id="100:164" name="exposure" x="600" y="373" width="48" height="13" />
+    <symbol id="100:165" name="PHI v2 / Icon / style" x="740" y="321" width="44" height="44" />
+    <text id="100:169" name="style" x="740" y="373" width="30" height="13" />
+    <symbol id="100:170" name="PHI v2 / Icon / effects" x="880" y="321" width="44" height="44" />
+    <text id="100:174" name="effects" x="880" y="373" width="42" height="13" />
+    <symbol id="100:175" name="PHI v2 / Icon / reset" x="1020" y="321" width="44" height="44" />
+    <text id="100:178" name="reset" x="1020" y="373" width="30" height="13" />
+    <symbol id="100:179" name="PHI v2 / Icon / chevron" x="40" y="446" width="44" height="44" />
+    <text id="100:182" name="chevron" x="40" y="498" width="42" height="13" />
+    <symbol id="100:183" name="PHI v2 / Icon / missing" x="180" y="446" width="44" height="44" />
+    <text id="100:187" name="missing" x="180" y="498" width="42" height="13" />
+    <symbol id="100:188" name="PHI v2 / Shutter / White" x="40" y="636" width="80" height="80" />
+    <text id="105:213" name="PHI / V2 — CONTROLS" x="40" y="32" width="137" height="17" />
+    <text id="105:214" name="统一图标与操作尺度" x="40" y="60" width="252" height="41" />
+    <text id="105:215" name="24 px 图形 · 1.5 px 线宽 · 44×44 pt 触控区 · 状态同时用形状与选中标记表达" x="40" y="111" width="498" height="20" />
+    <text id="105:216" name="白色快门" x="40" y="746" width="64" height="23" />
+    <text id="105:217" name="拍摄动作保持白色；红色用于选择、数值和对焦圆心。" x="40" y="780" width="336" height="20" />
+    <text id="105:221" name="1:1 对焦框" x="360" y="746" width="74" height="23" />
+    <frame id="139:1443" name="Frame" x="327" y="561" width="130" height="174" />
+    <text id="105:222" name="轻触定位；锁定状态另显示 AE/AF LOCK。" x="360" y="780" width="243" height="19" />
+    <frame id="105:223" name="Control rules" x="40" y="860" width="1120" height="190">
+      <text id="105:224" name="控件行为" x="0" y="0" width="64" height="23" />
+      <text id="105:225" name="闪光灯：点按打开关 / 自动 / 开列表；网格：一次点击直接切换开 / 关。" x="0" y="37" width="442" height="20" />
+      <text id="105:226" name="参数：一次只调一个标尺；倍率保持在快门右侧，调整曝光时不替换倍率。" x="0" y="71" width="462" height="20" />
+      <text id="105:227" name="倍率按钮单击循环 0.5× / 1× / 2× / 4×；跳过设备不可用档位，不承诺全部为原生镜头。" x="0" y="105" width="558" height="20" />
+    </frame>
+  </frame>
+  <frame id="115:444" name="PHI v2 / 04 App Icon — Selected Grain Ring" x="2428" y="1600" width="1200" height="1160">
+    <text id="115:445" name="PHI / APP ICON — SELECTED" x="48" y="48" width="158" height="14" />
+    <text id="115:446" name="颗粒圆环 · 当前方案" x="48" y="86" width="284" height="36" />
+    <text id="115:447" name="加粗环带 / 中心留空 / 上亮下淡 / 深浅双色" x="48" y="146" width="297" height="19" />
+    <frame id="115:448" name="Dark and Light" x="48" y="189" width="1104" height="590">
+      <frame id="115:449" name="Dark" x="0" y="0" width="536" height="590">
+        <text id="115:450" name="Dark Mode" x="0" y="0" width="101" height="24" />
+        <frame id="115:451" name="Master icon" x="0" y="48" width="536" height="360">
+          <symbol id="109:316" name="PHI / Grain ring / Refined / Dark" x="118" y="30" width="300" height="300" />
+        </frame>
+        <frame id="115:461" name="60 / 40 / 29 px" x="0" y="432" width="536" height="90">
+          <frame id="115:462" name="60 px" x="32" y="0" width="90" height="90">
+            <instance id="115:463" name="PHI / Grain ring / Refined / Dark" x="15" y="5" width="60" height="60" />
+            <text id="115:472" name="60 px" x="31.5" y="72" width="27" height="13" />
+          </frame>
+          <frame id="115:473" name="40 px" x="154" y="0" width="90" height="90">
+            <instance id="115:474" name="PHI / Grain ring / Refined / Dark" x="25" y="15" width="40.000003814697266" height="40.000003814697266" />
+            <text id="115:483" name="40 px" x="31.5" y="62" width="27" height="13" />
+          </frame>
+          <frame id="115:484" name="29 px" x="276" y="0" width="90" height="90">
+            <instance id="115:485" name="PHI / Grain ring / Refined / Dark" x="30.5" y="20.5" width="29" height="29" />
+            <text id="115:494" name="29 px" x="31.5" y="56.5" width="27" height="13" />
+          </frame>
+        </frame>
+      </frame>
+      <frame id="115:495" name="Light" x="568" y="0" width="536" height="590">
+        <text id="115:496" name="Light Mode" x="0" y="0" width="104" height="24" />
+        <frame id="115:497" name="Master icon" x="0" y="48" width="536" height="360">
+          <symbol id="109:357" name="PHI / Grain ring / Refined / Light" x="118" y="30" width="300" height="300" />
+        </frame>
+        <frame id="115:507" name="60 / 40 / 29 px" x="0" y="432" width="536" height="90">
+          <frame id="115:508" name="60 px" x="32" y="0" width="90" height="90">
+            <instance id="115:509" name="PHI / Grain ring / Refined / Light" x="15" y="5" width="60" height="60" />
+            <text id="115:518" name="60 px" x="31.5" y="72" width="27" height="13" />
+          </frame>
+          <frame id="115:519" name="40 px" x="154" y="0" width="90" height="90">
+            <instance id="115:520" name="PHI / Grain ring / Refined / Light" x="25" y="15" width="40.000003814697266" height="40.000003814697266" />
+            <text id="115:529" name="40 px" x="31.5" y="62" width="27" height="13" />
+          </frame>
+          <frame id="115:530" name="29 px" x="276" y="0" width="90" height="90">
+            <instance id="115:531" name="PHI / Grain ring / Refined / Light" x="30.5" y="20.5" width="29" height="29" />
+            <text id="115:540" name="29 px" x="31.5" y="56.5" width="27" height="13" />
+          </frame>
+        </frame>
+      </frame>
+    </frame>
+    <text id="115:541" name="设计说明" x="48" y="803" width="80" height="24" />
+    <text id="115:542" name="仅保留颗粒圆环，不加入实心快门或中轴。环带在上一版基础上适度加粗，保留自然消散的边缘与中心负空间。" x="48" y="851" width="1104" height="19" />
+    <text id="115:543" name="主组件已移入此处；外部探索画板保留关联实例，便于追溯。" x="48" y="894" width="1104" height="17" />
+  </frame>
+  <frame id="124:508" name="PHI v3 / Controls — Style badges, zoom and calibrated rulers" x="2428" y="3000" width="1200" height="1810">
+    <text id="124:509" name="PHI / CONTROL LANGUAGE — 03" x="48" y="36" width="195" height="17" />
+    <text id="124:510" name="固定徽记，精密刻度。" x="48" y="66" width="330" height="42" />
+    <text id="124:511" name="风格不使用照片缩略图；倍率、标尺与图标共享几何秩序。" x="48" y="116" width="416" height="22" />
+    <symbol id="124:512" name="PHI / Choice / 原始 / Default" x="48" y="170" width="64" height="86" />
+    <symbol id="124:518" name="PHI / Choice / 原始 / Selected" x="48" y="278" width="64" height="86" />
+    <symbol id="124:525" name="PHI / Choice / 正片 / Default" x="152" y="170" width="64" height="86" />
+    <symbol id="124:531" name="PHI / Choice / 正片 / Selected" x="152" y="278" width="64" height="86" />
+    <symbol id="124:538" name="PHI / Choice / 负片 / Default" x="256" y="170" width="64" height="86" />
+    <symbol id="124:544" name="PHI / Choice / 负片 / Selected" x="256" y="278" width="64" height="86" />
+    <symbol id="124:551" name="PHI / Choice / 黑白 / Default" x="360" y="170" width="64" height="86" />
+    <symbol id="124:557" name="PHI / Choice / 黑白 / Selected" x="360" y="278" width="64" height="86" />
+    <symbol id="124:564" name="PHI / Choice / CCD / Default" x="464" y="170" width="64" height="86" />
+    <symbol id="124:572" name="PHI / Choice / CCD / Selected" x="464" y="278" width="64" height="86" />
+    <text id="124:581" name="原始 / 正片 / 负片 / 黑白 / CCD" x="640" y="194" width="197" height="20" />
+    <text id="124:582" name="风格标识保持稳定，照片只在主画布更新。
+选择后即时应用，切换类别保留选择。" x="640" y="238" width="450" height="42" />
+    <symbol id="124:583" name="PHI / Zoom cycle / 0.5×" x="48" y="450" width="96" height="88" />
+    <symbol id="124:594" name="PHI / Zoom cycle / 1×" x="208" y="450" width="96" height="88" />
+    <symbol id="124:605" name="PHI / Zoom cycle / 2×" x="368" y="450" width="96" height="88" />
+    <symbol id="124:616" name="PHI / Zoom cycle / 4×" x="528" y="450" width="96" height="88" />
+    <text id="124:627" name="倍率在快门右侧常驻；点击直达，避免连续点击猜测下一档。" x="48" y="565" width="589" height="21" />
+    <symbol id="124:628" name="PHI / Ruler / Auto EV" x="48" y="680" width="342" height="88" />
+    <symbol id="124:668" name="PHI / Ruler / ISO" x="448" y="680" width="342" height="88" />
+    <symbol id="124:703" name="PHI / Ruler / Edit EV" x="48" y="830" width="342" height="88" />
+    <text id="124:743" name="刻度规则" x="448" y="825" width="80" height="28" />
+    <text id="124:744" name="数值在中心；红针固定，尺带移动。
+长 / 中 / 短刻线区分整档、半档与细调。
+当前值 +0.3 时，零点必须在指针左侧。" x="448" y="868" width="650" height="63" />
+    <frame id="124:1034" name="Interaction handoff" x="48" y="1020" width="1104" height="630">
+      <text id="124:1035" name="01 / 拍摄布局" x="0" y="0" width="112" height="22" />
+      <text id="124:1036" name="设置移到右上；网格在其下。右侧倍率按 0.5、1×、2×、4× 排列，每档有独立 44 pt 热区。快门在自动、手动、闪光展开时保持同一位置。" x="0" y="40" width="1080" height="21" />
+      <text id="124:1037" name="02 / 风格选择" x="0" y="79" width="112" height="22" />
+      <text id="124:1038" name="原始即不套用色彩风格。五种固定徽记不随照片变化；只更新主画布的编辑效果。仍为编辑阶段功能，不新增实时拍摄滤镜。" x="0" y="119" width="1080" height="21" />
+      <text id="124:1039" name="03 / 参数调节" x="0" y="158" width="112" height="22" />
+      <text id="124:1040" name="点 A / M 切换曝光模式；手动下点 ISO 或快门读数切换标尺。拖动刻度时仅当前参数变化，焦段选择始终可用。" x="0" y="198" width="1080" height="21" />
+      <text id="124:1041" name="04 / 尺度与反馈" x="0" y="237" width="128" height="22" />
+      <text id="124:1042" name="颜色、轮廓、指针和文字共同表达选中。细调步长与 ISO 支持值以设备及现有实现为准，样例刻度不是硬编码参数表。" x="0" y="277" width="1080" height="21" />
+    </frame>
+  </frame>
+</section>
+
+IMPORTANT: After you call this tool, you MUST call get_design_context if trying to implement the design, since this tool only returns metadata. If you do not call get_design_context, the agent will not be able to implement the design.

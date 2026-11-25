@@ -20,3 +20,8 @@ playground.xcworkspace
 *.mobileprovision
 *.p12
 *.cer
+
+# Local derived data and test artifacts (never commit)
+build-sim/
+build-dev*/
+build-sim-hook/

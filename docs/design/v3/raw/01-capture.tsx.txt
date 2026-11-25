@@ -1,0 +1,559 @@
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/13459625-1ec8-4d22-9077-3141dedc7af9";
+const imgFrame = `${assetPathPrefix}/a360a.svg`;
+const imgCircularButton56Pt = `${assetPathPrefix}/c0cd5.svg`;
+const imgPhiV2ShutterWhite = `${assetPathPrefix}/9e1d9.svg`;
+const imgEllipse = `${assetPathPrefix}/9d12f.svg`;
+const imgFrame1 = `${assetPathPrefix}/cfc91.svg`;
+const imgFrame2 = `${assetPathPrefix}/747fe.svg`;
+const imgFrame3 = `${assetPathPrefix}/008c5.svg`;
+const imgFrame4 = `${assetPathPrefix}/5a788.svg`;
+const imgFrame5 = `${assetPathPrefix}/88a76.svg`;
+const imgPhotoCanvasFixedGeometry = `${assetPathPrefix}/8ca3c.png`;
+const imgFrame6 = `${assetPathPrefix}/1c1ef.svg`;
+const imgFrame7 = `${assetPathPrefix}/9b67c.svg`;
+const imgSwitchOn = `${assetPathPrefix}/6dc5b.svg`;
+
+function PhiV2IconClose({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:136" data-name="PHI v2 / Icon / close">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:137" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+      </div>
+    </div>
+  );
+}
+
+function PhiZoomCycle1({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[96px]"} data-node-id="124:594" data-name="PHI / Zoom cycle / 1×">
+      <div className="absolute left-[20px] size-[56px] top-[16px]" data-node-id="129:758" data-name="Circular button / 56 pt">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgCircularButton56Pt} />
+      </div>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[normal] left-[36px] not-italic text-[20px] text-[color:var(--camera-accent,#f45135)] top-[31px] whitespace-nowrap" data-node-id="129:759">
+        1×
+      </p>
+    </div>
+  );
+}
+
+function PhiV2ShutterWhite({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[80px]"} data-node-id="100:188" data-name="PHI v2 / Shutter / White">
+      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgPhiV2ShutterWhite} />
+    </div>
+  );
+}
+
+function PhiRulerAutoEv({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[342px]"} data-node-id="124:628" data-name="PHI / Ruler / Auto EV">
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-0 not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:629">
+        A / EV
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[35px] left-[154.5px] not-italic text-[18px] text-[color:var(--camera-primary,#f4f3ee)] top-[5px] whitespace-nowrap" data-node-id="124:630">
+        0.0
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[327px] not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:631">
+        EV
+      </p>
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[20.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:632" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[30.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:633" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[40.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:634" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[50.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:635" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[60.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:636" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[70px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:637" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[80.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:638" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[90.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:639" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[100.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:640" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[110.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:641" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[120.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:642" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[130.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:643" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[140.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:644" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[150.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:645" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[160.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:646" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[170px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:647" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[180.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:648" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[190.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:649" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[200.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:650" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[210.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:651" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[220.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:652" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[230.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:653" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[240.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:654" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[250.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:655" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[260.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:656" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[270px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:657" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[280.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:658" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[290.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:659" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[300.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:660" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[310.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:661" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[320.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:662" data-name="Rectangle" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[65px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:663">
+        −1
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[168px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:664">
+        0
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[265px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:665">
+        +1
+      </p>
+      <div className="absolute left-[169px] size-[4px] top-[34px]" data-node-id="124:666" data-name="Ellipse">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgEllipse} />
+      </div>
+      <div className="absolute bg-[var(--camera-accent,#f45135)] h-[28px] left-[169.5px] rounded-[1.5px] top-[36px] w-[3px]" data-node-id="124:667" data-name="Rectangle" />
+    </div>
+  );
+}
+
+function PhiV2IconSettings({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:130" data-name="PHI v2 / Icon / settings">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:131" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame1} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconGridOn({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:121" data-name="PHI v2 / Icon / grid_on">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:122" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame2} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashAuto({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:116" data-name="PHI v2 / Icon / flash_auto">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:117" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+      </div>
+    </div>
+  );
+}
+
+function PhiRulerIso({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[342px]"} data-node-id="124:668" data-name="PHI / Ruler / ISO">
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-0 not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:669">
+        M / ISO
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[35px] left-[154.5px] not-italic text-[18px] text-[color:var(--camera-primary,#f4f3ee)] top-[5px] whitespace-nowrap" data-node-id="124:670">
+        200
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[291px] not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:671">
+        1/250 s
+      </p>
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[26px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:672" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[38px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:673" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[50px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:674" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[62px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:675" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[74px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:676" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[86px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:677" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[98px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:678" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[110px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:679" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[122px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:680" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[134px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:681" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[146px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:682" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[158px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:683" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[170px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:684" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[182px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:685" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[194px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:686" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[206px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:687" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[218px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:688" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[230px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:689" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[242px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:690" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[254px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:691" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[266px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:692" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[12px] left-[278px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:693" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[290px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:694" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[302px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:695" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[314px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:696" data-name="Rectangle" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[21px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:697">
+        50
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[90px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:698">
+        100
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[162px] not-italic text-[10px] text-[color:var(--camera-primary,#f4f3ee)] top-[66px] whitespace-nowrap" data-node-id="124:699">
+        200
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[234px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:700">
+        400
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[306px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:701">
+        800
+      </p>
+      <div className="absolute bg-[var(--camera-accent,#f45135)] h-[28px] left-[169.5px] rounded-[1.5px] top-[36px] w-[3px]" data-node-id="124:702" data-name="Rectangle" />
+    </div>
+  );
+}
+
+function PhiV2IconGridOff({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:126" data-name="PHI v2 / Icon / grid_off">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:127" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconFlashOff({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:112" data-name="PHI v2 / Icon / flash_off">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:113" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame5} />
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV201Capture() {
+  return (
+    <div className="bg-[#151717] content-stretch flex flex-col gap-[32px] items-start px-[64px] py-[48px] relative size-full" data-node-id="100:104" data-name="PHI v2 / 01 Capture">
+      <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] h-[115px] items-start overflow-clip relative shrink-0 w-[1872px] whitespace-nowrap" data-node-id="101:104" data-name="Introduction">
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[17px] not-italic relative shrink-0 text-[#f45135] text-[12px]" data-node-id="101:105">
+          PHI / V2 — CAPTURE
+        </p>
+        <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[52px] relative shrink-0 text-[#f4f3ee] text-[36px]" data-node-id="101:106">
+          把画面还给取景。
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] relative shrink-0 text-[#a5aaa7] text-[16px]" data-node-id="101:107">
+          沉浸式顶栏 · 快门右侧倍率 · 固定风格徽记 · 机械刻度
+        </p>
+      </div>
+      <div className="content-stretch flex gap-[48px] h-[1120px] items-start overflow-clip relative shrink-0 w-[1872px]" data-node-id="101:108" data-name="Screens">
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:109" data-name="Column / 自动拍摄">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:110" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:111">
+              01 / AUTO
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:112">
+              自动拍摄
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:113" data-name="CameraAuto">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:114" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:115" data-name="Rule" />
+            <PhiV2IconFlashAuto className="absolute left-[17px] size-[44px] top-[11px]" />
+            <PhiV2IconGridOn className="absolute left-[327px] size-[44px] top-[47px]" />
+            <div className="absolute content-stretch flex h-[32px] items-center justify-center left-[119px] overflow-clip top-[53px] w-[150px]" data-node-id="101:124" data-name="Capture format / tap to configure">
+              <p className="[word-break:break-word] font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:125">
+                RAW · 3:4
+              </p>
+            </div>
+            <div className="absolute h-[520px] left-[-1px] top-[91px] w-[390px]" data-node-id="101:126" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[129px] opacity-18 top-[91px] w-px" data-node-id="101:127" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[259px] opacity-18 top-[91px] w-px" data-node-id="101:128" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[264.3px] w-[390px]" data-node-id="101:129" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[437.6px] w-[390px]" data-node-id="101:130" data-name="Rule" />
+            <div className="absolute h-[174px] left-[130px] top-[264px] w-[130px]" data-node-id="101:131" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+            </div>
+            <PhiV2IconSettings className="absolute left-[327px] size-[44px] top-[3px]" />
+            <div className="absolute h-[48px] left-[27px] rounded-[5px] top-[730px] w-[44px]" data-node-id="124:750" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiRulerAutoEv className="absolute h-[88px] left-[23px] top-[617px] w-[342px]" />
+            <PhiV2ShutterWhite className="absolute left-[154px] size-[80px] top-[714px]" />
+            <PhiZoomCycle1 className="absolute h-[88px] left-[269px] top-[710px] w-[96px]" />
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:162" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:163">
+              顶部左侧闪光，右侧设置，下方为网格；状态栏隐藏，系统隐私区域保留。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:164">
+              快门右侧为单一圆形倍率按钮；点击依次循环 0.5× → 1× → 2× → 4×。只显示当前倍率。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:165">
+              点击 A 切至手动；拖动标尺调整 EV。白色快门与倍率的位置保持稳定。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:166" data-name="Column / 手动调节">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:167" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:168">
+              02 / MANUAL
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:169">
+              手动调节
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:170" data-name="CameraManual">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:171" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:172" data-name="Rule" />
+            <PhiV2IconFlashOff className="absolute left-[17px] size-[44px] top-[11px]" />
+            <PhiV2IconGridOff className="absolute left-[327px] size-[44px] top-[47px]" />
+            <div className="absolute content-stretch flex h-[32px] items-center justify-center left-[119px] overflow-clip top-[53px] w-[150px]" data-node-id="101:179" data-name="Capture format / tap to configure">
+              <p className="[word-break:break-word] font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:180">
+                RAW · 3:4
+              </p>
+            </div>
+            <div className="absolute h-[520px] left-[-1px] top-[91px] w-[390px]" data-node-id="101:181" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <div className="absolute h-[174px] left-[130px] top-[264px] w-[130px]" data-node-id="139:1434" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+            </div>
+            <PhiV2IconSettings className="absolute left-[327px] size-[44px] top-[3px]" />
+            <div className="absolute h-[48px] left-[27px] rounded-[5px] top-[730px] w-[44px]" data-node-id="124:810" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiRulerIso className="absolute h-[88px] left-[23px] top-[617px] w-[342px]" />
+            <PhiV2ShutterWhite className="absolute left-[154px] size-[80px] top-[714px]" />
+            <PhiZoomCycle1 className="absolute h-[88px] left-[269px] top-[710px] w-[96px]" />
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:253" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:254">
+              点击 ISO / 快门读数切换当前标尺；同时只调一个参数。倍率保持在快门右侧。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:255">
+              尺带移动，红针固定；ISO 按设备支持值停靠。整档、半档、细调采用不同长度刻线。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:256">
+              切回自动由系统接管曝光；自动与手动的 EV 是否可并用需按现有能力确认。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:257" data-name="Column / 闪光灯选择">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:258" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:259">
+              03 / QUICK CONTROL
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:260">
+              闪光灯选择
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:261" data-name="CameraFlash">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:262" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:263" data-name="Rule" />
+            <PhiV2IconFlashAuto className="absolute left-[17px] size-[44px] top-[11px]" />
+            <PhiV2IconGridOn className="absolute left-[327px] size-[44px] top-[47px]" />
+            <div className="absolute content-stretch flex h-[32px] items-center justify-center left-[119px] overflow-clip top-[53px] w-[150px]" data-node-id="101:272" data-name="Capture format / tap to configure">
+              <p className="[word-break:break-word] font-['IBM_Plex_Mono:Regular'] leading-[19px] not-italic relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="101:273">
+                RAW · 3:4
+              </p>
+            </div>
+            <div className="absolute h-[520px] left-[-1px] top-[91px] w-[390px]" data-node-id="101:274" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[129px] opacity-18 top-[91px] w-px" data-node-id="101:275" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-[520px] left-[259px] opacity-18 top-[91px] w-px" data-node-id="101:276" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[264.3px] w-[390px]" data-node-id="101:277" data-name="Rule" />
+            <div className="absolute bg-[#f4f3ee] h-px left-[-1px] opacity-18 top-[437.6px] w-[390px]" data-node-id="101:278" data-name="Rule" />
+            <div className="absolute left-[156px] size-[76px] top-[299px]" data-node-id="101:279" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame7} />
+            </div>
+            <PhiV2IconSettings className="absolute left-[327px] size-[44px] top-[3px]" />
+            <div className="absolute h-[48px] left-[27px] rounded-[5px] top-[730px] w-[44px]" data-node-id="124:865" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[5px] size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiRulerAutoEv className="absolute h-[88px] left-[23px] top-[617px] w-[342px]" />
+            <PhiV2ShutterWhite className="absolute left-[154px] size-[80px] top-[714px]" />
+            <PhiZoomCycle1 className="absolute h-[88px] left-[269px] top-[710px] w-[96px]" />
+            <CodeConnectSnippet data-node-id="144:1119" data-name="System Menu / Flash">
+              {/* iOS and iPadOS 27 component */}
+              <Menu slotMenuItems="145:933" menuItems="145:933" variantMode="Dark" mode="Dark">
+                <LiquidGlassRegularMedium variantMode="Dark" mode="Dark" />
+                <Item textLetter="A" letter="A" booleanShowShift={false} showShift={false} textLabel="关闭" label="关闭" booleanShowCommand={true} showCommand={true} booleanShowOption={false} showOption={false} booleanShowControl={false} showControl={false} booleanShowSubtitle={false} showSubtitle={false} textSymbol="square.dashed" symbol="square.dashed" booleanShowShortcut={false} showShortcut={false} textSubtitle="Subtitle" subtitle="Subtitle" booleanShowSymbol={false} showSymbol={false} booleanShowCheckmark={false} showCheckmark={false} variantMode="Dark" mode="Dark" variantState="Default" state="Default" variantMenuHasSelection="True" menuHasSelection="True" />
+                <Item booleanShowShift={false} showShift={false} booleanShowOption={false} showOption={false} booleanShowControl={false} showControl={false} textLetter="B" letter="B" booleanShowSubtitle={false} showSubtitle={false} textSymbol="square.dashed" symbol="square.dashed" booleanShowShortcut={false} showShortcut={false} textSubtitle="Subtitle" subtitle="Subtitle" booleanShowSymbol={false} showSymbol={false} booleanShowCommand={true} showCommand={true} textLabel="自动" label="自动" booleanShowCheckmark={true} showCheckmark={true} variantMode="Dark" mode="Dark" variantState="Default" state="Default" variantMenuHasSelection="True" menuHasSelection="True" />
+                <Item booleanShowShift={false} showShift={false} booleanShowOption={false} showOption={false} booleanShowControl={false} showControl={false} textLetter="C" letter="C" booleanShowSubtitle={false} showSubtitle={false} textSymbol="square.dashed" symbol="square.dashed" booleanShowShortcut={false} showShortcut={false} textSubtitle="Subtitle" subtitle="Subtitle" booleanShowSymbol={false} showSymbol={false} booleanShowCommand={true} showCommand={true} textLabel="开启" label="开启" booleanShowCheckmark={false} showCheckmark={false} variantMode="Dark" mode="Dark" variantState="Default" state="Default" variantMenuHasSelection="True" menuHasSelection="True" />
+              </Menu>
+            </CodeConnectSnippet>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:330" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:331">
+              点闪光灯打开三态选择，不靠连续点击猜测当前模式；选中后立即关闭。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:332">
+              点击菜单外关闭，不改变原选择。网格按钮直接切换开 / 关，图形与状态同步。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:333">
+              切镜头或格式导致闪光不可用时显示禁用态及原因，不悄悄切回其它模式。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="101:334" data-name="Column / 拍摄设置">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="101:335" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="101:336">
+              04 / CAPTURE SETUP
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="101:337">
+              拍摄设置
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="101:338" data-name="CaptureSettings">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="101:339" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="101:340" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="101:344">
+              拍摄设置
+            </p>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[117px] whitespace-nowrap" data-node-id="101:345">
+              处理方式
+            </p>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[147px] w-[390px]" data-node-id="101:346" data-name="Processing">
+              <div className="bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[111.333px]" data-node-id="101:347" data-name="Button / RAW">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-pre" data-node-id="101:348" style={{ fontVariationSettings: '"wdth" 100' }}>{`0  RAW`}</p>
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[111.333px]" data-node-id="101:349" data-name="Button / ProRAW">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-pre" data-node-id="101:350" style={{ fontVariationSettings: '"wdth" 100' }}>{`Φ  ProRAW`}</p>
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[111.333px]" data-node-id="101:351" data-name="Button / 标准">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-pre" data-node-id="101:352">{`1  标准`}</p>
+              </div>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[199px] w-[350px]" data-node-id="101:353">
+              0 · 保留 RAW 原始数据，留给后期更多空间。
+            </p>
+            <div className="absolute bg-[#343737] h-px left-[19px] top-[243px] w-[350px]" data-node-id="101:354" data-name="Rule" />
+            <div className="absolute content-stretch flex h-[48px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[263px] w-[390px]" data-node-id="101:355" data-name="Save companion photo">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] relative shrink-0 text-[#f4f3ee] text-[16px] whitespace-nowrap" data-node-id="101:356">
+                同时保存成片
+              </p>
+              <div className="h-[26px] relative shrink-0 w-[42px]" data-node-id="101:357" data-name="Switch / on">
+                <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgSwitchOn} />
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[319px] w-[390px]" data-node-id="101:359" data-name="Companion format">
+              <div className="bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[171px]" data-node-id="101:360" data-name="Button / HEIC">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:361" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  HEIC
+                </p>
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[171px]" data-node-id="101:362" data-name="Button / JPEG">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-nowrap" data-node-id="101:363" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  JPEG
+                </p>
+              </div>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[373px] w-[350px]" data-node-id="101:364">
+              成片与 RAW 一起保存，方便直接查看和分享。
+            </p>
+            <div className="absolute bg-[#343737] h-px left-[19px] top-[422px] w-[350px]" data-node-id="101:365" data-name="Rule" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[447px] whitespace-nowrap" data-node-id="101:366">
+              画幅
+            </p>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[477px] w-[390px]" data-node-id="101:367" data-name="Aspect ratio">
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[81.5px]" data-node-id="101:368" data-name="Button / 1:1">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-nowrap" data-node-id="101:369" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  1:1
+                </p>
+              </div>
+              <div className="bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[81.5px]" data-node-id="101:370" data-name="Button / 3:4">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="101:371" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  3:4
+                </p>
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[81.5px]" data-node-id="101:372" data-name="Button / 2:3">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-nowrap" data-node-id="101:373" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  2:3
+                </p>
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[81.5px]" data-node-id="101:374" data-name="Button / 9:16">
+                <p className="[word-break:break-word] font-['SF_Pro:Medium'] font-[510] leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-nowrap" data-node-id="101:375" style={{ fontVariationSettings: '"wdth" 100' }}>
+                  9:16
+                </p>
+              </div>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] left-[19px] text-[#a5aaa7] text-[13px] top-[534px] w-[350px]" data-node-id="101:376">
+              预览与成片使用所选比例；RAW 保留完整画面。
+            </p>
+            <div className="[word-break:break-word] absolute bg-[#191b1b] h-[126px] left-[19px] overflow-clip rounded-[14px] top-[615px] w-[350px]" data-node-id="101:377" data-name="Help">
+              <p className="absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[16px] text-[#f4f3ee] text-[14px] top-[14px] w-[310px]" data-node-id="101:378">
+                处理方式 · 0 / Φ / 1
+              </p>
+              <div className="absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[0] left-[16px] text-[#a5aaa7] text-[13px] top-[42px] w-[318px]" data-node-id="101:379">
+                <p className="leading-[19px] mb-0">0 · RAW：保留原始数据。</p>
+                <p className="leading-[19px] mb-0">Φ · ProRAW：保留 Apple ProRAW 数据。</p>
+                <p className="leading-[19px]">1 · 标准：只保存苹果处理后的成片。</p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="101:380" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:381">
+              移除 0 / Φ / 1 技术代号，以 RAW / ProRAW / 标准表达处理方式。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:382">
+              仅 RAW 模式显示「同时保存成片」；关闭后隐藏格式选项。标准模式保留输出格式。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="101:383">
+              不支持 ProRAW / HEIC 时禁用并解释，格式回退要反馈；页面展示为建议，需对接能力矩阵。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+If the node is connected to a code component in the users codebase via Code Connect, the connected component will be included in the final markup wrapped in a CodeConnectSnippet element, with relevant imports at the top of the file. There are two formats: 1. Single snippet: <CodeConnectSnippet data-snippet-language="React"><TitleComponent>Hello World</TitleComponent></CodeConnectSnippet> 2. Multiple options: <CodeConnectSnippet data-snippet-language="React" options={[<Button variant="primary" />, <Button variant="secondary" />]} /> IMPORTANT: the CodeConnectSnippet wrapper element should not be part of the final code. For the options format, choose the single most appropriate option to use in your implementation. The source of the code component will be in the import path, e.g. import {ComponentName } from 'path/to/component'; IMPORTANT: the import path may not be relative/may point to a URL, so you should search for the component in the codebase and MUST use it if possible.
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI v2 / Icon / flash_auto
+**Node ID:** 100:116
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / grid_on
+**Node ID:** 100:121
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / settings
+**Node ID:** 100:130
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI / Ruler / Auto EV
+**Node ID:** 124:628
+
+固定中心红指针；长刻度、半档与短刻度分层。数值与标尺一致，零点另以圆点标识。
+
+## PHI v2 / Shutter / White
+**Node ID:** 100:188
+
+White photo shutter, stable at all capture states. Do not use the previous orange shutter.
+
+## PHI / Zoom cycle / 1×
+**Node ID:** 124:594
+
+单一圆形倍率按钮。每次点击切换下一档：0.5× → 1× → 2× → 4× → 0.5×。仅显示当前倍率。
+
+## PHI v2 / Icon / flash_off
+**Node ID:** 100:112
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / grid_off
+**Node ID:** 100:126
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI / Ruler / ISO
+**Node ID:** 124:668
+
+固定中心红指针；长刻度、半档与短刻度分层。数值与标尺一致，零点另以圆点标识。
+
+## PHI v2 / Icon / close
+**Node ID:** 100:136
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.

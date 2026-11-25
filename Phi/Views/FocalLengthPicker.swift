@@ -36,7 +36,7 @@ struct FocalLengthPicker: View {
         .padding(.horizontal, 6)
         .background {
             Capsule()
-                .fill(Color.black.opacity(0.88))
+                .fill(CameraColor.surface)
                 .frame(height: 36)
         }
         .accessibilityElement(children: .contain)

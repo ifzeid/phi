@@ -1,17 +1,27 @@
 import Foundation
 
 enum ExposureFormat {
-    /// One decimal. Zero stays `0.0`. Negative values use a minus sign, so the label can sit on the same tick as the needle.
+    /// Live EV readout. Whole stops are `-2`, `-1`, `0`, `1`, `2` — never `0.0` or `1.0`.
+    /// Fractional values keep one decimal so the 0.1-stop step stays visible while dragging.
     static func signedDecimal(_ value: Double) -> String {
+        readout(value)
+    }
+
+    static func readout(_ value: Double) -> String {
         let rounded = (value * 10).rounded() / 10
-        if abs(rounded) < 0.05 { return "0.0" }
+        if abs(rounded) < 0.05 { return "0" }
+        let nearest = rounded.rounded()
+        if abs(rounded - nearest) < 0.05 {
+            return tick(Int(nearest))
+        }
         let digits = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), abs(rounded))
         return rounded > 0 ? "+\(digits)" : "−\(digits)"
     }
 
+    /// Scale labels along the ruler: integers only, with a minus sign for negative EV.
     static func tick(_ value: Int) -> String {
         if value == 0 { return "0" }
-        return value > 0 ? "+\(value)" : "−\(abs(value))"
+        return value > 0 ? "\(value)" : "−\(abs(value))"
     }
 }
 

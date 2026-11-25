@@ -1,23 +1,22 @@
 import SwiftUI
 import UIKit
 
-/// Interface copy uses SF Pro (the iOS system sans). Parameters use bundled IBM Plex Mono.
-/// If the face did not register, parameters fall back to the system monospace and are not presented as Plex.
+/// All interface and parameter type uses the iOS system font (SF Pro / PingFang for Chinese).
+/// Point size is fixed so Dynamic Type does not shift the chrome.
 enum CameraFont {
     static func interface(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .default)
     }
 
-    /// Point size stays put when the system text size is not the default.
     static func fixed(_ size: CGFloat, weight: UIFont.Weight = .regular) -> Font {
         Font(UIFont.systemFont(ofSize: size, weight: weight))
     }
 
+    static func parameterSemibold(_ size: CGFloat) -> Font {
+        Font(UIFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold))
+    }
+
     static func parameter(_ size: CGFloat, medium: Bool = false) -> Font {
-        let name = medium ? "IBMPlexMono-Medium" : "IBMPlexMono-Regular"
-        if UIFont(name: name, size: size) != nil {
-            return .custom(name, size: size)
-        }
-        return .system(size: size, weight: medium ? .medium : .regular, design: .monospaced)
+        Font(UIFont.monospacedDigitSystemFont(ofSize: size, weight: medium ? .medium : .regular))
     }
 }

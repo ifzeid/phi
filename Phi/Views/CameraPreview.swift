@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import SwiftUI
 import UIKit
 
@@ -12,13 +13,49 @@ enum PreviewDrag {
 /// The coordinator has to be created and released on the main thread.
 final class PreviewAnchor {
     private weak var view: PreviewView?
+    private var zeroOn = false
+    /// Fired on the main thread when the preview rotation coordinator publishes a new angle.
+    var onRotationChanged: ((CGFloat) -> Void)?
 
     func attach(_ view: PreviewView) {
         self.view = view
+        view.onRotationChanged = { [weak self] angle in
+            self?.onRotationChanged?(angle)
+        }
+        view.setZeroPreview(zeroOn)
+    }
+
+    /// Mode 0 covers the system preview with the zero-process tone. The layer underneath still receives taps.
+    func setZeroPreview(_ on: Bool) {
+        zeroOn = on
+        let apply: () -> Void = { self.view?.setZeroPreview(on) }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
+    }
+
+    func presentZero(_ image: CIImage) {
+        DispatchQueue.main.async {
+            self.view?.presentZero(image)
+        }
     }
 
     func suspend() {
         view?.detachCoordinator()
+    }
+
+    /// Selected framing over the device's current framing. 1 except while a crop stop shoots RAW at zoom 1.
+    /// Crops by sizing a hosted preview layer inside a clipped view — never `UIView.transform`,
+    /// which relayouts the preview during RAW reconfigure and hung the 2× shutter (build 33).
+    func setFinderScale(_ scale: CGFloat) {
+        let apply = {
+            guard let view = self.view else { return }
+            view.transform = .identity
+            view.setFinderCropScale(scale)
+        }
+        if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
     }
 
     func resume(device: AVCaptureDevice?) {
@@ -87,13 +124,20 @@ struct CameraPreview: UIViewRepresentable {
     }
 }
 
-final class PreviewView: UIView {
+private final class SystemPreviewHost: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+}
+
+final class PreviewView: UIView {
+    private let previewHost = SystemPreviewHost()
+    var previewLayer: AVCaptureVideoPreviewLayer { previewHost.previewLayer }
     var onTap: ((CGPoint, CGPoint) -> Void)?
     var onDrag: ((PreviewDrag) -> Void)?
     var onLongPress: (() -> Void)?
+    var onRotationChanged: ((CGFloat) -> Void)?
+    private var finderCropScale: CGFloat = 1
+    private var lastPublishedRotation: CGFloat?
 
     /// Device the preview coordinator was built for. Distinct from a mid-update assignment.
     private(set) var coordinatorDevice: AVCaptureDevice?
@@ -108,6 +152,8 @@ final class PreviewView: UIView {
 
     private var coordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
+    private let zeroCanvas = FinderToneView()
+    private var zeroWanted = false
 
     func detachCoordinator() {
         isCoordinatorPaused = true
@@ -128,10 +174,39 @@ final class PreviewView: UIView {
         coordinatorDevice = nil
     }
 
+    func setZeroPreview(_ on: Bool) {
+        guard on != zeroWanted || on == false else { return }
+        zeroWanted = on
+        // Stay hidden until a real toned frame is on screen; the system preview shows meanwhile.
+        zeroCanvas.isHidden = true
+        if on {
+            zeroCanvas.resetFirstFrame()
+            zeroCanvas.onFirstFrame = { [weak self] in
+                guard let self, self.zeroWanted else { return }
+                self.zeroCanvas.isHidden = false
+            }
+        } else {
+            zeroCanvas.clear()
+        }
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    func presentZero(_ image: CIImage) {
+        guard zeroWanted else { return }
+        zeroCanvas.present(image)
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
+        clipsToBounds = true
+        previewHost.isUserInteractionEnabled = false
         previewLayer.videoGravity = .resizeAspectFill
         backgroundColor = .clear
+        zeroCanvas.isHidden = true
+        zeroCanvas.isUserInteractionEnabled = false
+        addSubview(previewHost)
+        addSubview(zeroCanvas)
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.maximumNumberOfTouches = 1
@@ -150,10 +225,37 @@ final class PreviewView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        previewLayer.frame = bounds
+        layoutPreviewCrop()
+        zeroCanvas.frame = bounds
         previewLayer.videoGravity = .resizeAspectFill
         guard let coordinator else { return }
         apply(coordinator.videoRotationAngleForHorizonLevelPreview)
+    }
+
+    func setFinderCropScale(_ scale: CGFloat) {
+        transform = .identity
+        let next = max(scale, 1)
+        if abs(next - finderCropScale) < 0.001 { return }
+        finderCropScale = next
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    private func layoutPreviewCrop() {
+        // Mode 0 already center-crops inside FinderTone; keep the hosted layer 1:1 then.
+        let scale = (zeroWanted || finderCropScale <= 1.01) ? 1 : finderCropScale
+        if scale <= 1.01 {
+            previewHost.frame = bounds
+        } else {
+            let width = bounds.width * scale
+            let height = bounds.height * scale
+            previewHost.frame = CGRect(
+                x: bounds.midX - width / 2,
+                y: bounds.midY - height / 2,
+                width: width,
+                height: height
+            )
+        }
     }
 
     private func installCoordinator() {
@@ -173,6 +275,11 @@ final class PreviewView: UIView {
         previewLayer.videoGravity = .resizeAspectFill
         guard let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(angle) else { return }
         connection.videoRotationAngle = angle
+        FinderTone.sharedRotation = angle
+        if lastPublishedRotation == nil || abs((lastPublishedRotation ?? 0) - angle) > 0.5 {
+            lastPublishedRotation = angle
+            onRotationChanged?(angle)
+        }
     }
 
     @objc private func handleHold(_ hold: UILongPressGestureRecognizer) {
@@ -182,7 +289,8 @@ final class PreviewView: UIView {
 
     @objc private func handleTap(_ tap: UITapGestureRecognizer) {
         let point = tap.location(in: self)
-        let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: point)
+        let layerPoint = previewLayer.convert(point, from: layer)
+        let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: layerPoint)
         onTap?(point, devicePoint)
     }
 

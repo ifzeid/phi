@@ -108,8 +108,13 @@ enum LensCrop {
     }
 
     static func cropped(_ image: UIImage, zoom: Double) -> UIImage {
-        guard zoom > 1.01, let cg = image.cgImage else { return image }
-        return UIImage(cgImage: LensCrop.cropped(cg, zoom: zoom), scale: image.scale, orientation: image.imageOrientation)
+        guard let cg = image.cgImage else { return image }
+        let upright = ImageFraming.uprightPixels(cg, orientation: CGImagePropertyOrientation(image.imageOrientation))
+        guard zoom > 1.01 else {
+            if image.imageOrientation == .up { return image }
+            return UIImage(cgImage: upright, scale: image.scale, orientation: .up)
+        }
+        return UIImage(cgImage: LensCrop.cropped(upright, zoom: zoom), scale: image.scale, orientation: .up)
     }
 }
 

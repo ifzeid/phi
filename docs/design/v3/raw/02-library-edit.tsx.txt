@@ -1,0 +1,573 @@
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/e95e47b6-d6a8-4abb-b6df-a911f33c5419";
+const imgEllipse = `${assetPathPrefix}/9d12f.svg`;
+const imgFrame = `${assetPathPrefix}/c0b00.svg`;
+const imgFrame1 = `${assetPathPrefix}/a360a.svg`;
+const imgFrame2 = `${assetPathPrefix}/0dbc8.svg`;
+const imgFrame3 = `${assetPathPrefix}/f1d26.svg`;
+const imgFrame4 = `${assetPathPrefix}/b4af3.svg`;
+const imgFrame5 = `${assetPathPrefix}/9bb2b.svg`;
+const imgPhotoCanvasFixedGeometry = `${assetPathPrefix}/8ca3c.png`;
+const imgPhotoCanvasFixedGeometry1 = `${assetPathPrefix}/cc15c.png`;
+const imgFrame6 = `${assetPathPrefix}/468aa.svg`;
+
+function PhiRulerEditEv({ className }: { className?: string }) {
+  return (
+    <div className={className || "h-[88px] relative w-[342px]"} data-node-id="124:703" data-name="PHI / Ruler / Edit EV">
+      <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] left-0 text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:704">
+        曝光
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[35px] left-[149px] not-italic text-[18px] text-[color:var(--camera-primary,#f4f3ee)] top-[5px] whitespace-nowrap" data-node-id="124:705">
+        +0.3
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[17px] left-[327px] not-italic text-[12px] text-[color:var(--camera-secondary,#a5aaa7)] top-[8px] whitespace-nowrap" data-node-id="124:706">
+        EV
+      </p>
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[20.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:707" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[30.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:708" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[40px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:709" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[50.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:710" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[60.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:711" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[70.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:712" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[80.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:713" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[90.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:714" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[100.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:715" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[110.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:716" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[120.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:717" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[130.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:718" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[140px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:719" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[150.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:720" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[160.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:721" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[170.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:722" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[180.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:723" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[190.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:724" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[200.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:725" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[210.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:726" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[220.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:727" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[230.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:728" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-primary,#f4f3ee)] h-[20px] left-[240px] rounded-[0.5px] top-[42px] w-[2px]" data-node-id="124:729" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[250.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:730" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[260.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:731" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[270.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:732" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[280.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:733" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[13px] left-[290.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:734" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[300.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:735" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[310.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:736" data-name="Rectangle" />
+      <div className="absolute bg-[var(--camera-secondary,#a5aaa7)] h-[6px] left-[320.5px] rounded-[0.5px] top-[42px] w-px" data-node-id="124:737" data-name="Rectangle" />
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[35px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:738">
+        −1
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[138px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:739">
+        0
+      </p>
+      <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[14px] left-[235px] not-italic text-[10px] text-[color:var(--camera-secondary,#a5aaa7)] top-[66px] whitespace-nowrap" data-node-id="124:740">
+        +1
+      </p>
+      <div className="absolute left-[139px] size-[4px] top-[34px]" data-node-id="124:741" data-name="Ellipse">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgEllipse} />
+      </div>
+      <div className="absolute bg-[var(--camera-accent,#f45135)] h-[28px] left-[169.5px] rounded-[1.5px] top-[36px] w-[3px]" data-node-id="124:742" data-name="Rectangle" />
+    </div>
+  );
+}
+
+function PhiV2IconReset({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:175" data-name="PHI v2 / Icon / reset">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:176" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconClose({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:136" data-name="PHI v2 / Icon / close">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:137" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame1} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconCompare({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:156" data-name="PHI v2 / Icon / compare">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:157" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame2} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconShare({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:148" data-name="PHI v2 / Icon / share">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:149" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconTrash({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:152" data-name="PHI v2 / Icon / trash">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:153" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+      </div>
+    </div>
+  );
+}
+
+function PhiV2IconMissing({ className }: { className?: string }) {
+  return (
+    <div className={className || "relative size-[44px]"} data-node-id="100:183" data-name="PHI v2 / Icon / missing">
+      <div className="absolute left-[10px] size-[24px] top-[10px]" data-node-id="100:184" data-name="Frame">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame5} />
+      </div>
+    </div>
+  );
+}
+
+export default function PhiV202LibraryEdit() {
+  return (
+    <div className="bg-[#151717] content-stretch flex flex-col gap-[32px] items-start px-[64px] py-[48px] relative size-full" data-node-id="100:105" data-name="PHI v2 / 02 Library & Edit">
+      <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] h-[115px] items-start overflow-clip relative shrink-0 w-[1872px] whitespace-nowrap" data-node-id="103:149" data-name="Introduction">
+        <p className="font-['IBM_Plex_Mono:Regular'] leading-[17px] not-italic relative shrink-0 text-[#f45135] text-[12px]" data-node-id="103:150">{`PHI / V2 — LIBRARY & EDIT`}</p>
+        <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[52px] relative shrink-0 text-[#f4f3ee] text-[36px]" data-node-id="103:151">
+          看照片，也只看照片。
+        </p>
+        <p className="font-['Noto_Sans_SC:Regular'] font-normal leading-[23px] relative shrink-0 text-[#a5aaa7] text-[16px]" data-node-id="103:152">
+          相册浏览与编辑共用照片画布；编辑工具不挤压、不重新居中照片。
+        </p>
+      </div>
+      <div className="content-stretch flex gap-[48px] h-[1120px] items-start overflow-clip relative shrink-0 w-[1872px]" data-node-id="103:153" data-name="Screens">
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:154" data-name="Column / 照片网格">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:155" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:156">
+              05 / LIBRARY
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:157">
+              照片网格
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:158" data-name="Gallery">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:159" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:160" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:164">
+              照片
+            </p>
+            <div className="absolute bg-[#090a0a] content-stretch flex h-[44px] items-center justify-center left-[307px] overflow-clip rounded-[22px] top-[49px] w-[64px]" data-node-id="103:165" data-name="Button / 选择">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:166">
+                选择
+              </p>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] left-[19px] text-[#f4f3ee] text-[22px] top-[116px] whitespace-nowrap" data-node-id="103:167">
+              2026年10月
+            </p>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] left-[19px] text-[#a5aaa7] text-[12px] top-[152px] whitespace-nowrap" data-node-id="103:168">
+              今天 · 12 张
+            </p>
+            <div className="absolute content-stretch flex flex-col gap-[3px] h-[530px] items-center left-[-1px] overflow-clip top-[185px] w-[390px]" data-node-id="103:169" data-name="Photo grid">
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:170" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:171" data-name="Photo 1">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:172" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:173" data-name="Photo 2">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:174" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:175" data-name="Photo 3">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:176" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:177" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:178" data-name="Photo 4">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:179" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:180" data-name="Photo 5">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:181" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:182" data-name="Photo 6">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:183" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:184" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:185" data-name="Photo 7">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:186" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:187" data-name="Photo 8">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:188" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:189" data-name="Photo 9">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:190" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:191" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:192" data-name="Photo 10">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:193" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:194" data-name="Photo 11">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:195" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:196" data-name="Photo 12">
+                  <PhiV2IconMissing className="absolute left-[42px] size-[44px] top-[28px]" />
+                  <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[15px] left-[39px] text-[#a5aaa7] text-[10px] top-[82px] whitespace-nowrap" data-node-id="103:201">
+                    文件不可用
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[52px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[753px] w-[390px]" data-node-id="103:202" data-name="Gallery actions">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] relative shrink-0 text-[#a5aaa7] text-[12px] whitespace-nowrap" data-node-id="103:203">
+                12 张照片
+              </p>
+              <div className="bg-[#090a0a] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[112px]" data-node-id="103:204" data-name="Button / 返回拍摄">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:205">
+                  返回拍摄
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:206" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:207">
+              点击照片进入浏览；“选择”进入多选，底部出现分享与删除。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:208">
+              文件不可用时保留占位，可移除失效记录；不以空白缩略图代替错误状态。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:209">
+              示意缩略图重复使用同一素材，实际按拍摄时间排序。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:210" data-name="Column / 批量选择">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:211" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:212">
+              06 / SELECTION
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:213">
+              批量选择
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:214" data-name="GallerySelection">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:215" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:216" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:220">
+              已选择 2 张
+            </p>
+            <div className="absolute bg-[#090a0a] content-stretch flex h-[44px] items-center justify-center left-[307px] overflow-clip rounded-[22px] top-[49px] w-[64px]" data-node-id="103:221" data-name="Button / 取消">
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[13px] whitespace-nowrap" data-node-id="103:222">
+                取消
+              </p>
+            </div>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] left-[19px] text-[#f4f3ee] text-[22px] top-[116px] whitespace-nowrap" data-node-id="103:223">
+              2026年10月
+            </p>
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[17px] left-[19px] text-[#a5aaa7] text-[12px] top-[152px] whitespace-nowrap" data-node-id="103:224">
+              今天 · 12 张
+            </p>
+            <div className="absolute content-stretch flex flex-col gap-[3px] h-[530px] items-center left-[-1px] overflow-clip top-[185px] w-[390px]" data-node-id="103:225" data-name="Photo grid">
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:226" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:227" data-name="Photo 1">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:228" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                  <div className="absolute bg-[#f45135] border border-[#f4f3ee] border-solid left-[96px] overflow-clip rounded-[12px] size-[24px] top-[95px]" data-node-id="103:229" data-name="Selection">
+                    <div className="absolute left-[-1px] size-[24.2px] top-[-1px]" data-node-id="103:230" data-name="PHI v2 / Icon / check">
+                      <div className="absolute left-[5.5px] size-[13.2px] top-[5.5px]" data-node-id="I103:230;100:141" data-name="Frame">
+                        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:233" data-name="Photo 2">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:234" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                  <div className="absolute bg-[#f45135] border border-[#f4f3ee] border-solid left-[96px] overflow-clip rounded-[12px] size-[24px] top-[95px]" data-node-id="103:235" data-name="Selection">
+                    <div className="absolute left-[-1px] size-[24.2px] top-[-1px]" data-node-id="103:236" data-name="PHI v2 / Icon / check">
+                      <div className="absolute left-[5.5px] size-[13.2px] top-[5.5px]" data-node-id="I103:236;100:141" data-name="Frame">
+                        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:239" data-name="Photo 3">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:240" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:241" data-name="Selection" />
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:242" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:243" data-name="Photo 4">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:244" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:245" data-name="Selection" />
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:246" data-name="Photo 5">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:247" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:248" data-name="Selection" />
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:249" data-name="Photo 6">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:250" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:251" data-name="Selection" />
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:252" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:253" data-name="Photo 7">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:254" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:255" data-name="Selection" />
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:256" data-name="Photo 8">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:257" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:258" data-name="Selection" />
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:259" data-name="Photo 9">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:260" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:261" data-name="Selection" />
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[3px] h-[127px] items-center overflow-clip relative shrink-0 w-[390px]" data-node-id="103:262" data-name="Grid row">
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:263" data-name="Photo 10">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:264" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:265" data-name="Selection" />
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:266" data-name="Photo 11">
+                  <div className="absolute h-[127px] left-0 top-0 w-[128px]" data-node-id="103:267" data-name="Photo canvas / fixed geometry">
+                    <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry1} />
+                  </div>
+                  <div className="absolute bg-[#090a0a] border border-[#f4f3ee] border-solid left-[96px] rounded-[12px] size-[24px] top-[95px]" data-node-id="103:268" data-name="Selection" />
+                </div>
+                <div className="bg-[#191b1b] h-[127px] overflow-clip relative shrink-0 w-[128px]" data-node-id="103:269" data-name="Photo 12">
+                  <PhiV2IconMissing className="absolute left-[42px] size-[44px] top-[28px]" />
+                  <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Regular'] font-normal leading-[15px] left-[39px] text-[#a5aaa7] text-[10px] top-[82px] whitespace-nowrap" data-node-id="103:274">
+                    文件不可用
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[52px] items-center justify-between left-[-1px] overflow-clip px-[20px] top-[753px] w-[390px]" data-node-id="103:275" data-name="Gallery actions">
+              <PhiV2IconTrash className="relative shrink-0 size-[44px]" />
+              <p className="[word-break:break-word] font-['Noto_Sans_SC:Regular'] font-normal leading-[19px] relative shrink-0 text-[#a5aaa7] text-[13px] whitespace-nowrap" data-node-id="103:279">
+                2 张照片
+              </p>
+              <PhiV2IconShare className="relative shrink-0 size-[44px]" />
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:283" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:284">
+              勾选使用红底白勾，并在标题和底部同时反馈数量。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:285">
+              删除前确认数量与删除范围；无选择时禁用批量操作。取消清空选择。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:286">
+              分享调用系统分享面板；取消分享返回当前选择状态。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:287" data-name="Column / 照片浏览">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:288" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:289">
+              07 / PHOTO
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:290">
+              照片浏览
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:291" data-name="PhotoViewer">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:292" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:293" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:297">
+              2026年10月28日
+            </p>
+            <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[19px] left-[319px] not-italic text-[#a5aaa7] text-[13px] top-[62px] whitespace-nowrap" data-node-id="103:298">
+              1/12
+            </p>
+            <div className="absolute h-[520px] left-[-1px] top-[95px] w-[390px]" data-node-id="103:299" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <p className="[word-break:break-word] absolute font-['IBM_Plex_Mono:Regular'] leading-[16px] left-[19px] not-italic text-[#a5aaa7] text-[11px] top-[635px] whitespace-nowrap" data-node-id="103:300">
+              RAW · 25 mm · ISO 100 · 1/250 s
+            </p>
+            <div className="absolute content-stretch flex h-[52px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[753px] w-[390px]" data-node-id="103:301" data-name="Photo actions">
+              <PhiV2IconTrash className="relative shrink-0 size-[44px]" />
+              <PhiV2IconShare className="relative shrink-0 size-[44px]" />
+              <div className="bg-[#191b1b] content-stretch flex h-[44px] items-center justify-center overflow-clip relative rounded-[22px] shrink-0 w-[88px]" data-node-id="103:308" data-name="Button / 编辑">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f45135] text-[13px] whitespace-nowrap" data-node-id="103:309">
+                  编辑
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:310" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:311">
+              左右滑动切换照片；照片画布固定在 y=96、390×520。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:312">
+              点“编辑”仅替换底部工具区，照片不缩小。双指查看细节时保留缩放位置。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:313">
+              长宽比不同时在同一固定画布内适配，不裁掉原图。
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[18px] h-[1120px] items-center overflow-clip relative shrink-0 w-[432px]" data-node-id="103:314" data-name="Column / 曝光调整">
+          <div className="[word-break:break-word] content-stretch flex flex-col gap-[3px] h-[60px] items-start overflow-clip relative shrink-0 w-[390px] whitespace-nowrap" data-node-id="103:315" data-name="Screen label">
+            <p className="font-['IBM_Plex_Mono:Regular'] leading-[16px] not-italic relative shrink-0 text-[#f45135] text-[11px]" data-node-id="103:316">
+              08 / EXPOSURE
+            </p>
+            <p className="font-['Noto_Sans_SC:Medium'] font-medium leading-[32px] relative shrink-0 text-[#f4f3ee] text-[22px]" data-node-id="103:317">
+              曝光调整
+            </p>
+          </div>
+          <div className="bg-[#090a0a] border border-[#343737] border-solid h-[844px] overflow-clip relative rounded-[34px] shrink-0 w-[390px]" data-node-id="103:318" data-name="EditorExposure">
+            <div className="absolute bg-black h-[36px] left-[131px] rounded-[18px] top-[9px] w-[126px]" data-node-id="103:319" data-name="System cutout / reserved" />
+            <div className="absolute bg-[#f4f3ee] h-[4px] left-[129px] rounded-[2px] top-[826px] w-[130px]" data-node-id="103:320" data-name="Rule" />
+            <PhiV2IconClose className="absolute left-[13px] size-[44px] top-[49px]" />
+            <p className="[word-break:break-word] absolute font-['Noto_Sans_SC:Medium'] font-medium leading-[20px] left-[77px] text-[#f4f3ee] text-[14px] top-[61px] whitespace-nowrap" data-node-id="103:324">
+              编辑照片
+            </p>
+            <div className="absolute h-[520px] left-[-1px] top-[95px] w-[390px]" data-node-id="103:325" data-name="Photo canvas / fixed geometry">
+              <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgPhotoCanvasFixedGeometry} />
+            </div>
+            <PhiV2IconCompare className="absolute left-[331px] size-[44px] top-[49px]" />
+            <div className="absolute content-stretch flex h-[48px] items-center justify-between left-[-1px] overflow-clip px-[24px] top-[615px] w-[390px]" data-node-id="103:329" data-name="Editor categories">
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative shrink-0 w-[104px]" data-node-id="103:330" data-name="Text tab / 曝光">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#f4f3ee] text-[14px] whitespace-nowrap" data-node-id="103:331">
+                  曝光
+                </p>
+                <div className="absolute bg-[#f45135] left-[51px] rounded-[2px] size-[4px] top-[40px]" data-node-id="133:752" data-name="Active category / underline" />
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative shrink-0 w-[104px]" data-node-id="103:332" data-name="Text tab / 风格">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="103:333">
+                  风格
+                </p>
+              </div>
+              <div className="content-stretch flex h-[44px] items-center justify-center overflow-clip relative shrink-0 w-[104px]" data-node-id="103:334" data-name="Text tab / 效果">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#a5aaa7] text-[14px] whitespace-nowrap" data-node-id="103:335">
+                  效果
+                </p>
+              </div>
+            </div>
+            <div className="absolute content-stretch flex h-[44px] items-center justify-between left-[-1px] overflow-clip px-[16px] top-[769px] w-[390px]" data-node-id="103:377" data-name="Editor actions">
+              <PhiV2IconClose className="relative shrink-0 size-[44px]" />
+              <PhiV2IconReset className="relative shrink-0 size-[44px]" />
+              <div className="bg-[#f4f3ee] content-stretch flex h-[40px] items-center justify-center overflow-clip relative rounded-[20px] shrink-0 w-[120px]" data-node-id="103:384" data-name="Button / 另存照片">
+                <p className="[word-break:break-word] font-['Noto_Sans_SC:Medium'] font-medium leading-[19px] relative shrink-0 text-[#090a0a] text-[13px] whitespace-nowrap" data-node-id="103:385">
+                  另存照片
+                </p>
+              </div>
+            </div>
+            <PhiRulerEditEv className="absolute h-[88px] left-[23px] top-[671px] w-[342px]" />
+          </div>
+          <div className="[word-break:break-word] content-stretch flex flex-col font-['Noto_Sans_SC:Regular'] font-normal gap-[8px] h-[160px] items-start leading-[19px] overflow-clip relative shrink-0 text-[#a5aaa7] text-[13px] w-[390px]" data-node-id="103:386" data-name="Interaction notes">
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:387">
+              单一水平刻度：固定红指针，数值连续更新。范围沿用已有能力 −5…+5 EV。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:388">
+              按住右上对比图标查看原片，松开恢复；画布不移动。
+            </p>
+            <p className="relative shrink-0 w-[390px]" data-node-id="103:389">
+              重置当前类别；“另存照片”保存副本，原片不覆盖。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## PHI v2 / Icon / close
+**Node ID:** 100:136
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / missing
+**Node ID:** 100:183
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / check
+**Node ID:** 100:140
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / trash
+**Node ID:** 100:152
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / share
+**Node ID:** 100:148
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / compare
+**Node ID:** 100:156
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI v2 / Icon / reset
+**Node ID:** 100:175
+
+24 pt monoline icon; 44 pt touch target; current state is also conveyed by a label or selection marker.
+
+## PHI / Ruler / Edit EV
+**Node ID:** 124:703
+
+固定中心红指针；长刻度、半档与短刻度分层。数值与标尺一致，零点另以圆点标识。
+
+The generated code contains image and SVG URL constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These URLs are temporary download sources and expire after 7 days. Download each asset into the project with curl -L, then replace its URL in the generated code with a reference to the downloaded asset. Never use the temporary URLs as runtime image sources.

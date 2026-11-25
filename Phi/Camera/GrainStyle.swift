@@ -82,7 +82,7 @@ struct StillRecipe: Codable, Equatable {
         originalWasRaw = try container.decodeIfPresent(Bool.self, forKey: .originalWasRaw) ?? false
         colorLook = try container.decodeIfPresent(ColorLook.self, forKey: .colorLook) ?? .none
         if let flag = try? container.decode(Bool.self, forKey: .halo) {
-            halo = flag ? .strong : .off
+            halo = flag ? .on : .off
         } else {
             halo = try container.decodeIfPresent(HaloLevel.self, forKey: .halo) ?? .off
         }

@@ -22,7 +22,7 @@ struct ExposureBadge: View {
         .foregroundStyle(CameraColor.textPrimary)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(Color.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(automatic ? "自动曝光" : "手动曝光 \(iso) \(shutter)")
     }
