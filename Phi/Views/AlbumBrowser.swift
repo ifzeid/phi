@@ -112,6 +112,7 @@ struct AlbumBrowser: View {
                     onRetryLocal: onRetryLocal,
                     onDelete: { requestDelete([$0]) }
                 )
+                .ignoresSafeArea()
             }
         }
     }
@@ -242,6 +243,8 @@ struct AlbumBrowser: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(accessibilityName(item.shot, index: item.offset))
+                                .accessibilityAddTraits(selecting && selected.contains(item.shot.id) ? .isSelected : [])
+                                .accessibilityValue(selecting ? (selected.contains(item.shot.id) ? "已选中" : "未选中") : "")
                             }
                         }
                     }
@@ -694,6 +697,39 @@ extension AlbumBrowser {
     }
 }
 
+/// Album multi-select badge. 24 pt, 8 pt from the bottom-right.
+/// User t198u: the circle fill is Color.black.opacity(0.4) in both states.
+/// Stroke and check stay fully opaque white — do not fade the whole badge.
+private enum AlbumSelectionMark {
+    static let size: CGFloat = 24
+    static let inset: CGFloat = 8
+    /// Inner frame of the 24 pt check glyph.
+    static let checkSize: CGFloat = 13.2
+    static let fill = Color.black.opacity(0.4)
+    static let stroke = Color.white
+}
+
+private struct AlbumSelectionMarkView: View {
+    var selected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(AlbumSelectionMark.fill)
+            Circle()
+                .strokeBorder(AlbumSelectionMark.stroke, lineWidth: 1)
+            if selected {
+                PhiGlyphImage(glyph: .check)
+                    .foregroundStyle(Color.white)
+                    .scaleEffect(AlbumSelectionMark.checkSize / 24)
+                    .frame(width: AlbumSelectionMark.checkSize, height: AlbumSelectionMark.checkSize)
+            }
+        }
+        .frame(width: AlbumSelectionMark.size, height: AlbumSelectionMark.size)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct AlbumThumb: View {
     var shot: AlbumShot
     var marked: Bool? = nil
@@ -723,20 +759,12 @@ private struct AlbumThumb: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 if let marked {
-                    ZStack {
-                        Circle()
-                            .fill(marked ? CameraColor.accent : CameraColor.background)
-                        Circle()
-                            .stroke(CameraColor.textPrimary, lineWidth: 1)
-                        if marked {
-                            PhiGlyphImage(glyph: .check)
-                                .foregroundStyle(CameraColor.surface)
-                                .scaleEffect(0.6)
-                        }
-                    }
-                    .frame(width: 24, height: 24)
-                    .padding(8)
-                    .accessibilityHidden(true)
+                    // 24 pt circle, 8 pt from the bottom-right of the 128×127 thumb; no photo border.
+                    // Fill is 40% black in every state; white stroke and check stay opaque.
+                    // Selected is marked by the white check, not a different fill.
+                    AlbumSelectionMarkView(selected: marked)
+                        .padding(AlbumSelectionMark.inset)
+                        .accessibilityHidden(true)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -806,25 +834,44 @@ private struct AlbumPager: View {
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
     var onDelete: (AlbumShot) -> Void
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        ZStack {
-            CameraColor.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                pagerHeader
-                if shots.indices.contains(index) {
+        GeometryReader { geo in
+            let width: CGFloat = geo.size.width
+            let height: CGFloat = geo.size.height
+            let island: CGFloat = geo.safeAreaInsets.top > 1 ? geo.safeAreaInsets.top : ScreenEdge.windowTop
+            let home: CGFloat = max(geo.safeAreaInsets.bottom > 1 ? geo.safeAreaInsets.bottom : ScreenEdge.windowBottom, 21)
+            let layout = CaptureChromeLayout.measure(width: width, height: height, island: island, home: home, scale: displayScale)
+            let shot = shots.indices.contains(index) ? shots[index] : nil
+            let content = layout.contentFrame(for: shot?.framed ?? .threeByFour)
+            ZStack(alignment: .topLeading) {
+                CameraColor.background
+                    .frame(width: width, height: height)
+
+                if let shot {
                     AlbumPage(
-                        shot: shots[index],
+                        shot: shot,
                         onEditLibrary: onEditLibrary,
                         onEditLocal: onEditLocal,
                         onRetryLocal: onRetryLocal,
-                        onDelete: onDelete
+                        onDelete: onDelete,
+                        content: content,
+                        width: width,
+                        height: height,
+                        home: home
                     )
-                    .id(shots[index].id)
+                    .id(shot.id)
                     .gesture(swipe)
                 }
+
+                pagerHeader
+                    .frame(width: width, height: CaptureChromeLayout.topButtonHeight)
+                    .position(x: width / 2, y: layout.topButtonCenterY)
             }
+            .frame(width: width, height: height)
         }
+        .ignoresSafeArea()
         .task(id: index) {
             await prefetchNeighbors()
         }
@@ -875,7 +922,6 @@ private struct AlbumPager: View {
             }
         }
         .padding(.leading, 8)
-        .frame(height: 52)
     }
 
     private static func stamp(_ date: Date?) -> String {
@@ -893,6 +939,11 @@ private struct AlbumPage: View {
     var onEditLocal: (String) -> Void
     var onRetryLocal: (String) -> Void
     var onDelete: (AlbumShot) -> Void
+    /// Shared with the finder / develop editor so the still sits in the same content rect.
+    var content: CGRect
+    var width: CGFloat
+    var height: CGFloat
+    var home: CGFloat
     @State private var image: UIImage?
     @State private var share = false
 
@@ -902,64 +953,69 @@ private struct AlbumPage: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
-                ZStack {
-                    CameraColor.surround
-                    if shot.missing {
-                        VStack(spacing: 8) {
-                            PhiGlyphImage(glyph: .missing)
-                                .foregroundStyle(CameraColor.textSecondary)
-                            Text("文件不可用")
-                                .font(CameraFont.interface(13))
-                                .foregroundStyle(CameraColor.textSecondary)
-                        }
-                    } else if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                    } else {
-                        ProgressView().tint(CameraColor.accent)
+        let footerHeight = max(height - content.maxY - home, 0)
+        ZStack(alignment: .topLeading) {
+            // No decorative CameraColor.surround / 8 pt pad. 16 pt is the photo corner, not a frame.
+            ZStack {
+                CameraColor.background
+                if shot.missing {
+                    VStack(spacing: 8) {
+                        PhiGlyphImage(glyph: .missing)
+                            .foregroundStyle(CameraColor.textSecondary)
+                        Text("文件不可用")
+                            .font(CameraFont.interface(13))
+                            .foregroundStyle(CameraColor.textSecondary)
                     }
+                } else if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    ProgressView().tint(CameraColor.accent)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .padding(8)
-                .background(CameraColor.surround, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
-            .padding(.horizontal, 8)
-            Text(metaLine)
-                .font(CameraFont.parameter(12))
-                .foregroundStyle(CameraColor.textSecondary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-            Spacer(minLength: 0)
-            HStack(spacing: 0) {
-                PhiGlyphButton(glyph: .trash, label: "删除") { onDelete(shot) }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(width: content.width, height: content.height)
+            .position(x: content.midX, y: content.midY)
+
+            VStack(spacing: 0) {
+                Text(metaLine)
+                    .font(CameraFont.parameter(12))
+                    .foregroundStyle(CameraColor.textSecondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
                 Spacer(minLength: 0)
-                if shot.needsRetry, case .local(let local) = shot.source {
-                    Button("重试") { onRetryLocal(local.id) }
-                        .font(CameraFont.interface(13, weight: .medium))
-                        .foregroundStyle(CameraColor.textSecondary)
-                        .padding(.trailing, 12)
+                HStack(spacing: 0) {
+                    PhiGlyphButton(glyph: .trash, label: "删除") { onDelete(shot) }
+                    Spacer(minLength: 0)
+                    if shot.needsRetry, case .local(let local) = shot.source {
+                        Button("重试") { onRetryLocal(local.id) }
+                            .font(CameraFont.interface(13, weight: .medium))
+                            .foregroundStyle(CameraColor.textSecondary)
+                            .padding(.trailing, 12)
+                    }
+                    Button(action: edit) {
+                        Text("编辑")
+                            .font(CameraFont.fixed(14, weight: .medium))
+                            .foregroundStyle(CameraColor.textPrimary)
+                            .frame(width: 148, height: 48)
+                            .background(CameraColor.surface, in: Capsule())
+                            .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("编辑")
+                    Spacer(minLength: 0)
+                    PhiGlyphButton(glyph: .share, label: "分享", enabled: image != nil) { share = true }
                 }
-                Button(action: edit) {
-                    Text("编辑")
-                        .font(CameraFont.fixed(14, weight: .medium))
-                        .foregroundStyle(CameraColor.textPrimary)
-                        .frame(width: 148, height: 48)
-                        .background(CameraColor.surface, in: Capsule())
-                        .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("编辑")
-                Spacer(minLength: 0)
-                PhiGlyphButton(glyph: .share, label: "分享", enabled: image != nil) { share = true }
+                .padding(.horizontal, 20)
+                .frame(height: 64)
             }
-            .padding(.horizontal, 20)
-            .frame(height: 64)
+            .frame(width: width, height: footerHeight, alignment: .top)
+            .position(x: width / 2, y: content.maxY + footerHeight / 2)
         }
+        .frame(width: width, height: height)
         .task { await load() }
         .sheet(isPresented: $share) {
             if let image {
@@ -1010,6 +1066,7 @@ private struct AlbumPage: View {
         PerfTrace.endSwipe()
     }
 }
+
 
 /// Screen JPEGs for the page on screen and its two neighbors.
 enum ViewerCache {

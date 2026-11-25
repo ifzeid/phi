@@ -28,7 +28,7 @@ import UniformTypeIdentifiers
 /// `-PHIUITestEditorFraming` checks the editor DNG develop keeps the album crop (zoom, aspect)
 /// `-PHIUITestEditorFinderEV` checks a finder-bias develop at EV 0 against the same file edited by that bias
 /// `-PHIUITestSettings` opens the settings card and each sub-card in turn (`SETTINGS CARD <name>`), `-PHIUITestSettingsDwell <s>` per page
-/// `-PHIUITestSettingsCard main|process|aspect|flash|output|exposure|style` opens one page and stays
+/// `-PHIUITestSettingsCard main|process|aspect|flash|output|exposure|style|grid` opens one page and stays
 /// `-PHIUITestPerf` logs launch, album, swipe, edit, save, and main-thread hangs
 enum PHIUITest {
     enum Screen: String {
@@ -99,6 +99,11 @@ enum PHIUITest {
 
     static var savedCopy: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestSaved")
+    }
+
+    /// DEBUG only: hold the editor in the processing notice so screenshots can capture it.
+    static var saving: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestSaving")
     }
 
     static var grain: GrainStyle? {

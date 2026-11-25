@@ -11,7 +11,9 @@ private enum EditorTab: String, CaseIterable, Identifiable {
 }
 
 struct ProcessStillView: View {
+    @Environment(\.displayScale) private var displayScale
     @ObservedObject var session: ProcessSession
+    @ObservedObject private var finderLaunch = FinderLaunchRouter.shared
     var canRetryOriginal: Bool
     var onExport: () -> Void
     var onRetryOriginal: () -> Void
@@ -30,46 +32,62 @@ struct ProcessStillView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let bottomPad: CGFloat = 12
-            let controls: CGFloat = 48 + toolHeight + 52
-            let available: CGFloat = geo.size.height - 52 - controls - bottomPad
-            let ideal: CGFloat = geo.size.width / PhotoAspect.finderWidthOverHeight
-            let photoHeight: CGFloat = min(ideal, max(160, available))
-            VStack(spacing: 0) {
-                titleBar
+            let width: CGFloat = geo.size.width
+            let height: CGFloat = geo.size.height
+            let island: CGFloat = geo.safeAreaInsets.top > 1 ? geo.safeAreaInsets.top : ScreenEdge.windowTop
+            let home: CGFloat = max(geo.safeAreaInsets.bottom > 1 ? geo.safeAreaInsets.bottom : ScreenEdge.windowBottom, 21)
+            // Same measure as the finder so the image content rect and top-button baseline match.
+            let layout = CaptureChromeLayout.measure(width: width, height: height, island: island, home: home, scale: displayScale)
+            let content = layout.contentFrame(for: session.framedAspect)
+            let tools = editorToolHeights(below: layout.photoFrame.maxY, height: height, home: home)
+            ZStack(alignment: .topLeading) {
+                CameraColor.background
+                    .frame(width: width, height: height)
+
                 editorImage
-                    .frame(height: photoHeight, alignment: .top)
-                    .clipped()
-                Spacer(minLength: 0)
-                tabBar
-                    .frame(height: 48)
-                tool
-                    .frame(height: toolHeight)
-                actions
-                    .frame(height: 52)
+                    .frame(width: content.width, height: content.height)
+                    .position(x: content.midX, y: content.midY)
+
+                editorCloseButton
+                    .position(x: 12 + 24, y: layout.topButtonCenterY)
+
+                Text(savedCopy ? "编辑后的照片" : "编辑照片")
+                    .font(CameraFont.interface(14, weight: .medium))
+                    .foregroundStyle(CameraColor.textPrimary)
+                    .position(x: layout.aspectCenter.x, y: layout.topButtonCenterY)
+                    .allowsHitTesting(false)
+
+                editorCompareButton
+                    .position(x: layout.settingsCenter.x, y: layout.topButtonCenterY)
+
+                VStack(spacing: 0) {
+                    tabBar
+                        .frame(height: tools.tab)
+                    tool
+                        .frame(height: tools.tool)
+                    actions
+                        .frame(height: tools.actions)
+                }
+                .padding(.bottom, 12)
+                .frame(width: width, height: tools.tab + tools.tool + tools.actions + 12, alignment: .bottom)
+                .position(x: width / 2, y: height - home - (tools.tab + tools.tool + tools.actions + 12) / 2)
             }
-            .padding(.bottom, bottomPad)
-            .frame(width: geo.size.width, height: geo.size.height)
-            .background(CameraColor.background)
-            .overlay {
-                if session.isExporting {
-                    VStack(spacing: 10) {
-                        ProgressView(value: session.exportProgress)
-                            .tint(CameraColor.accent)
-                            .frame(width: 180)
-                        Text("正在保存")
-                            .font(CameraFont.interface(13, weight: .medium))
-                            .foregroundStyle(CameraColor.textPrimary)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 16))
+            .frame(width: width, height: height)
+            .overlay(alignment: .top) {
+                // Only the designed success toast (Figma 358:2297). Processing is the button label
+                // “保存中…”. Failure stays on this page with 重试 — no toast node exists in the file.
+                if editorPrompt == .success {
+                    AppNoticeBanner(kind: .success, scale: displayScale)
+                        .padding(.horizontal, 16)
+                        .padding(.top, island + 6)
+                        .allowsHitTesting(false)
                 }
             }
+            .ignoresSafeArea()
         }
+        .ignoresSafeArea()
         .preferredColorScheme(.light)
         .modifier(HiddenSystemChrome())
-        .modifier(UnderIsland())
         .overlay {
             if confirmDiscard {
                 CeramicDiscardCard(
@@ -84,6 +102,10 @@ struct ProcessStillView: View {
         }
         .onAppear {
             captureBaseline()
+        }
+        .onChange(of: finderLaunch.generation) { _, _ in
+            // Dirty → existing discard card (cancel stays here). Clean → onClose back to the finder.
+            requestClose()
         }
         .onChange(of: session.savedEdits) { _, _ in
             rebaselineAfterSave()
@@ -118,30 +140,58 @@ struct ProcessStillView: View {
         #endif
     }
 
-    private var titleBar: some View {
-        HStack(spacing: 20) {
-            NativeCloseButton(label: "离开编辑") { requestClose() }
-            Text(savedCopy ? "编辑后的照片" : "编辑照片")
-                .font(CameraFont.interface(14, weight: .medium))
+    /// Compress editor tools to fit under the shared photo slot; never move or stretch the photo.
+    private func editorToolHeights(below photoMaxY: CGFloat, height: CGFloat, home: CGFloat) -> (tab: CGFloat, tool: CGFloat, actions: CGFloat) {
+        let budget = height - home - 12 - photoMaxY
+        var tab: CGFloat = 48
+        var tool: CGFloat = toolHeight
+        var actions: CGFloat = 48
+        var deficit = max(0, (tab + tool + actions) - max(budget, 0))
+        let toolCut = min(deficit, max(0, tool - 56))
+        tool -= toolCut
+        deficit -= toolCut
+        let tabCut = min(deficit, max(0, tab - 36))
+        tab -= tabCut
+        deficit -= tabCut
+        let actCut = min(deficit, max(0, actions - 44))
+        actions -= actCut
+        return (tab, tool, actions)
+    }
+
+    /// 48×36 ceramic capsule, same row geometry as the finder RAW / settings pills.
+    private var editorCloseButton: some View {
+        Button(action: requestClose) {
+            PhiGlyphImage(glyph: .close)
                 .foregroundStyle(CameraColor.textPrimary)
-            Spacer()
-            PhiGlyphButton(glyph: .compare, label: "按住对比原片") {}
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in holdingOriginal = true }
-                        .onEnded { _ in holdingOriginal = false }
-                )
+                .frame(width: 48, height: CaptureChromeLayout.topButtonHeight)
+                .background(CameraColor.surface, in: Capsule())
+                .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
+                .contentShape(Capsule())
         }
-        .padding(.leading, 13)
-        .padding(.trailing, 15)
-        .frame(height: 52)
+        .buttonStyle(.plain)
+        .accessibilityLabel("离开编辑")
+    }
+
+    private var editorCompareButton: some View {
+        PhiGlyphImage(glyph: .compare)
+            .foregroundStyle(CameraColor.textPrimary)
+            .frame(width: 48, height: CaptureChromeLayout.topButtonHeight)
+            .background(CameraColor.surface, in: Capsule())
+            .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
+            .contentShape(Capsule())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in holdingOriginal = true }
+                    .onEnded { _ in holdingOriginal = false }
+            )
+            .accessibilityLabel("按住对比原片")
     }
 
     @ViewBuilder
     private var editorImage: some View {
-        PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
+        PhotoCanvas(widthOverHeight: session.framedAspect.widthOverHeight) {
             ZStack {
-                CameraColor.surround
+                CameraColor.background
                 EditorMetalPreview(frame: session.liveFrame, onPresented: { ticket in
                     session.notePresented(ticket: ticket)
                 }, onFirstPixels: { image in
@@ -154,27 +204,9 @@ struct ProcessStillView: View {
                         .resizable()
                         .scaledToFit()
                 }
-                if savedCopy {
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("已保存副本 · 原片保留")
-                                .font(CameraFont.fixed(12, weight: .medium))
-                        }
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.72), in: Capsule())
-                        .padding(.bottom, 16)
-                    }
-                    .allowsHitTesting(false)
-                }
             }
+            // 16 pt is the photo's own corner in Figma, not a decorative surround.
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .padding(8)
-            .background(CameraColor.surround, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-PHIShowDevelopInfo") {
@@ -344,20 +376,26 @@ struct ProcessStillView: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
-    private var toast: some View {
-        Group {
-            if savedCopy {
-                Text("已保存副本 · 原片保留")
-                    .font(CameraFont.interface(12))
-                    .foregroundStyle(CameraColor.textPrimary)
-                    .frame(width: 260, height: 44)
-            }
+    /// Editor bottom icons (Figma 336:2050 / 336:2051): 44 pt white circle, no stroke,
+    /// shadow #2E3B33 9% / radius 6 / y 2. Not the settings tile stroke treatment.
+    private func editorPlateIcon(glyph: PhiGlyph, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            PhiGlyphImage(glyph: glyph)
+                .foregroundStyle(CameraColor.textPrimary)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(CameraColor.surface))
+                .shadow(color: Color(red: 46.0 / 255, green: 59.0 / 255, blue: 51.0 / 255).opacity(0.09), radius: 6, y: 2)
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
+    /// Figma Editor actions 336:2049: close and reset sit on white 44 pt plates;
+    /// center “另存照片” is a 140×48 ink capsule (336:2052), not 148 and not a stroke tile.
     private var actions: some View {
         HStack(spacing: 0) {
-            PhiGlyphButton(glyph: .close, label: "离开编辑") { requestClose() }
+            editorPlateIcon(glyph: .close, label: "离开编辑", action: requestClose)
             Spacer(minLength: 0)
             if showsRetry {
                 Button(action: onRetryOriginal) {
@@ -368,22 +406,22 @@ struct ProcessStillView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 20)
+                .padding(.trailing, 16)
             }
             Button(action: onExport) {
-                Text(session.isExporting ? "保存中…" : "另存照片")
+                Text(isProcessing ? "保存中…" : "另存照片")
                     .font(CameraFont.fixed(14, weight: .medium))
                     .foregroundStyle(CameraColor.surface)
                     .lineLimit(1)
             }
-            .buttonStyle(PillPlateStyle(fill: CameraColor.textPrimary, width: 148, height: 48))
-            .disabled(session.isExporting || session.preview == nil)
+            .buttonStyle(PillPlateStyle(fill: CameraColor.textPrimary, width: 140, height: 48))
+            .shadow(color: Color(red: 46.0 / 255, green: 59.0 / 255, blue: 51.0 / 255).opacity(0.14), radius: 12, y: 4)
+            .disabled(isProcessing || session.preview == nil)
             Spacer(minLength: 0)
-            PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
+            editorPlateIcon(glyph: .reset, label: "还原调整", action: resetAdjustments)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 16)
-        .frame(height: 52)
+        .padding(.horizontal, 20)
+        .frame(height: 48)
     }
 
     private var showsRetry: Bool {
@@ -395,14 +433,32 @@ struct ProcessStillView: View {
 
     /// '重试' appears only after this edit's photo-library save failed.
     private var saveFailed: Bool {
-        savedCopy == false && session.photoLibrarySave == .failed
+        savedCopy == false && displayedSave == .failed
+    }
+
+    private var isProcessing: Bool {
+        #if DEBUG
+        if PHIUITest.saving { return true }
+        #endif
+        return session.isExporting
+    }
+
+    /// Processing wins over a previous success or failure so the two notices never overlap.
+    private var editorPrompt: EditorPrompt? {
+        EditorPrompt.current(isExporting: isProcessing, save: displayedSave)
+    }
+
+    private var displayedSave: PhotoLibrarySaveState {
+        #if DEBUG
+        if PHIUITest.savedCopy { return .savedCopy }
+        if ProcessInfo.processInfo.arguments.contains("-PHIUITestSaveFailed") { return .failed }
+        #endif
+        return session.photoLibrarySave
     }
 
     private var savedCopy: Bool {
-        #if DEBUG
-        if PHIUITest.savedCopy { return true }
-        #endif
-        return session.photoLibrarySave == .savedCopy
+        if isProcessing { return false }
+        return displayedSave == .savedCopy
     }
 
     private func editTickLabel(_ tick: Double) -> String {
@@ -531,6 +587,7 @@ struct HaloToggle: View {
 
 /// Ceramic White discard card (Figma 336:2169). Same dirty-check behavior as the previous system alert.
 private struct CeramicDiscardCard: View {
+    @Environment(\.displayScale) private var displayScale
     var onDiscard: () -> Void
     var onStay: () -> Void
 
@@ -571,7 +628,7 @@ private struct CeramicDiscardCard: View {
             }
             .padding(20)
             .frame(width: 300)
-            .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .flowGlass(cornerRadius: FlowGlassToken.discardCorner, scale: displayScale)
             .shadow(color: CameraColor.dropShadow, radius: 20, y: 10)
         }
         .accessibilityAddTraits(.isModal)

@@ -51,8 +51,10 @@ private enum MeterScale {
 }
 
 struct QuietFinderView: View {
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var capture = CaptureService()
+    @ObservedObject private var finderLaunch = FinderLaunchRouter.shared
     @AppStorage("phi.showGrid") private var showGrid = false
     @State private var showRawMenu = {
         #if DEBUG
@@ -114,6 +116,7 @@ struct QuietFinderView: View {
         }
         .modifier(HiddenSystemChrome())
         .onAppear {
+            consumeFinderLaunch()
             PerfTrace.noteFirstFrame()
             #if DEBUG
             if PHIUITest.perf, PHIUITest.openEditorBasename == nil {
@@ -148,12 +151,18 @@ struct QuietFinderView: View {
             camera.refreshAuthorization()
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                consumeFinderLaunch()
+            }
             guard camera.gate == .authorized else { return }
             if phase == .active {
                 camera.start()
             } else {
                 camera.stop()
             }
+        }
+        .onChange(of: finderLaunch.generation) { _, _ in
+            consumeFinderLaunch()
         }
         .onChange(of: camera.autoExposure) { _, isAuto in
             #if DEBUG
@@ -209,9 +218,10 @@ struct QuietFinderView: View {
             let height: CGFloat = geo.size.height
             let island: CGFloat = geo.safeAreaInsets.top > 1 ? geo.safeAreaInsets.top : ScreenEdge.windowTop
             let home: CGFloat = max(geo.safeAreaInsets.bottom > 1 ? geo.safeAreaInsets.bottom : ScreenEdge.windowBottom, 21)
-            let layout = CaptureChromeLayout.measure(width: width, height: height, island: island, home: home)
+            let layout = CaptureChromeLayout.measure(width: width, height: height, island: island, home: home, scale: displayScale)
+            let surroundCorner = 16 + layout.finderBorderWidth
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: surroundCorner, style: .continuous)
                     .fill(CameraColor.surround)
                     .frame(width: layout.surroundFrame.width, height: layout.surroundFrame.height)
                     .position(x: layout.surroundFrame.midX, y: layout.surroundFrame.midY)
@@ -330,6 +340,30 @@ struct QuietFinderView: View {
         settingsPage = nil
     }
 
+    /// Apply a pending “打开取景” request. Does not fire the shutter or reset the camera session.
+    private func consumeFinderLaunch() {
+        guard finderLaunch.takePending() else { return }
+        let surface = FinderLaunchPlanner.Surface(
+            editorOpen: capture.processSession != nil,
+            editorDirty: false,
+            albumOpen: showAlbum,
+            settingsOpen: settingsPage != nil,
+            rawMenuOpen: showRawMenu
+        )
+        for action in FinderLaunchPlanner.actions(for: surface) {
+            switch action {
+            case .alreadyOnFinder, .confirmDiscard, .dismissEditor:
+                break
+            case .closeOverlays(let settings, let rawMenu):
+                if settings { settingsPage = nil }
+                if rawMenu { showRawMenu = false }
+            case .dismissAlbum:
+                pendingDevelop = nil
+                showAlbum = false
+            }
+        }
+    }
+
     private var styleBadge: some View {
         HStack(spacing: 6) {
             Circle()
@@ -434,7 +468,7 @@ struct QuietFinderView: View {
     private func runSettingsTour() async {
         try? await Task.sleep(for: .seconds(2))
         showRawMenu = false
-        let pages: [SettingsPage] = [.main, .process, .aspect, .flash, .output, .exposure, .style]
+        let pages: [SettingsPage] = [.main, .process, .aspect, .flash, .output, .exposure, .style, .grid]
         for page in pages {
             settingsPage = page
             PHIUITest.logSettings("SETTINGS CARD \(page.rawValue) \(page.title)")

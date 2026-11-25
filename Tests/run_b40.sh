@@ -14,6 +14,11 @@ swiftc -parse-as-library -o "$OUT/photo_save_state" \
   Tests/photo_save_state.swift Phi/Camera/PhotoLibrarySaveState.swift
 "$OUT/photo_save_state"
 
+echo "COMPILE finder_launch"
+swiftc -parse-as-library -o "$OUT/finder_launch" \
+  Tests/finder_launch.swift Phi/Intents/FinderLaunchPlanning.swift
+"$OUT/finder_launch"
+
 echo "COMPILE chrome_layout"
 swiftc -parse-as-library -o "$OUT/chrome_layout" \
   Tests/chrome_layout.swift Tests/SettingsPageStub.swift \

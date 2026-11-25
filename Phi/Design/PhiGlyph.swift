@@ -55,7 +55,7 @@ struct PhiGlyphImage: View {
     }
 }
 
-/// Ivory disc in a #707675 ring. Red is not used on the shutter.
+/// Ceramic White capsule shutter (Figma 336:2277), 148×64. Red is not used on the shutter.
 struct WhiteShutterButton: View {
     var isReady: Bool
     var isCapturing: Bool
@@ -64,16 +64,20 @@ struct WhiteShutterButton: View {
 
     private var canTap: Bool { isReady && isCapturing == false }
 
+    /// Optical center ring 341:2448: 8 pt diameter, 1.2 pt inside stroke, `--secondary` #777b76.
+    /// Scales with the capsule so a packed small-screen shutter stays proportional.
+    private var ringDiameter: CGFloat { 8 * (size.height / 64) }
+    private var ringLine: CGFloat { 1.2 * (size.height / 64) }
+
     var body: some View {
         Button(action: action) {
-            // Ceramic White capsule shutter, 148×64, no vermilion core (Figma 336:2277).
             ZStack {
                 Capsule()
                     .fill(CameraColor.surface)
                     .shadow(color: CameraColor.dropShadow, radius: 8, y: 3)
                 Circle()
-                    .stroke(CameraColor.textPrimary, lineWidth: 1.4)
-                    .frame(width: 18, height: 18)
+                    .strokeBorder(CameraColor.textSecondary, lineWidth: ringLine)
+                    .frame(width: ringDiameter, height: ringDiameter)
             }
             .frame(width: size.width, height: size.height)
             .contentShape(Capsule())

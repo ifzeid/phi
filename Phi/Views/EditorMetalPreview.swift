@@ -4,9 +4,11 @@ import MetalKit
 import SwiftUI
 
 /// Draws the editor proxy with the shared Metal `CIContext`. Preview updates do not allocate a `CGImage`.
+/// Letterbox in the editor canvas must match the ceramic page, not the capture surround.
+/// The gray-green surround (211/215/207) reads as a decorative frame around the photo.
 private enum EditorSurround {
-    static let clear = MTLClearColor(red: 211.0 / 255, green: 215.0 / 255, blue: 207.0 / 255, alpha: 1)
-    static let ci = CIColor(red: 211.0 / 255, green: 215.0 / 255, blue: 207.0 / 255)
+    static let clear = MTLClearColor(red: 246.0 / 255, green: 245.0 / 255, blue: 241.0 / 255, alpha: 1)
+    static let ci = CIColor(red: 246.0 / 255, green: 245.0 / 255, blue: 241.0 / 255)
 }
 
 struct EditorMetalPreview: UIViewRepresentable {

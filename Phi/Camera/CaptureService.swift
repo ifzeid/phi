@@ -333,6 +333,7 @@ final class CaptureService: NSObject, ObservableObject, AVCapturePhotoCaptureDel
         let job = await MainActor.run { () -> ExportJob? in
             if session.isExporting { return nil }
             session.isExporting = true
+            session.photoLibrarySave = .idle
             return ExportJob(
                 base: session.base,
                 ev: session.exposureEV,

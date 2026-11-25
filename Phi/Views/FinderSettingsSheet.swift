@@ -10,6 +10,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case output
     case exposure
     case style
+    case grid
 
     var id: String { rawValue }
 
@@ -22,18 +23,19 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .output: "成片"
         case .exposure: "曝光"
         case .style: "风格"
+        case .grid: "网格"
         }
     }
 
-    /// Card height in points, measured from Figma.
-    var cardHeight: CGFloat { self == .main ? 360 : 236 }
+    /// Main card grows to a third tile row so 网格 enters a sub-page like the others.
+    /// Sub-pages keep the Figma 236 pt height.
+    var cardHeight: CGFloat { self == .main ? 392 : 236 }
 }
 
 enum SettingsCardToken {
     static let sideInset: CGFloat = 12
     static let radius: CGFloat = 36
     static let padding: CGFloat = 20
-    static let tint = Color.white.opacity(0.88)
     static let selectedPill = Color.white
     static let faint = CameraColor.textSecondary
 }
@@ -54,8 +56,8 @@ extension PhotoAspect {
 }
 
 extension ProcessMode {
-    /// `0 · RAW`, `Φ · ProRAW`, `1 · 标准`.
-    var menuTitle: String { "\(mark) · \(finderWord)" }
+    /// Same wording as the homepage RAW pill (Figma 336:1885): RAW / ProRAW / 标准.
+    var menuTitle: String { finderWord }
 }
 
 extension AVCaptureDevice.FlashMode {
@@ -142,7 +144,7 @@ struct FinderSettingsCard<Exposure: View>: View {
             .frame(height: 28)
             VStack(spacing: 16) {
                 HStack(spacing: 16) {
-                    tile(.process, caption: "处理方式") { tileText(mode.mark, size: 22) }
+                    tile(.process, caption: "处理方式") { tileText(mode.finderWord, size: 16) }
                     tile(.aspect, caption: "画幅") { tileText(aspect.chromeTitle, size: 22) }
                     tile(.flash, caption: "闪光灯") {
                         PhiGlyphImage(glyph: flashGlyph)
@@ -150,28 +152,20 @@ struct FinderSettingsCard<Exposure: View>: View {
                     }
                 }
                 HStack(spacing: 16) {
-                    tile(.output, caption: "格式") { tileText(codec.title, size: 14) }
+                    tile(.output, caption: "成片") { tileText(codec.title, size: 14) }
                     tile(.exposure, caption: "曝光") { tileText("±", size: 22) }
                     tile(.style, caption: "风格") { tileText(look.title, size: 16) }
                 }
+                HStack(spacing: 16) {
+                    tile(.grid, caption: "网格") {
+                        PhiGlyphImage(glyph: showGrid ? .gridOn : .gridOff)
+                            .foregroundStyle(CameraColor.textPrimary)
+                    }
+                    Color.clear.frame(width: 98, height: 92)
+                    Color.clear.frame(width: 98, height: 92)
+                }
             }
-            gridRow
         }
-    }
-
-    private var gridRow: some View {
-        HStack(spacing: 12) {
-            Text("网格")
-                .font(CameraFont.fixed(14, weight: .regular))
-                .foregroundStyle(CameraColor.textPrimary)
-            Spacer(minLength: 8)
-            optionRow(["关", "开"], selected: showGrid ? 1 : 0, size: 14) { index in
-                showGrid = index == 1
-            }
-            .frame(width: 152)
-        }
-        .frame(height: 44)
-        .accessibilityLabel(showGrid ? "网格 开" : "网格 关")
     }
 
     private func tileText(_ text: String, size: CGFloat) -> some View {
@@ -189,8 +183,7 @@ struct FinderSettingsCard<Exposure: View>: View {
             VStack(spacing: 7) {
                 ZStack {
                     Circle()
-                        .fill(CameraColor.surface)
-                        .overlay { Circle().stroke(CameraColor.border, lineWidth: 1) }
+                        .strokeBorder(CameraColor.border, lineWidth: 1)
                     face()
                 }
                 .frame(width: 60, height: 60)
@@ -277,6 +270,12 @@ struct FinderSettingsCard<Exposure: View>: View {
             } else {
                 footnote("标准模式只保存成片。")
             }
+        case .grid:
+            valueBlock(showGrid ? "开" : "关")
+            optionRow(["关", "开"], selected: showGrid ? 1 : 0, size: 14) { index in
+                showGrid = index == 1
+            }
+            footnote("网格显示在取景的裁切范围内。")
         case .exposure:
             exposureRuler()
                 .frame(height: 70)
@@ -360,21 +359,13 @@ struct FinderSettingsCard<Exposure: View>: View {
     }
 }
 
-/// iOS 26+ Liquid Glass, ceramic-white tint. Older systems get a light material plate.
+/// Flowing glass shared with in-app notices. Reduce Transparency is handled inside FlowGlass.
 private struct SettingsGlass: ViewModifier {
+    @Environment(\.displayScale) private var displayScale
+
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: SettingsCardToken.radius, style: .continuous)
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.tint(SettingsCardToken.tint), in: shape)
-                .shadow(color: CameraColor.dropShadow, radius: 16, y: 8)
-                .environment(\.colorScheme, .light)
-        } else {
-            content
-                .background(.ultraThinMaterial, in: shape)
-                .background(SettingsCardToken.tint, in: shape)
-                .shadow(color: CameraColor.dropShadow, radius: 16, y: 8)
-                .environment(\.colorScheme, .light)
-        }
+        content
+            .flowGlass(cornerRadius: SettingsCardToken.radius, scale: displayScale)
+            .shadow(color: CameraColor.dropShadow, radius: 16, y: 8)
     }
 }

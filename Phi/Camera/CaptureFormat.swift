@@ -30,14 +30,10 @@ enum ProcessMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Settings pill. The digit stays so the help card can explain 0 / Φ / 1.
-    var settingsTitle: String {
-        switch self {
-        case .bayer: "0 RAW"
-        case .proRaw: "Φ ProRAW"
-        case .standard: "1 标准"
-        }
-    }
+    /// User-facing name shared by the homepage RAW pill, RAW menu, and 处理方式 tile.
+    /// Figma note 336:1885 removes the 0 / Φ / 1 technical marks from the UI.
+    /// `mark` stays on this type for logs only.
+    var settingsTitle: String { finderWord }
 
     /// Name under the setting. Do not call the Bayer path by a marketing name.
     var fullName: String {
