@@ -25,6 +25,7 @@ struct AlbumBrowser: View {
     @State private var pendingDelete: [AlbumShot] = []
     @State private var deleteError: String?
     @State private var shareURLs: [URL] = []
+    @State private var isDeleting = false
 
     private enum Phase {
         case checking
@@ -69,7 +70,12 @@ struct AlbumBrowser: View {
                 }
             }
         }
-        .task(id: revision) { await reload() }
+        .task(id: revision) {
+            await reload()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-PHIUITestAlbumDelete") { await runDeleteCheck() }
+            #endif
+        }
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())
         .safeAreaInset(edge: .bottom) {
@@ -126,7 +132,9 @@ struct AlbumBrowser: View {
                     Text(selecting ? "取消" : "选择")
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textPrimary)
-                        .frame(width: 64, height: 44)
+                        .frame(width: 64, height: 36)
+                        .background(CameraColor.surface, in: Capsule())
+                        .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -164,6 +172,8 @@ struct AlbumBrowser: View {
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textPrimary)
                         .frame(width: 112, height: 44)
+                        .background(CameraColor.surface, in: Capsule())
+                        .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -255,16 +265,46 @@ struct AlbumBrowser: View {
 
     private func shareSelected() {
         var urls: [URL] = []
+        var assets: [PHAsset] = []
         for shot in shots where selected.contains(shot.id) {
-            if case .local(let local) = shot.source {
+            switch shot.source {
+            case .local(let local):
                 for file in local.files {
                     if let url = StillArchive.resolve(file.path) {
                         urls.append(url)
                     }
                 }
+            case .library(let asset):
+                assets.append(asset)
             }
         }
-        shareURLs = urls
+        if assets.isEmpty {
+            shareURLs = urls
+            return
+        }
+        Task {
+            let extra = await Self.shareFiles(for: assets)
+            await MainActor.run { self.shareURLs = urls + extra }
+        }
+    }
+
+    private static func shareFiles(for assets: [PHAsset]) async -> [URL] {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("phi-share", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var urls: [URL] = []
+        for asset in assets {
+            guard let packed = await AlbumImage.loadOriginalData(asset) else { continue }
+            let payload = ExportSource.filePayload(packed.data, url: nil)
+            let name = asset.localIdentifier.replacingOccurrences(of: "/", with: "_") + "." + payload.ext
+            let url = folder.appendingPathComponent(name)
+            do {
+                try payload.data.write(to: url, options: .atomic)
+                urls.append(url)
+            } catch {
+                continue
+            }
+        }
+        return urls
     }
 
     private var empty: some View {
@@ -305,6 +345,9 @@ struct AlbumBrowser: View {
         if sampleGallery {
             shots = Self.sampleShots()
             phase = .ready
+            #if DEBUG
+            applyAlbumUITestHooks()
+            #endif
             return
         }
         PerfTrace.beginAlbum()
@@ -371,38 +414,140 @@ struct AlbumBrowser: View {
     }
 
     private func commitDelete(_ targets: [AlbumShot]) async {
+        let allowed = await MainActor.run { () -> Bool in
+            if isDeleting { return false }
+            isDeleting = true
+            return true
+        }
+        guard allowed else { return }
+
         let localIDs = targets.compactMap { shot -> String? in
             if case .local(let item) = shot.source { return item.id }
             return nil
         }
-        PhiLocalShots.remove(ids: localIDs)
+        let localShotIDs = Set(targets.filter { shot in
+            if case .local = shot.source { return true }
+            return false
+        }.map(\.id))
+        let libraryShotIDs = Set(targets.filter { shot in
+            if case .library = shot.source { return true }
+            return false
+        }.map(\.id))
         let assets = targets.compactMap { shot -> PHAsset? in
             if case .library(let asset) = shot.source { return asset }
             return nil
         }
+
+        // Locals stay on disk until Photos confirms, or until a local-only delete.
+        var removedIDs = Set<String>()
+        var photosCancelled = false
         if assets.isEmpty == false {
-            do {
-                try await PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.deleteAssets(assets as NSArray)
-                }
-                PhiShotIndex.remove(localIdentifiers: assets.map(\.localIdentifier))
-            } catch {
-                let ns = error as NSError
-                let cancelled = ns.domain == PHPhotosErrorDomain && ns.code == 3072
-                if cancelled == false {
-                    await MainActor.run {
-                        deleteError = "\(ns.domain) \(ns.code)"
+            // Our own confirm alert may still be dismissing. Photos then cannot present its sheet and
+            // returns "cancelled" at once, which used to be swallowed: the first delete did nothing.
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            var attempt = 0
+            while true {
+                attempt += 1
+                let started = Date()
+                do {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetChangeRequest.deleteAssets(assets as NSArray)
                     }
+                    let photoIDs = assets.map(\.localIdentifier)
+                    PhiShotIndex.remove(localIdentifiers: photoIDs)
+                    let syncedLocalIDs = AlbumDeleteSync.localIDs(
+                        matching: photoIDs,
+                        records: PhiLocalShots.load().map { ($0.id, $0.photosIdentifier) }
+                    )
+                    if AlbumDeleteSync.shouldClearLocalRecords(photosConfirmed: true, cancelled: false) {
+                        PhiLocalShots.remove(photosIdentifiers: photoIDs)
+                        if localIDs.isEmpty == false {
+                            PhiLocalShots.remove(ids: localIDs)
+                        }
+                    }
+                    removedIDs.formUnion(libraryShotIDs)
+                    removedIDs.formUnion(localShotIDs)
+                    removedIDs.formUnion(syncedLocalIDs.map { "local-\($0)" })
+                    Self.purgeDeletedCaches(targets)
+                    NSLog("ALBUM DELETE ok assets=%d attempt=%d", assets.count, attempt)
+                    break
+                } catch {
+                    let ns = error as NSError
+                    let cancelled = ns.domain == PHPhotosErrorDomain && ns.code == 3072
+                    let instant = Date().timeIntervalSince(started) < 0.35
+                    NSLog("ALBUM DELETE error %@ %d attempt=%d instant=%d", ns.domain, ns.code, attempt, instant ? 1 : 0)
+                    if cancelled, instant, attempt < 3 {
+                        // No sheet was on screen long enough for a person to cancel it: present again.
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        continue
+                    }
+                    if cancelled {
+                        photosCancelled = true
+                    } else {
+                        await MainActor.run {
+                            deleteError = "删除没有完成（\(ns.domain) \(ns.code)）。"
+                        }
+                    }
+                    break
                 }
             }
+        } else if localIDs.isEmpty == false {
+            PhiLocalShots.remove(ids: localIDs)
+            removedIDs.formUnion(localShotIDs)
+            Self.purgeDeletedCaches(targets)
         }
+
         await MainActor.run {
+            isDeleting = false
+            if photosCancelled {
+                return
+            }
             viewerIndex = nil
             selected = []
             selecting = false
+            // Photos change notifications can lag; do not show a deleted item again while it settles.
+            if removedIDs.isEmpty == false {
+                shots.removeAll { removedIDs.contains($0.id) }
+            }
         }
+        if photosCancelled { return }
         await reload()
+        if removedIDs.isEmpty == false {
+            await MainActor.run { shots.removeAll { removedIDs.contains($0.id) } }
+        }
     }
+
+    private static func purgeDeletedCaches(_ targets: [AlbumShot]) {
+        ViewerCache.remove(ids: targets.map(\.id))
+        for shot in targets {
+            ShotCache.remove(stem: shot.cacheStem)
+        }
+    }
+
+    #if DEBUG
+    /// One confirmed delete of a local shot: gone from the grid and from the local index, first try.
+    private static var deleteCheckRan = false
+    private func runDeleteCheck() async {
+        guard Self.deleteCheckRan == false else { return }
+        Self.deleteCheckRan = true
+        let target = shots.first { shot in
+            if case .local = shot.source { return true }
+            return false
+        } ?? shots.first
+        guard let target else {
+            NSLog("ALBUM DELETE FAILED no shots to delete")
+            return
+        }
+        let isLocal: Bool = { if case .local = target.source { return true }; return false }()
+        let localID: String? = { if case .local(let item) = target.source { return item.id }; return nil }()
+        let count = shots.count
+        await commitDelete([target])
+        let inGrid = shots.contains { $0.id == target.id }
+        let inIndex = localID.map { id in PhiLocalShots.load().contains { $0.id == id } } ?? false
+        let pass = inGrid == false && inIndex == false && deleteError == nil
+        NSLog("ALBUM DELETE %@ local=%d before=%d after=%d inGridAfter=%d inIndexAfter=%d error=%@", pass ? "PASS" : "FAILED", isLocal ? 1 : 0, count, shots.count, inGrid ? 1 : 0, inIndex ? 1 : 0, deleteError ?? "none")
+    }
+    #endif
 
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -446,7 +591,7 @@ private struct AlbumShot: Identifiable {
             hasRaw: PhiRawAsset.contains(asset),
             needsRetry: false,
             missing: false,
-            lensZoom: PhiShotIndex.lensZoom(for: asset.localIdentifier),
+            lensZoom: PhiShotIndex.displayZoom(for: asset.localIdentifier),
             framed: PhiShotIndex.aspect(for: asset.localIdentifier) ?? .threeByFour
         )
     }
@@ -491,7 +636,20 @@ private struct AlbumShot: Identifiable {
 }
 
 extension AlbumBrowser {
+    #if DEBUG
+    private func applyAlbumUITestHooks() {
+        if ProcessInfo.processInfo.arguments.contains("-PHIUITestAlbumSelect") {
+            selecting = true
+            selected = Set(shots.filter { $0.missing == false }.prefix(2).map(\.id))
+        }
+        if ProcessInfo.processInfo.arguments.contains("-PHIUITestAlbumViewer") {
+            viewerIndex = shots.firstIndex { $0.missing == false }
+        }
+    }
+    #endif
+
     fileprivate static func sampleStill(framed: PhotoAspect, missing: Bool) -> UIImage? {
+
         guard missing == false, let sample = UIImage(named: "SampleStill"), let cg = sample.cgImage else { return nil }
         return UIImage(cgImage: framed.cropped(cg), scale: sample.scale, orientation: sample.imageOrientation)
     }
@@ -572,7 +730,7 @@ private struct AlbumThumb: View {
                             .stroke(CameraColor.textPrimary, lineWidth: 1)
                         if marked {
                             PhiGlyphImage(glyph: .check)
-                                .foregroundStyle(CameraColor.textPrimary)
+                                .foregroundStyle(CameraColor.surface)
                                 .scaleEffect(0.6)
                         }
                     }
@@ -585,7 +743,10 @@ private struct AlbumThumb: View {
                 if shot.needsRetry {
                     Text("未存入")
                         .font(CameraFont.parameter(9, medium: true))
-                        .foregroundStyle(CameraColor.textPrimary)
+                        .foregroundStyle(CameraColor.surface)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(CameraColor.textPrimary.opacity(0.82), in: Capsule())
                         .padding(5)
                 }
             }
@@ -721,7 +882,7 @@ private struct AlbumPager: View {
         guard let date else { return "—" }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy.MM.dd HH:mm"
+        formatter.dateFormat = "yyyy年M月d日"
         return formatter.string(from: date)
     }
 }
@@ -744,7 +905,7 @@ private struct AlbumPage: View {
         VStack(spacing: 0) {
             PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
                 ZStack {
-                    CameraColor.background
+                    CameraColor.surround
                     if shot.missing {
                         VStack(spacing: 8) {
                             PhiGlyphImage(glyph: .missing)
@@ -761,33 +922,42 @@ private struct AlbumPage: View {
                         ProgressView().tint(CameraColor.accent)
                     }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(8)
+                .background(CameraColor.surround, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
+            .padding(.horizontal, 8)
             Text(metaLine)
-                .font(CameraFont.parameter(11))
+                .font(CameraFont.parameter(12))
                 .foregroundStyle(CameraColor.textSecondary)
                 .lineLimit(1)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-            HStack(spacing: 8) {
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+            Spacer(minLength: 0)
+            HStack(spacing: 0) {
                 PhiGlyphButton(glyph: .trash, label: "删除") { onDelete(shot) }
-                PhiGlyphButton(glyph: .share, label: "分享", enabled: image != nil) { share = true }
-                Spacer()
+                Spacer(minLength: 0)
                 if shot.needsRetry, case .local(let local) = shot.source {
                     Button("重试") { onRetryLocal(local.id) }
                         .font(CameraFont.interface(13, weight: .medium))
                         .foregroundStyle(CameraColor.textSecondary)
+                        .padding(.trailing, 12)
                 }
                 Button(action: edit) {
                     Text("编辑")
-                        .font(CameraFont.interface(14, weight: .medium))
-                        .foregroundStyle(CameraColor.accent)
-                        .frame(width: 88, height: 44)
+                        .font(CameraFont.fixed(14, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .frame(width: 148, height: 48)
                         .background(CameraColor.surface, in: Capsule())
+                        .shadow(color: CameraColor.dropShadow, radius: 3, y: 2)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("编辑")
+                Spacer(minLength: 0)
+                PhiGlyphButton(glyph: .share, label: "分享", enabled: image != nil) { share = true }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .frame(height: 64)
         }
         .task { await load() }
@@ -863,6 +1033,15 @@ enum ViewerCache {
         }
         lock.unlock()
     }
+
+    static func remove(ids: [String]) {
+        lock.lock()
+        for id in ids {
+            images[id] = nil
+            order.removeAll { $0 == id }
+        }
+        lock.unlock()
+    }
 }
 
 enum AlbumImage {
@@ -914,32 +1093,37 @@ enum AlbumImage {
     }
 
     /// Full original pixels for 编辑. Avoids PHImageManagerMaximumSize, which often returns a degraded frame and then nothing.
-    static func loadOriginal(_ asset: PHAsset) async -> UIImage? {
-        let data: Data? = await withCheckedContinuation { continuation in
+    static func loadOriginalData(_ asset: PHAsset) async -> (data: Data, uti: String)? {
+        await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
             options.isNetworkAccessAllowed = true
             options.deliveryMode = .highQualityFormat
             options.version = .original
-            let resumed = DataResume()
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
+            let resumed = DataUTIResume()
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, uti, _, info in
                 let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
                 if cancelled {
                     resumed.resume(continuation, with: nil)
                     return
                 }
-                resumed.resume(continuation, with: data)
+                if let data {
+                    resumed.resume(continuation, with: (data, uti ?? "public.image"))
+                } else {
+                    resumed.resume(continuation, with: nil)
+                }
             }
         }
-        if let data, let image = image(data: data, maxSide: nil) {
+    }
+
+    static func loadOriginal(_ asset: PHAsset) async -> UIImage? {
+        if let packed = await loadOriginalData(asset), let image = image(data: packed.data, maxSide: nil) {
             return image
         }
         return await load(asset, target: viewerTarget, fast: false)
     }
 
     static func framed(_ image: UIImage, aspect: PhotoAspect, zoom: Double) -> UIImage {
-        let zoomed = LensCrop.cropped(image, zoom: zoom)
-        guard let cg = zoomed.cgImage else { return zoomed }
-        return UIImage(cgImage: aspect.cropped(cg), scale: zoomed.scale, orientation: zoomed.imageOrientation)
+        ImageFraming.framed(image, aspect: aspect, zoom: zoom)
     }
 
     /// Screen JPEG for the viewer. Built once from the display still and reused by the neighbor prefetch.
@@ -1011,6 +1195,19 @@ private final class DataResume: @unchecked Sendable {
         guard didResume == false else { return }
         didResume = true
         continuation.resume(returning: data)
+    }
+}
+
+private final class DataUTIResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func resume(_ continuation: CheckedContinuation<(data: Data, uti: String)?, Never>, with value: (data: Data, uti: String)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard didResume == false else { return }
+        didResume = true
+        continuation.resume(returning: value)
     }
 }
 

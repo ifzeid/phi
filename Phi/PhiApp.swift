@@ -24,7 +24,7 @@ struct PhiApp: App {
     var body: some Scene {
         WindowGroup {
             root
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
                 .tint(CameraColor.accent)
                 .modifier(HiddenSystemChrome())
         }

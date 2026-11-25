@@ -17,6 +17,9 @@ enum CameraGate: Equatable {
 
 /// Owns the capture session, the rear camera, and the controls that must stay honest about the hardware.
 final class CameraSession: ObservableObject {
+    // TODO(review): @Published fields are written from the session queue and the main thread
+    // without a single source-of-truth lock. Fixing this needs an explicit isolation design,
+    // not a one-line lock around every property. Left for a later pass.
     let session = AVCaptureSession()
     let photoOutput = AVCapturePhotoOutput()
 
@@ -95,6 +98,11 @@ final class CameraSession: ObservableObject {
 
     init() {
         session.automaticallyConfiguresApplicationAudioSession = false
+        previewAnchor.onRotationChanged = { [weak self] _ in
+            self?.sessionQueue.async {
+                self?.finderTone.realignRotation()
+            }
+        }
         finderTone.onFrame = { [weak self] image in
             self?.previewAnchor.presentZero(image)
         }
@@ -196,6 +204,8 @@ final class CameraSession: ObservableObject {
             if self.session.isRunning {
                 self.session.stopRunning()
             }
+            FinderTone.finderScale = 1
+            self.previewAnchor.setFinderScale(1)
             DispatchQueue.main.async {
                 self.isRunning = false
             }
@@ -663,6 +673,9 @@ final class CameraSession: ObservableObject {
     private func applyFinderRestore() {
         guard session.isRunning else {
             log.error("finder restore skipped; session is not running")
+            FinderTone.finderScale = 1
+            lastFinderScale = 1
+            previewAnchor.setFinderScale(1)
             previewAnchor.resume(device: device)
             return
         }
@@ -1163,6 +1176,7 @@ final class CameraSession: ObservableObject {
         }
         session.commitConfiguration()
         publishFinderScale(reason: "switch")
+        finderTone.realignRotation()
         if sameDevice == false {
             self.engageContinuousAutofocus()
             observeMeter(newDevice)
@@ -1463,6 +1477,7 @@ final class CameraSession: ObservableObject {
         device.unlockForConfiguration()
         session.commitConfiguration()
         publishFinderScale(reason: "still-format")
+        finderTone.realignRotation()
     }
 
     /// The RAW capture moves a crop stop (2×, 4× digital) to the physical camera at zoom 1.
@@ -1479,6 +1494,9 @@ final class CameraSession: ObservableObject {
             lastFinderScale = scale
             NSLog("FINDER SCALE %.3f reason=%@ zoom=%.2f mm=%.0f stop=%d", Double(scale), reason, Double(device.videoZoomFactor), actualMM, lensStops.first(where: { $0.id == selectedStopID })?.millimeters ?? 0)
         }
+        // Mode 0 still crops in FinderTone. ProRAW (tone off) sizes a hosted preview layer inside a
+        // clipped view — never UIView.transform, which hung the 2× shutter during RAW reconfigure (build 33).
+        FinderTone.finderScale = scale
         previewAnchor.setFinderScale(scale)
     }
 

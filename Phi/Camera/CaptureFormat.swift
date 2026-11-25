@@ -241,3 +241,18 @@ enum PhotoAspect: String, CaseIterable, Identifiable {
         return image.cropped(to: rect.integral)
     }
 }
+
+/// Zoom applied to a saved display still. Mode 0 and Standard files already contain the capture crop.
+enum DisplayZoom {
+    static func forDisplayStill(processMode: ProcessMode?, captureZoom: Double, hasDevelopedDisplay: Bool) -> Double {
+        let zoom = captureZoom > 1 ? captureZoom : 1
+        switch processMode {
+        case .bayer, .standard:
+            return 1
+        case .proRaw:
+            return hasDevelopedDisplay ? 1 : zoom
+        case nil:
+            return hasDevelopedDisplay ? 1 : zoom
+        }
+    }
+}

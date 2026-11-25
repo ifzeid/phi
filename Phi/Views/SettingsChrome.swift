@@ -150,7 +150,7 @@ struct SettingsSwitch: View {
             .frame(width: SettingsToken.switchWidth, height: SettingsToken.switchHeight)
             .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
-                    .fill(CameraColor.textPrimary)
+                    .fill(CameraColor.surface)
                     .frame(width: 22, height: 22)
                     .padding(.horizontal, 2)
             }

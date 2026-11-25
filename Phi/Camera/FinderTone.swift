@@ -7,16 +7,33 @@ import UIKit
 /// Mode 0 viewfinder. The system preview is Apple's bright video; this redraws the same frames
 /// with `RawDevelop.toneMapValue` (toe, linear middle, shoulder) so the finder matches the still.
 final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    private static let sharedLock = NSLock()
+    private static var storedRotation: CGFloat = 90
+    private static var storedScale: CGFloat = 1
+
     /// Portrait angle until the preview coordinator publishes the real one.
-    static var sharedRotation: CGFloat = 90
+    static var sharedRotation: CGFloat {
+        get { sharedLock.lock(); defer { sharedLock.unlock() }; return storedRotation }
+        set { sharedLock.lock(); storedRotation = newValue; sharedLock.unlock() }
+    }
+    /// Selected / actual framing while a crop stop shoots RAW at zoom 1. Frames are center-cropped by it.
+    static var finderScale: CGFloat {
+        get { sharedLock.lock(); defer { sharedLock.unlock() }; return storedScale }
+        set { sharedLock.lock(); storedScale = newValue; sharedLock.unlock() }
+    }
 
     let output = AVCaptureVideoDataOutput()
     var onFrame: ((CIImage) -> Void)?
-    var isEnabled = false
 
     private let queue = DispatchQueue(label: "com.zeid.phi.finder-tone")
     private let lock = NSLock()
+    private var enabledFlag = false
     private var busy = false
+
+    var isEnabled: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return enabledFlag }
+        set { lock.lock(); enabledFlag = newValue; lock.unlock() }
+    }
     private var installed = false
     private var loggedSize = (0, 0)
     private var loggedAngle: CGFloat = -1
@@ -33,16 +50,21 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard isEnabled, busy == false else { return }
-        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lock.lock()
-        if busy {
+        let enabled = enabledFlag
+        let inFlight = busy
+        if enabled == false || inFlight {
             lock.unlock()
             return
         }
         busy = true
         lock.unlock()
-        alignRotation(connection)
+        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            lock.lock(); busy = false; lock.unlock()
+            return
+        }
+        // Never reconfigure the connection from the frame queue: during a RAW capture the session queue
+        // holds beginConfiguration, and a rotation write here blocked both (build 33 2× shutter hang).
         var source = CIImage(cvPixelBuffer: buffer)
         // A lens switch rebuilds the connection at 0°; until the new angle takes, turn the buffer here.
         let want = Self.sharedRotation
@@ -60,6 +82,17 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         if portrait, source.extent.width > source.extent.height {
             source = source.oriented(abs(want - 270) < 0.5 ? .left : .right)
         }
+        let crop = Self.finderScale
+        if crop > 1.01, crop < 8 {
+            let full = source.extent
+            let width = full.width / crop
+            let height = full.height / crop
+            let window = CGRect(x: full.midX - width / 2, y: full.midY - height / 2, width: width, height: height)
+            // Crop only — the preview view already fills its bounds. Scaling the buffer back up
+            // here re-samples every preview frame and is not a still-pipeline step.
+            source = source.cropped(to: window)
+                .transformed(by: CGAffineTransform(translationX: -window.minX, y: -window.minY))
+        }
         let size = source.extent.integral.size
         if Int(size.width) != loggedSize.0 || Int(size.height) != loggedSize.1 || abs(connection.videoRotationAngle - loggedAngle) > 0.5 {
             loggedSize = (Int(size.width), Int(size.height))
@@ -74,6 +107,11 @@ final class FinderTone: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 
     /// Checks the live connection every frame: lens switches replace it, so a cached angle goes stale.
+    /// Session-queue only (install, after a lens switch commit).
+    func realignRotation() {
+        if let connection = output.connection(with: .video) { alignRotation(connection) }
+    }
+
     private func alignRotation(_ connection: AVCaptureConnection) {
         let angle = Self.sharedRotation
         guard abs(connection.videoRotationAngle - angle) > 0.5 else { return }

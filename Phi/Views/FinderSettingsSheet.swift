@@ -26,16 +26,16 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 
     /// Card height in points, measured from Figma.
-    var cardHeight: CGFloat { self == .main ? 300 : 236 }
+    var cardHeight: CGFloat { self == .main ? 360 : 236 }
 }
 
 enum SettingsCardToken {
     static let sideInset: CGFloat = 12
     static let radius: CGFloat = 36
     static let padding: CGFloat = 20
-    static let tint = Color(red: 21.0 / 255.0, green: 24.0 / 255.0, blue: 23.0 / 255.0).opacity(0.18)
-    static let selectedPill = Color(red: 16.0 / 255.0, green: 20.0 / 255.0, blue: 19.0 / 255.0).opacity(0.7)
-    static let faint = CameraColor.textPrimary.opacity(0.4)
+    static let tint = Color.white.opacity(0.88)
+    static let selectedPill = Color.white
+    static let faint = CameraColor.textSecondary
 }
 
 extension PhotoAspect {
@@ -85,6 +85,7 @@ struct FinderSettingsCard<Exposure: View>: View {
     var onFlash: (AVCaptureDevice.FlashMode) -> Void
     var look: ColorLook
     var onLook: (ColorLook) -> Void
+    @Binding var showGrid: Bool
     var onClose: () -> Void
     @ViewBuilder var exposureRuler: () -> Exposure
 
@@ -154,7 +155,23 @@ struct FinderSettingsCard<Exposure: View>: View {
                     tile(.style, caption: "风格") { tileText(look.title, size: 16) }
                 }
             }
+            gridRow
         }
+    }
+
+    private var gridRow: some View {
+        HStack(spacing: 12) {
+            Text("网格")
+                .font(CameraFont.fixed(14, weight: .regular))
+                .foregroundStyle(CameraColor.textPrimary)
+            Spacer(minLength: 8)
+            optionRow(["关", "开"], selected: showGrid ? 1 : 0, size: 14) { index in
+                showGrid = index == 1
+            }
+            .frame(width: 152)
+        }
+        .frame(height: 44)
+        .accessibilityLabel(showGrid ? "网格 开" : "网格 关")
     }
 
     private func tileText(_ text: String, size: CGFloat) -> some View {
@@ -267,7 +284,7 @@ struct FinderSettingsCard<Exposure: View>: View {
             footnote("横向滑动调节 · 双击归零")
         case .style:
             valueBlock(look.title)
-            optionRow(ColorLook.allCases.map(\.title), selected: ColorLook.allCases.firstIndex(of: look), size: 12) {
+            optionRow(ColorLook.allCases.map(\.title), selected: ColorLook.allCases.firstIndex(of: look), size: 12, selectedInk: CameraColor.textPrimary) {
                 onLook(ColorLook.allCases[$0])
             }
             footnote("")
@@ -292,6 +309,7 @@ struct FinderSettingsCard<Exposure: View>: View {
         selected: Int?,
         size: CGFloat,
         enabled: Bool = true,
+        selectedInk: Color = CameraColor.accent,
         onSelect: @escaping (Int) -> Void
     ) -> some View {
         HStack(spacing: 4) {
@@ -302,7 +320,7 @@ struct FinderSettingsCard<Exposure: View>: View {
                 } label: {
                     Text(titles[index])
                         .font(CameraFont.fixed(size, weight: .regular))
-                        .foregroundStyle(isOn ? CameraColor.accent : CameraColor.textPrimary)
+                        .foregroundStyle(isOn ? selectedInk : CameraColor.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                         .frame(maxWidth: .infinity)
@@ -342,19 +360,21 @@ struct FinderSettingsCard<Exposure: View>: View {
     }
 }
 
-/// iOS 26+ Liquid Glass (regular, dark) with the Figma tint. Older systems get a dark material.
+/// iOS 26+ Liquid Glass, ceramic-white tint. Older systems get a light material plate.
 private struct SettingsGlass: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: SettingsCardToken.radius, style: .continuous)
         if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular.tint(SettingsCardToken.tint), in: shape)
-                .environment(\.colorScheme, .dark)
+                .shadow(color: CameraColor.dropShadow, radius: 16, y: 8)
+                .environment(\.colorScheme, .light)
         } else {
             content
                 .background(.ultraThinMaterial, in: shape)
                 .background(SettingsCardToken.tint, in: shape)
-                .environment(\.colorScheme, .dark)
+                .shadow(color: CameraColor.dropShadow, radius: 16, y: 8)
+                .environment(\.colorScheme, .light)
         }
     }
 }

@@ -20,6 +20,11 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// The file the user opened. Neutral edits show this, not a new render.
     let originalImage: UIImage?
     let originalData: Data?
+    /// Full-resolution display still on disk. Export reads this, not the 1280 preview cache.
+    private(set) var exportSourceURL: URL?
+    private(set) var exportSourceData: Data?
+    /// Photos identifier when the editor opened a library asset; export can fetch the original if needed.
+    private(set) var exportAssetIdentifier: String?
     /// Stops relative to the captured frame. 0 reproduces the viewfinder, including finder EV compensation,
     /// because that bias is already in the sensor data and is not applied again. The meter-relative total
     /// is `captureEV + exposureEV`. The album thumbnail is this develop at 0, the capture look.
@@ -34,6 +39,9 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// 0...1 while a full-res export is on the background queue.
     @Published var exportProgress: Double = 0
     @Published var status: String?
+    /// Typed Photos-library save outcome. The editor toast, title, retry, and dirty
+    /// rebaseline key off this, not off matching `status` copy.
+    @Published var photoLibrarySave: PhotoLibrarySaveState = .idle
     /// Bumped after each successful save; the editor rebaselines its discard check on it.
     @Published var savedEdits = 0
     @Published var developInfo: String
@@ -55,6 +63,8 @@ final class ProcessSession: ObservableObject, Identifiable {
     private var exposureDrag = false
     private var presentedTicket = -1
     private var warmTask: Task<Void, Never>?
+    private let sourceLock = NSLock()
+    private let sourceWarm = SourceWarmGate()
     #if DEBUG
     private var presentWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     #endif
@@ -80,7 +90,10 @@ final class ProcessSession: ObservableObject, Identifiable {
         halo: HaloLevel = .off,
         originalImage: UIImage? = nil,
         originalData: Data? = nil,
-        rendersFromDNG: Bool = false
+        rendersFromDNG: Bool = false,
+        exportSourceURL: URL? = nil,
+        exportSourceData: Data? = nil,
+        exportAssetIdentifier: String? = nil
     ) {
         self.base = base
         self.exposureEV = exposureEV
@@ -98,6 +111,9 @@ final class ProcessSession: ObservableObject, Identifiable {
         self.originalImage = originalImage
         self.originalData = originalData
         self.rendersFromDNG = rendersFromDNG
+        self.exportSourceURL = exportSourceURL
+        self.exportSourceData = exportSourceData ?? originalData
+        self.exportAssetIdentifier = exportAssetIdentifier
         self.developInfo = sourceDNG == nil ? "来源 系统成片" : "来源 DNG"
         if let originalImage {
             self.preview = originalImage
@@ -112,6 +128,15 @@ final class ProcessSession: ObservableObject, Identifiable {
             // The saved file above is the placeholder for the first frame; the develop replaces it.
             schedule()
         }
+    }
+
+    func markPhotoLibrarySaved() {
+        photoLibrarySave = .savedCopy
+        savedEdits += 1
+    }
+
+    func markPhotoLibrarySaveFailed() {
+        photoLibrarySave = .failed
     }
 
     var isNeutral: Bool {
@@ -132,7 +157,11 @@ final class ProcessSession: ObservableObject, Identifiable {
     /// `interactive` uses the 800 px proxy. The idle refine after the finger lifts uses 1280.
     func setExposure(_ value: Double, interactive: Bool) {
         exposureDrag = interactive
-        exposureEV = (min(5, max(-5, value)) * 10).rounded() / 10
+        let next = (min(5, max(-5, value)) * 10).rounded() / 10
+        if next != exposureEV {
+            photoLibrarySave = photoLibrarySave.afterUserEdit()
+        }
+        exposureEV = next
         schedule()
     }
 
@@ -147,6 +176,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     func setStyle(_ next: GrainStyle) {
         guard next != style else { return }
         exposureDrag = false
+        photoLibrarySave = photoLibrarySave.afterUserEdit()
         style = next
         schedule()
     }
@@ -154,6 +184,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     func setColorLook(_ next: ColorLook) {
         guard next != colorLook else { return }
         exposureDrag = false
+        photoLibrarySave = photoLibrarySave.afterUserEdit()
         colorLook = next
         schedule()
     }
@@ -161,6 +192,7 @@ final class ProcessSession: ObservableObject, Identifiable {
     func setHalo(_ level: HaloLevel) {
         guard level != halo else { return }
         exposureDrag = false
+        photoLibrarySave = photoLibrarySave.afterUserEdit()
         halo = level
         schedule()
     }
@@ -270,13 +302,23 @@ final class ProcessSession: ObservableObject, Identifiable {
 
     /// DNG bytes arrived after the cached JPEG was already on screen. The plate build stays off the main thread.
     func installSource(dng: Data, metadata: [String: Any]?) {
+        sourceLock.lock()
         sourceDNG = dng
         sourceMetadata = metadata
+        sourceLock.unlock()
         developInfo = "来源 DNG"
+        // Assign warmTask before waking waiters so waitUntilWarm can await the full plate.
         warmPreview()
+        sourceWarm.markReady()
         if showsSavedFile == false {
             schedule()
         }
+    }
+
+    func installExportSource(url: URL? = nil, data: Data? = nil, assetIdentifier: String? = nil) {
+        if let url { exportSourceURL = url }
+        if let data { exportSourceData = data }
+        if let assetIdentifier { exportAssetIdentifier = assetIdentifier }
     }
 
     func setExportProgress(_ value: Double) {
@@ -311,6 +353,14 @@ final class ProcessSession: ObservableObject, Identifiable {
 
     #if DEBUG
     func waitUntilWarm() async {
+        // Gate on sourceWarm, not sourceDNG: installSource sets sourceDNG before
+        // warmPreview assigns warmTask. A sourceDNG != nil check can skip the
+        // wait and return while warmTask is still nil. Missing DNG: wait times
+        // out in 4s. Arriving DNG: markReady runs after warmPreview, then the
+        // full plate is awaited.
+        if rendersFromDNG, sourceWarm.isReady == false {
+            _ = await sourceWarm.wait(timeout: 4)
+        }
         await warmTask?.value
     }
 

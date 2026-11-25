@@ -14,6 +14,11 @@ import UniformTypeIdentifiers
 /// `-PHIUITestEditorTab exposure|style|effects`
 /// `-PHIUITestLook none|positive|negative|mono|ccd`
 /// `-PHIUITestHalo off|on`
+/// `-PHIUITestGrain off|fine`
+/// `-PHIUITestRawMenu` opens the RAW system menu
+/// `-PHIUITestSaved` shows the editor saved-copy toast
+/// `-PHIUITestAlbumSelect` / `-PHIUITestAlbumViewer` open album multi-select or the photo viewer
+/// `-PHIUITestSaveFailed` shows 重试 after a failed save
 /// `-PHIUITestImport <dir>` copies each HEIC+DNG pair into the local shot store
 /// `-PHIUITestOpenEditor <basename>` opens that imported shot
 /// `-PHIUITestEditorEV <value>` and `-PHIUITestEditorLook <name>` apply after open
@@ -86,6 +91,21 @@ enum PHIUITest {
 
     static var showGrid: Bool {
         ProcessInfo.processInfo.arguments.contains("-PHIUITestGrid")
+    }
+
+    static var showRawMenu: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestRawMenu")
+    }
+
+    static var savedCopy: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PHIUITestSaved")
+    }
+
+    static var grain: GrainStyle? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-PHIUITestGrain"),
+              arguments.index(after: flag) < arguments.endIndex else { return nil }
+        return GrainStyle(rawValue: arguments[arguments.index(after: flag)])
     }
 
     /// Manual ruler. Shows M / ISO instead of A / EV, and keeps that ruler on screen.
@@ -369,15 +389,12 @@ enum PHIUITest {
         for stem in Set(heic.keys).intersection(dng.keys).sorted() {
             guard let heifURL = heic[stem], let dngURL = dng[stem] else { continue }
             var facts = captureFacts(heifURL: heifURL)
-            // Optional `<stem>.facts` sidecar ("zoom=2 aspect=oneByOne") for PHI HEICs without EXIF digital zoom.
+            // Optional `<stem>.facts` sidecar ("zoom=2 aspect=square") for PHI HEICs without EXIF digital zoom.
             let sidecar = heifURL.deletingPathExtension().appendingPathExtension("facts")
             if let text = try? String(contentsOf: sidecar, encoding: .utf8) {
-                for pair in text.split(whereSeparator: { $0 == " " || $0 == "\n" }) {
-                    let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
-                    guard kv.count == 2 else { continue }
-                    if kv[0] == "zoom", let z = Double(kv[1]), z > 1.01 { facts.zoom = z }
-                    if kv[0] == "aspect", let a = PhotoAspect(rawValue: kv[1]) { facts.aspect = a }
-                }
+                let parsed = FactsSidecar.parse(text)
+                if let z = parsed.zoom { facts.zoom = z }
+                if let a = parsed.aspect { facts.aspect = a }
             }
             guard let heifFile = copyIntoStills(heifURL, name: "\(stem).apple.heic"),
                   let dngFile = copyIntoStills(dngURL, name: "\(stem).dng") else {
@@ -400,6 +417,7 @@ enum PHIUITest {
                     alternate: true
                 )
             ]
+            ShotCache.remove(stem: stem)
             PhiLocalShots.remember(PhiLocalShots.Shot(
                 id: stem,
                 files: files,
@@ -1843,8 +1861,22 @@ extension PHIUITest {
             lensZoom: 1,
             maxSide: nil
         )
-        guard let rendered, StillPipeline.encodeDeveloped(rendered) != nil else { return -1 }
-        return (CFAbsoluteTimeGetCurrent() - started) * 1000
+        let afterRender = CFAbsoluteTimeGetCurrent()
+        guard let rendered else { return -1 }
+        let encoded = StillPipeline.encodeDeveloped(rendered)
+        let afterEncode = CFAbsoluteTimeGetCurrent()
+        guard encoded != nil else { return -1 }
+        #if DEBUG
+        let line = String(
+            format: "PERF SAVE SEG render=%.1f encode=%.1f total=%.1f",
+            (afterRender - started) * 1000,
+            (afterEncode - afterRender) * 1000,
+            (afterEncode - started) * 1000
+        )
+        print(line)
+        Logger(subsystem: "com.zeid.phi", category: "perf").notice("\(line, privacy: .public)")
+        #endif
+        return (afterEncode - started) * 1000
     }
 
     private static func writeSolidJPEG(_ url: URL, side: Int) {
@@ -1919,9 +1951,15 @@ struct PHIUITestHost: View {
             colorLook: look,
             halo: halo
         )
-        if look == .none, halo == .off {
+        if let grain = PHIUITest.grain {
+            session.setStyle(grain)
+        }
+        if PHIUITest.savedCopy {
+            session.photoLibrarySave = .savedCopy
+        }
+        if look == .none, halo == .off, PHIUITest.grain == nil, PHIUITest.savedCopy == false {
             session.preview = PHIUITest.sample
-        } else {
+        } else if PHIUITest.savedCopy == false {
             session.schedule()
         }
         return session

@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// 88 pt mechanical ruler (Figma 124:628). The red 2×22 needle stays put. The tape moves under the finger.
-/// All ticks are 1 pt at 55%: whole units 12 pt ivory, half units 9 pt grey, fine ticks 6 pt grey.
+/// All ticks are 1 pt at 55%: whole units 12 pt, half units 9 pt, fine ticks 6 pt. Labels are integers only.
 /// `gridStep` is the walk step; a tick is drawn where the value is a multiple of `fineStep`, a half or a whole unit.
 /// Double-tap calls `onReset`.
 /// `hapticEvery` limits the click to those units. Zero clicks on every snap.
@@ -40,14 +40,16 @@ struct CalibratedRuler: View {
 
     private var shown: Double { live ?? value }
 
+    private var marks: CalibratedRulerMetrics.Marks { CalibratedRulerMetrics.marks(for: height) }
+
     var body: some View {
         ZStack(alignment: .top) {
             tickCanvas
             VStack(spacing: 0) {
                 header
-                    .frame(height: 40)
+                    .frame(height: marks.headerHeight)
                 Color.clear
-                    .frame(height: max(height - 40, 20))
+                    .frame(height: max(height - marks.headerHeight, 12 * marks.scale))
                     .contentShape(Rectangle())
                     .gesture(drag)
                     .simultaneousGesture(TapGesture(count: 2).onEnded {
@@ -79,9 +81,9 @@ struct CalibratedRuler: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }
-        .frame(height: 24)
-        .padding(.top, 8)
-        .frame(height: 40, alignment: .top)
+        .frame(height: marks.headerTextHeight)
+        .padding(.top, marks.headerPaddingTop)
+        .frame(height: marks.headerHeight, alignment: .top)
     }
 
     private func headerControl(_ title: String, mono: Bool, action: (() -> Void)?) -> some View {
@@ -92,7 +94,7 @@ struct CalibratedRuler: View {
                 .font(mono ? CameraFont.parameter(12) : CameraFont.interface(12))
                 .foregroundStyle(CameraColor.textSecondary)
                 .lineLimit(1)
-                .frame(height: 24)
+                .frame(height: marks.headerTextHeight)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -146,30 +148,31 @@ struct CalibratedRuler: View {
         let first = Int(((max(position - reach, lower - step)) / step).rounded(.down))
         let last = Int(((min(position + reach, upper + step)) / step).rounded(.up))
         guard last >= first else { return }
-        let fineInk = CameraColor.textSecondary.opacity(0.55)
-        let majorInk = CameraColor.textPrimary.opacity(0.55)
+        let fineInk = CameraColor.border.opacity(0.55)
+        let majorInk = CameraColor.border.opacity(0.85)
         for index in first...last {
             let tick = Double(index) * step
             if tick < lower - step * 0.5 || tick > upper + step * 0.5 { continue }
             let x = midX + CGFloat(tick - position) * pointsPerUnit
             if x < -12 || x > size.width + 12 { continue }
             guard let kind = tickKind(tick) else { continue }
-            let tickHeight: CGFloat = kind == .major ? 12 : (kind == .half ? 9 : 6)
-            let bar = CGRect(x: x - 0.5, y: 42, width: 1, height: tickHeight)
+            let tickHeight: CGFloat = kind == .major ? marks.tickMajor : (kind == .half ? marks.tickHalf : marks.tickFine)
+            let bar = CGRect(x: x - 0.5, y: marks.tickY, width: 1, height: tickHeight)
             context.fill(Path(roundedRect: bar, cornerRadius: 0.5), with: .color(kind == .major ? majorInk : fineInk))
             if kind == .major, showsLabels {
                 let majorTick = (tick / majorEvery).rounded() * majorEvery
                 let caption = Text(label(majorTick)).font(CameraFont.parameter(11))
                 let nearNeedle = abs(tick - position) < majorEvery * 0.35
                 let captionInk = (emphasizeNearestLabel && nearNeedle) ? CameraColor.textPrimary : CameraColor.textSecondary
-                context.draw(caption.foregroundColor(captionInk), at: CGPoint(x: x, y: 70), anchor: .center)
+                context.draw(caption.foregroundColor(captionInk), at: CGPoint(x: x, y: marks.labelY), anchor: .center)
             }
             if zeroMark && abs(tick) < step * 0.45 {
-                let dot = CGRect(x: x - 1.5, y: 35, width: 3, height: 3)
+                let dotSize = marks.zeroDotSize
+                let dot = CGRect(x: x - dotSize / 2, y: marks.zeroDotY, width: dotSize, height: dotSize)
                 context.fill(Path(ellipseIn: dot), with: .color(CameraColor.textSecondary))
             }
         }
-        let needle = CGRect(x: midX - 1, y: 39, width: 2, height: 22)
+        let needle = CGRect(x: midX - marks.needleWidth / 2, y: marks.needleY, width: marks.needleWidth, height: marks.needleHeight)
         context.fill(Path(roundedRect: needle, cornerRadius: 1.5), with: .color(CameraColor.accent))
     }
 

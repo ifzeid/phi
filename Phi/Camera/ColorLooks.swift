@@ -20,10 +20,20 @@ enum ColorLooks {
         case .negative:
             return applyCube(image, recipe: .negative, data: LookCubes.negative)
         case .mono:
-            return applyCube(image, recipe: .mono, data: LookCubes.mono)
+            return applyCube(monoClarity(image), recipe: .mono, data: LookCubes.mono)
         case .ccd:
             return ccd(image)
         }
+    }
+
+    /// Mild local contrast for B&W only: wide-radius unsharp mask scaled to the frame width.
+    static func monoClarity(_ image: CIImage) -> CIImage {
+        let extent = image.extent
+        guard extent.isInfinite == false, extent.width > 16 else { return image }
+        let radius = max(extent.width * 0.012, 2)
+        return image.clampedToExtent()
+            .applyingFilter("CIUnsharpMask", parameters: ["inputRadius": radius, "inputIntensity": 0.10])
+            .cropped(to: extent)
     }
 
     static func withHalo(_ image: CIImage, level: HaloLevel) -> CIImage {
@@ -767,6 +777,17 @@ enum ColorLook: String, CaseIterable, Identifiable, Codable {
         case .positive: "正片"
         case .negative: "负片"
         case .mono: "黑白"
+        case .ccd: "CCD"
+        }
+    }
+
+    /// Finder badge under the ruler (Figma 341:2461).
+    var badgeTitle: String {
+        switch self {
+        case .none: "STANDARD"
+        case .positive: "POSITIVE"
+        case .negative: "NEGATIVE"
+        case .mono: "MONO"
         case .ccd: "CCD"
         }
     }

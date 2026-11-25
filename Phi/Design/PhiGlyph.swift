@@ -59,18 +59,24 @@ struct PhiGlyphImage: View {
 struct WhiteShutterButton: View {
     var isReady: Bool
     var isCapturing: Bool
+    var size: CGSize = CGSize(width: 148, height: 64)
     var action: () -> Void
 
     private var canTap: Bool { isReady && isCapturing == false }
 
     var body: some View {
         Button(action: action) {
-            // Solid #F4F3EE disc, no outer ring (Zeid, build 31). 64 pt as measured on Figma 01; 80 pt hit area.
-            Circle()
-                .fill(CameraColor.textPrimary)
-                .frame(width: 64, height: 64)
-                .frame(width: 80, height: 80)
-                .contentShape(Circle())
+            // Ceramic White capsule shutter, 148×64, no vermilion core (Figma 336:2277).
+            ZStack {
+                Capsule()
+                    .fill(CameraColor.surface)
+                    .shadow(color: CameraColor.dropShadow, radius: 8, y: 3)
+                Circle()
+                    .stroke(CameraColor.textPrimary, lineWidth: 1.4)
+                    .frame(width: 18, height: 18)
+            }
+            .frame(width: size.width, height: size.height)
+            .contentShape(Capsule())
             .opacity(isReady ? 1 : 0.4)
         }
         .buttonStyle(ShutterPressStyle())
@@ -96,7 +102,8 @@ struct FocusBracket: View {
             if locked {
                 Text("AE/AF LOCK")
                     .font(CameraFont.parameter(11))
-                    .foregroundStyle(CameraColor.textPrimary)
+                    .foregroundStyle(Color.white)
+                    .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
                     .offset(y: 18)
             }
         }

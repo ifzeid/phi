@@ -31,8 +31,7 @@ struct ProcessStillView: View {
     var body: some View {
         GeometryReader { geo in
             let bottomPad: CGFloat = 12
-            let toastHeight: CGFloat = savedCopy ? 44 : 0
-            let controls: CGFloat = 48 + toolHeight + toastHeight + 44
+            let controls: CGFloat = 48 + toolHeight + 52
             let available: CGFloat = geo.size.height - 52 - controls - bottomPad
             let ideal: CGFloat = geo.size.width / PhotoAspect.finderWidthOverHeight
             let photoHeight: CGFloat = min(ideal, max(160, available))
@@ -46,12 +45,8 @@ struct ProcessStillView: View {
                     .frame(height: 48)
                 tool
                     .frame(height: toolHeight)
-                if savedCopy {
-                    toast
-                        .frame(height: 44)
-                }
                 actions
-                    .frame(height: 44)
+                    .frame(height: 52)
             }
             .padding(.bottom, bottomPad)
             .frame(width: geo.size.width, height: geo.size.height)
@@ -72,12 +67,20 @@ struct ProcessStillView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .modifier(HiddenSystemChrome())
         .modifier(UnderIsland())
-        .background {
-            DiscardEditAlert(isPresented: $confirmDiscard, onDiscard: onClose)
-                .allowsHitTesting(false)
+        .overlay {
+            if confirmDiscard {
+                CeramicDiscardCard(
+                    onDiscard: {
+                        confirmDiscard = false
+                        onClose()
+                    },
+                    onStay: { confirmDiscard = false }
+                )
+                .ignoresSafeArea()
+            }
         }
         .onAppear {
             captureBaseline()
@@ -138,7 +141,7 @@ struct ProcessStillView: View {
     private var editorImage: some View {
         PhotoCanvas(widthOverHeight: PhotoAspect.finderWidthOverHeight) {
             ZStack {
-                CameraColor.background
+                CameraColor.surround
                 EditorMetalPreview(frame: session.liveFrame, onPresented: { ticket in
                     session.notePresented(ticket: ticket)
                 }, onFirstPixels: { image in
@@ -151,7 +154,27 @@ struct ProcessStillView: View {
                         .resizable()
                         .scaledToFit()
                 }
+                if savedCopy {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("已保存副本 · 原片保留")
+                                .font(CameraFont.fixed(12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.72), in: Capsule())
+                        .padding(.bottom, 16)
+                    }
+                    .allowsHitTesting(false)
+                }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(8)
+            .background(CameraColor.surround, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-PHIShowDevelopInfo") {
@@ -252,8 +275,8 @@ struct ProcessStillView: View {
                     session.setColorLook(look)
                 } label: {
                     Text(look.title)
-                        .font(CameraFont.fixed(14, weight: .regular))
-                        .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                        .font(CameraFont.fixed(14, weight: selected ? .medium : .regular))
+                        .foregroundStyle(selected ? CameraColor.textPrimary : CameraColor.textSecondary)
                         .lineLimit(1)
                         .frame(width: 64, height: 44)
                         .background {
@@ -273,44 +296,58 @@ struct ProcessStillView: View {
     }
 
     private var effectsTool: some View {
-        VStack(spacing: 8) {
-            effectRow(title: "光晕") {
-                ForEach(HaloLevel.allCases) { level in
-                    SelectPill(title: level.title, selected: session.halo == level, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
-                        session.setHalo(level)
-                    }
-                    .accessibilityLabel(level == .off ? "关闭光晕" : "\(level.title)光晕")
-                }
+        HStack(spacing: 14) {
+            effectKey(
+                title: "光晕",
+                value: session.halo.title,
+                active: session.halo != .off,
+                accessibility: session.halo == .off ? "光晕 关" : "光晕 开"
+            ) {
+                session.setHalo(session.halo == .off ? .on : .off)
             }
-            effectRow(title: "颗粒") {
-                SelectPill(title: "关", selected: session.style == .off, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
-                    session.setStyle(.off)
-                }
-                SelectPill(title: "细颗粒", selected: session.style == .fine, width: 76, height: 44, idleInk: CameraColor.textSecondary) {
-                    session.setStyle(.fine)
-                }
+            effectKey(
+                title: "颗粒",
+                value: session.style.title,
+                active: session.style != .off,
+                accessibility: session.style == .off ? "颗粒 关" : "颗粒 细颗粒"
+            ) {
+                session.setStyle(session.style == .off ? .fine : .off)
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 19)
     }
 
-    private func effectRow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(CameraFont.fixed(14, weight: .regular))
-                .foregroundStyle(CameraColor.textPrimary)
-            Spacer(minLength: 8)
-            HStack(spacing: 4) {
-                content()
+    private func effectKey(title: String, value: String, active: Bool, accessibility: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(active ? CameraColor.accent : CameraColor.border)
+                        .frame(width: 6, height: 6)
+                    Text(title)
+                        .font(CameraFont.fixed(14, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                }
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(CameraFont.fixed(12, weight: .regular))
+                    .foregroundStyle(active ? CameraColor.accent : CameraColor.textSecondary)
             }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(CameraColor.surface, in: Capsule())
+            .shadow(color: Color(red: 46.0 / 255, green: 59.0 / 255, blue: 51.0 / 255).opacity(0.10), radius: 4, y: 3)
         }
-        .frame(height: 44)
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibility)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     private var toast: some View {
         Group {
             if savedCopy {
-                Text("✓ 已保存新照片，原片保留")
+                Text("已保存副本 · 原片保留")
                     .font(CameraFont.interface(12))
                     .foregroundStyle(CameraColor.textPrimary)
                     .frame(width: 260, height: 44)
@@ -322,8 +359,6 @@ struct ProcessStillView: View {
         HStack(spacing: 0) {
             PhiGlyphButton(glyph: .close, label: "离开编辑") { requestClose() }
             Spacer(minLength: 0)
-            PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
-            Spacer(minLength: 0)
             if showsRetry {
                 Button(action: onRetryOriginal) {
                     Text("重试")
@@ -333,20 +368,22 @@ struct ProcessStillView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 16)
+                .padding(.trailing, 20)
             }
             Button(action: onExport) {
                 Text(session.isExporting ? "保存中…" : "另存照片")
-                    .font(CameraFont.fixed(13, weight: .medium))
-                    .foregroundStyle(CameraColor.background)
+                    .font(CameraFont.fixed(14, weight: .medium))
+                    .foregroundStyle(CameraColor.surface)
                     .lineLimit(1)
             }
-            .buttonStyle(PillPlateStyle(fill: CameraColor.textPrimary, width: 120, height: 40))
+            .buttonStyle(PillPlateStyle(fill: CameraColor.textPrimary, width: 148, height: 48))
             .disabled(session.isExporting || session.preview == nil)
+            Spacer(minLength: 0)
+            PhiGlyphButton(glyph: .reset, label: "还原调整") { resetAdjustments() }
         }
         .padding(.leading, 16)
         .padding(.trailing, 16)
-        .frame(height: 44)
+        .frame(height: 52)
     }
 
     private var showsRetry: Bool {
@@ -358,12 +395,14 @@ struct ProcessStillView: View {
 
     /// '重试' appears only after this edit's photo-library save failed.
     private var saveFailed: Bool {
-        guard savedCopy == false, let status = session.status else { return false }
-        return status.hasPrefix("未能写入相册")
+        savedCopy == false && session.photoLibrarySave == .failed
     }
 
     private var savedCopy: Bool {
-        session.status == "已保存新照片，原片保留"
+        #if DEBUG
+        if PHIUITest.savedCopy { return true }
+        #endif
+        return session.photoLibrarySave == .savedCopy
     }
 
     private func editTickLabel(_ tick: Double) -> String {
@@ -438,11 +477,11 @@ struct ColorLookPicker: View {
                     VStack(spacing: 5) {
                         Text(look.title)
                             .font(CameraFont.parameter(12, medium: selected))
-                            .foregroundStyle(selected ? CameraColor.accent : CameraColor.textSecondary)
+                            .foregroundStyle(selected ? CameraColor.textPrimary : CameraColor.textSecondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         Rectangle()
-                            .fill(selected ? CameraColor.accent : Color.clear)
+                            .fill(selected ? CameraColor.textPrimary : Color.clear)
                             .frame(width: 14, height: 1.5)
                     }
                     .frame(maxWidth: .infinity)
@@ -489,69 +528,52 @@ struct HaloToggle: View {
     }
 }
 
-/// System alert. The app tint is vermilion, which would paint the cancel action red.
-/// The alert's own tint stays ivory, so only the destructive action is red.
-private struct DiscardEditAlert: UIViewControllerRepresentable {
-    @Binding var isPresented: Bool
+
+/// Ceramic White discard card (Figma 336:2169). Same dirty-check behavior as the previous system alert.
+private struct CeramicDiscardCard: View {
     var onDiscard: () -> Void
+    var onStay: () -> Void
 
-    func makeUIViewController(context: Context) -> DiscardAlertHost {
-        let host = DiscardAlertHost()
-        host.view.backgroundColor = .clear
-        return host
-    }
-
-    func updateUIViewController(_ host: DiscardAlertHost, context: Context) {
-        host.onDiscard = onDiscard
-        host.onDismiss = { isPresented = false }
-        host.isPresented = isPresented
-        if isPresented {
-            host.showIfNeeded()
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onStay)
+            VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("放弃这次调整？")
+                        .font(CameraFont.interface(17, weight: .semibold))
+                        .foregroundStyle(CameraColor.textPrimary)
+                    Text("未保存的调整将丢失，原片不会改变。")
+                        .font(CameraFont.interface(15))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: onDiscard) {
+                    Text("放弃调整")
+                        .font(CameraFont.interface(17, weight: .medium))
+                        .foregroundStyle(CameraColor.accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(CameraColor.destructiveWash, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                Button(action: onStay) {
+                    Text("继续编辑")
+                        .font(CameraFont.interface(17, weight: .medium))
+                        .foregroundStyle(CameraColor.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(CameraColor.quietWash, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+            .frame(width: 300)
+            .background(CameraColor.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: CameraColor.dropShadow, radius: 20, y: 10)
         }
+        .accessibilityAddTraits(.isModal)
     }
-}
-
-private final class DiscardAlertHost: UIViewController {
-    var isPresented = false
-    var onDiscard: () -> Void = {}
-    var onDismiss: () -> Void = {}
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        showIfNeeded()
-    }
-
-    func showIfNeeded() {
-        guard isPresented, presentedViewController == nil, view.window != nil else { return }
-        let alert = UIAlertController(
-            title: "放弃这次调整？",
-            message: "未保存的调整将丢失，原片不会改变。",
-            preferredStyle: .alert
-        )
-        alert.overrideUserInterfaceStyle = .dark
-        alert.view.tintColor = UIColor(red: 244.0 / 255.0, green: 243.0 / 255.0, blue: 238.0 / 255.0, alpha: 1)
-        let discard = UIAlertAction(title: "放弃调整", style: .destructive) { [weak self] _ in
-            self?.onDismiss()
-            self?.onDiscard()
-        }
-        let stay = UIAlertAction(title: "继续编辑", style: .cancel) { [weak self] _ in
-            self?.onDismiss()
-        }
-        alert.addAction(discard)
-        alert.addAction(stay)
-        let ivory = alert.view.tintColor
-        present(alert, animated: true) {
-            alert.view.tintColor = ivory
-        }
-    }
-}
-
-#Preview("Process") {
-    ProcessStillView(
-        session: ProcessSession.syntheticPreview(),
-        canRetryOriginal: false,
-        onExport: {},
-        onRetryOriginal: {},
-        onClose: {}
-    )
 }

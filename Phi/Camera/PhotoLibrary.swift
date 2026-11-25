@@ -87,6 +87,8 @@ enum PhiShotIndex {
     }
 
     static func append(localIdentifier: String, hasRaw: Bool, aspect: String?, lensZoom: Double? = nil, processMode: String? = nil, captureEV: Double? = nil) {
+        // TODO(review): load-modify-write of phi-assets.json is unsynchronized across threads.
+        // A dedicated lock or actor is not a safe one-line fix; do not fold this into the current pass.
         var entries = load()
         entries.removeAll { $0.localIdentifier == localIdentifier }
         entries.append(Entry(
@@ -115,10 +117,18 @@ enum PhiShotIndex {
     }
 
     static func lensZoom(for localIdentifier: String) -> Double {
-        guard let entry = load().first(where: { $0.localIdentifier == localIdentifier }) else { return 1 }
-        if entry.processMode == ProcessMode.bayer.rawValue { return 1 }
-        let stored = entry.lensZoom ?? 1
-        return stored > 1 ? stored : 1
+        displayZoom(for: localIdentifier)
+    }
+
+    /// Zoom applied to a Photos primary still. The saved display file already contains the capture crop.
+    static func displayZoom(for localIdentifier: String) -> Double {
+        let entry = load().first(where: { $0.localIdentifier == localIdentifier })
+        let mode = entry?.processMode.flatMap(ProcessMode.init(rawValue:))
+            ?? PhiLocalShots.load().first(where: { $0.photosIdentifier == localIdentifier })?.processMode.flatMap(ProcessMode.init(rawValue:))
+        let stored = entry?.lensZoom
+            ?? PhiLocalShots.load().first(where: { $0.photosIdentifier == localIdentifier })?.lensZoom
+            ?? 1
+        return PhiLocalShots.displayZoom(processMode: mode, captureZoom: stored, hasDevelopedDisplay: true)
     }
 
     /// Crop used when developing the DNG again. The Photos primary is already cropped, so display zoom stays 1.
@@ -241,6 +251,26 @@ enum PhiLocalShots {
     }
 
     /// Deletes the files and the index rows for shots that never made it into Photos, or whose files are already gone.
+    static func remove(photosIdentifiers: [String]) {
+        let dropping = Set(photosIdentifiers.filter { $0.isEmpty == false })
+        guard dropping.isEmpty == false else { return }
+        let current = load()
+        var kept: [Shot] = []
+        var removed: [Shot] = []
+        for shot in current {
+            if let identifier = shot.photosIdentifier, dropping.contains(identifier) {
+                removed.append(shot)
+            } else {
+                kept.append(shot)
+            }
+        }
+        guard removed.isEmpty == false else { return }
+        write(kept)
+        for shot in removed {
+            ShotCache.remove(stem: shot.id)
+        }
+    }
+
     static func remove(ids: [String]) {
         let dropping = Set(ids)
         guard dropping.isEmpty == false else { return }
@@ -263,6 +293,8 @@ enum PhiLocalShots {
     }
 
     private static func write(_ shots: [Shot]) {
+        // TODO(review): local shot JSON load-modify-write is unsynchronized across threads.
+        // A dedicated lock or actor is not a safe one-line fix; do not fold this into the current pass.
         guard let data = try? JSONEncoder().encode(shots) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
@@ -294,12 +326,13 @@ enum PhiLocalShots {
 
     /// Crop zoom for showing `displayFile`. A finished mode 0 HEIF already contains the crop.
     static func displayZoom(of shot: Shot) -> Double {
+        let mode = shot.processMode.flatMap(ProcessMode.init(rawValue:))
         let developed = shot.files.contains { isAppleFallback($0) == false && isRawFile($0) == false }
-        if shot.processMode == ProcessMode.bayer.rawValue, developed {
-            return 1
-        }
-        let zoom = shot.lensZoom ?? 1
-        return zoom > 1 ? zoom : 1
+        return DisplayZoom.forDisplayStill(processMode: mode, captureZoom: shot.lensZoom ?? 1, hasDevelopedDisplay: developed)
+    }
+
+    static func displayZoom(processMode: ProcessMode?, captureZoom: Double, hasDevelopedDisplay: Bool) -> Double {
+        DisplayZoom.forDisplayStill(processMode: processMode, captureZoom: captureZoom, hasDevelopedDisplay: hasDevelopedDisplay)
     }
 
     static func isAppleFallback(_ file: LibraryRecord.File) -> Bool {

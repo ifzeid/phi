@@ -21,8 +21,8 @@ enum CaptureZoom: Double, CaseIterable, Equatable {
     /// 0.5× is the only label wider than the 20 pt mark.
     var titleSize: CGFloat {
         switch self {
-        case .half: return 16
-        case .one, .two, .four: return 20
+        case .half: return 13
+        case .one, .two, .four: return 16
         }
     }
 }

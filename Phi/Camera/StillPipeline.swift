@@ -18,23 +18,30 @@ enum StillPipeline {
     private static let renderLock = NSLock()
     static let linearP3 = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) ?? CGColorSpaceCreateDeviceRGB()
     static let displayP3 = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
-    /// One Metal context for preview and export. Callers render off the main thread.
-    private static let context: CIContext = {
+    /// Preview repeats the same 1280 graph with a new exposure; keep intermediates there.
+    /// Full-res export and the 12MP save benchmark use a second context that does not
+    /// cache 12MP intermediates — same working space and format, no algorithm change.
+    private static let context: CIContext = makeContext(cacheIntermediates: true)
+    private static let exportContext: CIContext = makeContext(cacheIntermediates: false)
+
+    private static func makeContext(cacheIntermediates: Bool) -> CIContext {
         let options: [CIContextOption: Any] = [
             CIContextOption.workingColorSpace: linearP3,
             CIContextOption.outputColorSpace: displayP3,
             CIContextOption.workingFormat: NSNumber(value: CIFormat.RGBAh.rawValue),
-            // Preview repeats the same graph with a new exposure. Keep intermediates.
-            // The proxy is at most 1280 px, so the cache stays small.
-            CIContextOption.cacheIntermediates: true,
+            CIContextOption.cacheIntermediates: cacheIntermediates,
             CIContextOption.useSoftwareRenderer: false
         ]
-        let device: MTLDevice? = MTLCreateSystemDefaultDevice()
-        if let device {
+        if let device = MTLCreateSystemDefaultDevice() {
             return CIContext(mtlDevice: device, options: options)
         }
         return CIContext(options: options)
-    }()
+    }
+
+    private static func context(for extent: CGRect) -> CIContext {
+        let pixels = extent.integral.width * extent.integral.height
+        return pixels > 2_000_000 ? exportContext : context
+    }
 
     static func normalizedCGImage(from image: UIImage) -> CGImage? {
         let scale = image.scale == 0 ? 1 : image.scale
@@ -260,7 +267,7 @@ static func renderLinear(
         let extent = image.extent.integral
         guard extent.width > 1, extent.height > 1, extent.isInfinite == false else { return nil }
         // Display P3 on the CGImage is what ImageIO writes into the HEIF. There is no separate ICC property key on this SDK.
-        return context.createCGImage(image, from: extent, format: .RGBA8, colorSpace: displayP3)
+        return context(for: extent).createCGImage(image, from: extent, format: .RGBA8, colorSpace: displayP3)
     }
 
     static func encodeDeveloped(_ image: CGImage, metadata: [String: Any]? = nil) -> (data: Data, ext: String, uti: String)? {
@@ -415,7 +422,10 @@ static func renderLinear(
             // Brightest channel, not just luma, so a later 8-bit clamp cannot eat only the positive half.
             let high: Float = peak > 0.0001 ? y * (1 - peak) / peak : 0
             let room = min(y, max(high, 0))
-            let delta = noise[index] * min(amplitude, max(room, 0))
+            // Film-like response: full in midtones, tapering in deep shadows and near white.
+            let mid = min(max(4 * y * (1 - y), 0), 1)
+            let weight = 0.35 + 0.65 * mid
+            let delta = noise[index] * min(amplitude * weight, max(room, 0))
             let factor: Float = y > 0.0001 ? (y + delta) / y : 1
             pixels[offset] = GrainField.decoded(redD * factor)
             pixels[offset + 1] = GrainField.decoded(greenD * factor)
@@ -432,7 +442,7 @@ static func renderLinear(
         renderLock.lock()
         let wrote = pixels.withUnsafeMutableBytes { raw -> Bool in
             guard let base = raw.baseAddress else { return false }
-            context.render(
+            context(for: bounds).render(
                 image,
                 toBitmap: base,
                 rowBytes: rowBytes,
@@ -791,8 +801,12 @@ enum GrainField {
     static func signedUnit(x: Int, y: Int, seed: UInt32, cell: Int, step: Int) -> Float {
         let safeStep = max(step, 1)
         let safeCell = max(cell, 1)
-        let unit = unitHash(x: (x / safeStep) / safeCell, y: (y / safeStep) / safeCell, seed: seed)
-        return Float((unit - 0.5) * 2)
+        let cx = (x / safeStep) / safeCell
+        let cy = (y / safeStep) / safeCell
+        // Two independent hashes summed: triangular, zero-mean, fewer harsh outliers than uniform.
+        let a = unitHash(x: cx, y: cy, seed: seed)
+        let b = unitHash(x: cx, y: cy, seed: seed ^ 0x9E37_79B9)
+        return Float(a + b - 1)
     }
 
     /// Subtracts the mean, then if anything falls outside [-1, 1] scales it back. Mean stays 0.

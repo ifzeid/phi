@@ -27,7 +27,7 @@ struct FlashSystemMenu: UIViewRepresentable {
         let image = UIImage(named: glyph.rawValue)?.withRenderingMode(.alwaysTemplate)
         var configuration = UIButton.Configuration.plain()
         configuration.image = image
-        configuration.baseForegroundColor = UIColor(red: 244.0 / 255.0, green: 243.0 / 255.0, blue: 238.0 / 255.0, alpha: 1)
+        configuration.baseForegroundColor = UIColor(red: 40.0 / 255.0, green: 43.0 / 255.0, blue: 41.0 / 255.0, alpha: 1)
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
         button.configuration = configuration
         button.menu = context.coordinator.menu(selection: mode, enabled: enabled, reason: reason)

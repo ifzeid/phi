@@ -4,6 +4,11 @@ import MetalKit
 import SwiftUI
 
 /// Draws the editor proxy with the shared Metal `CIContext`. Preview updates do not allocate a `CGImage`.
+private enum EditorSurround {
+    static let clear = MTLClearColor(red: 211.0 / 255, green: 215.0 / 255, blue: 207.0 / 255, alpha: 1)
+    static let ci = CIColor(red: 211.0 / 255, green: 215.0 / 255, blue: 207.0 / 255)
+}
+
 struct EditorMetalPreview: UIViewRepresentable {
     var frame: ProcessSession.LiveFrame?
     var onPresented: (Int) -> Void
@@ -15,7 +20,7 @@ struct EditorMetalPreview: UIViewRepresentable {
         view.enableSetNeedsDisplay = true
         view.framebufferOnly = false
         view.isOpaque = true
-        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        view.clearColor = EditorSurround.clear
         view.delegate = view
         view.onPresented = onPresented
         view.onFirstPixels = onFirstPixels
@@ -121,8 +126,8 @@ final class EditorCanvas: MTKView, MTKViewDelegate {
         let dy = (pixelSize.height - scaledExtent.height) / 2 - scaledExtent.origin.y
         let placed = scaled.transformed(by: CGAffineTransform(translationX: dx, y: dy))
         let canvas = CGRect(origin: .zero, size: pixelSize)
-        let black = CIImage(color: CIColor.black).cropped(to: canvas)
-        return placed.composited(over: black)
+        let surround = CIImage(color: EditorSurround.ci).cropped(to: canvas)
+        return placed.composited(over: surround)
     }
 
     /// Copy the drawable after the preview encode. This is the frame that was presented, not the source bitmap.
